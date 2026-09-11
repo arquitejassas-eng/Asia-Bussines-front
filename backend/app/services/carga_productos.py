@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from secrets import token_hex
 
 import pandas as pd
+from sqlalchemy.exc import IntegrityError
 
 from app.models.producto import Producto
 from app.services import clasificacion
@@ -136,12 +137,25 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
                 familia=familia, calibre=calibre, codigo_importacion=codigo_importacion_final,
                 entrada=entrada, stock=stock,
             )
-            db.add(nuevo)
-            # Flush defensivo + registrar en el dict: si el mismo código
-            # vuelve a aparecer más abajo en el archivo, la siguiente
-            # iteración lo encuentra en `existentes` (autoflush=False en
-            # esta app — ver app/db/session.py).
-            db.flush()
+            try:
+                # SAVEPOINT propio para esta fila: si choca con el
+                # UniqueConstraint(bodega_id, codigo) -- alguien más creó
+                # este mismo código en el instante entre nuestro chequeo de
+                # `existentes` y este insert, una carrera real pero rara --
+                # se deshace SOLO esta fila, no el resto de la carga ya
+                # procesada en esta misma transacción.
+                with db.begin_nested():
+                    db.add(nuevo)
+                    # Flush defensivo + registrar en el dict: si el mismo
+                    # código vuelve a aparecer más abajo en el archivo, la
+                    # siguiente iteración lo encuentra en `existentes`
+                    # (autoflush=False en esta app — ver app/db/session.py).
+                    db.flush()
+            except IntegrityError:
+                resultado.omitidas.append(
+                    FilaOmitida(numero_fila, codigo, "Ese código ya fue creado justo ahora por otra carga -- reintenta esta fila.")
+                )
+                continue
             existentes[codigo] = nuevo
             resultado.creados += 1
 

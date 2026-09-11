@@ -68,7 +68,16 @@ def listar_productos_bajo_minimo(
 def crear_producto(datos: ProductoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Producto:
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.entrada)
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.stock)
-    producto = Producto(bodega_id=usuario.bodega_id, **datos.model_dump())
+    codigo = datos.codigo.strip()
+    existente = (
+        db.query(Producto)
+        .filter(coincide_bodega(Producto.bodega_id, usuario.bodega_id), Producto.codigo == codigo)
+        .with_for_update()
+        .first()
+    )
+    if existente:
+        raise HTTPException(status_code=409, detail=f"Ya existe un producto con el código '{codigo}' en tu bodega.")
+    producto = Producto(bodega_id=usuario.bodega_id, **{**datos.model_dump(), "codigo": codigo})
     # Producto.tipo_producto es la fuente estructural de qué tipo de stock es
     # esta fila (ver Producción: "caballete"/"flanche") — un producto creado
     # aquí (a mano) NUNCA viene de Producción, así que si además configuraron

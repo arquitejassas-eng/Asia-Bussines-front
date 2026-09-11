@@ -4,7 +4,9 @@ import time
 from fastapi import FastAPI, Request
 from fastapi import HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 try:
     import sentry_sdk
@@ -47,6 +49,32 @@ app.add_middleware(
 )
 
 app.include_router(router_api)
+
+# Mensajes claros para las constraints de BD que sí esperamos que un usuario
+# pueda chocar (ej. dos requests casi simultáneos creando el mismo código en
+# la misma bodega) -- el nombre de la constraint es idéntico en MySQL local y
+# Postgres/Supabase (se declaró explícito en el modelo), así que este mapeo
+# funciona en ambos motores sin parsear el texto del error de cada uno.
+_MENSAJES_CONSTRAINT: dict[str, str] = {
+    "uq_productos_bodega_codigo": "Ya existe un producto con ese código en tu bodega. Actualiza la página e intenta de nuevo.",
+}
+
+
+@app.exception_handler(IntegrityError)
+async def manejar_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
+    """Evita que una violación de constraint (ej. código de producto
+    duplicado) llegue al cliente como un 500 crudo con detalle de SQL. No
+    intenta extraer el valor exacto que chocó del texto del error -- muchos
+    códigos reales de este negocio incluyen "-" y "," (los mismos separadores
+    que usan los mensajes de error de MySQL/Postgres), así que un parseo
+    ingenuo devolvería valores cortados mal más seguido de lo que ayudaría."""
+    texto_error = str(exc.orig or exc)
+    mensaje = next(
+        (m for clave, m in _MENSAJES_CONSTRAINT.items() if clave in texto_error),
+        "La operación no se pudo completar porque choca con datos existentes.",
+    )
+    logger.warning("integrity_error method=%s path=%s detail=%s", request.method, request.url.path, texto_error)
+    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": mensaje})
 
 
 @app.middleware("http")
