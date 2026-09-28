@@ -10,6 +10,12 @@ router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
 
 def _bodega_nombre_para(usuario: Usuario) -> str:
+    """Texto que la barra lateral muestra bajo la marca: la bodega del
+    usuario o, para las cuentas sin bodega fija, el nombre de su rol."""
+    # El vendedor consulta todas las sedes, así que aunque tenga una bodega
+    # asignada se identifica por su rol.
+    if usuario.rol == RolUsuario.VENDEDOR:
+        return "Vendedor"
     if usuario.bodega_id:
         return usuario.bodega.nombre
     return "Administrador general" if usuario.rol == RolUsuario.SUPERADMIN else "Admin Inventario"
