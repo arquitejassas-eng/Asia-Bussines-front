@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { envioDesdeApi, rolloDesdeApi } from "./Mapeo";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
@@ -26,6 +26,7 @@ const COMPARATIVO_VACIO: Comparativo = {
   pesoActualTotalPorBodega: {}, pesoActualTotalGeneral: 0, rollosSinPesoActualTotal: 0, calibresSinEquivalencia: [],
 };
 const TAMANO_PAGINA_RESUMEN = 10;
+const SEGUNDOS_ACTUALIZACION_AUTOMATICA = 30;
 
 function paginar<T>(items: T[], pagina: number) {
   const total = items.length;
@@ -54,9 +55,20 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   const [empresaResumen, setEmpresaResumen] = useState("");
   const parametroEmpresa = empresaResumen ? `empresa=${encodeURIComponent(empresaResumen)}` : "";
 
-  const cargarComparativo = useCallback(async () => {
-    setCargandoComparativo(true);
-    setCodigoRolloExpandido(null);
+  const [ultimaActualizacion, setUltimaActualizacion] = useState<Date | null>(null);
+  // Si una respuesta vieja llega después de una más nueva (ej. se cambió el
+  // filtro de empresa justo durante una actualización automática), se ignora.
+  const consultaComparativo = useRef(0);
+
+  // `silenciosa` = actualización automática: no muestra "Cargando...", no
+  // vuelve a la página 1, no cierra el detalle abierto y, si falla, conserva
+  // los datos que ya estaban en pantalla.
+  const cargarComparativo = useCallback(async (silenciosa = false) => {
+    const consulta = ++consultaComparativo.current;
+    if (!silenciosa) {
+      setCargandoComparativo(true);
+      setCodigoRolloExpandido(null);
+    }
     try {
       const datos = await api.get<{
         bodegas?: { id: number; nombre: string }[];
@@ -65,6 +77,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
         rollos_sin_peso_actual_total?: number; calibres_sin_equivalencia?: number[];
       }>(`/admin-inventario/comparativo${parametroEmpresa ? `?${parametroEmpresa}` : ""}`);
       if (!datos) throw new Error("Respuesta vacía del servidor.");
+      if (consulta !== consultaComparativo.current) return;
       setComparativo({
         bodegas: datos.bodegas || [],
         rollos: (datos.rollos || []).map((f) => ({
@@ -83,16 +96,36 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
         rollosSinPesoActualTotal: datos.rollos_sin_peso_actual_total || 0,
         calibresSinEquivalencia: datos.calibres_sin_equivalencia || [],
       });
-      setPaginaRollos(1);
-      setPaginaProductos(1);
+      setUltimaActualizacion(new Date());
+      if (!silenciosa) {
+        setPaginaRollos(1);
+        setPaginaProductos(1);
+      }
     } catch {
-      setComparativo(COMPARATIVO_VACIO);
+      if (!silenciosa && consulta === consultaComparativo.current) setComparativo(COMPARATIVO_VACIO);
     } finally {
-      setCargandoComparativo(false);
+      if (!silenciosa && consulta === consultaComparativo.current) setCargandoComparativo(false);
     }
   }, [parametroEmpresa]);
 
   useEffect(() => { cargarComparativo(); }, [cargarComparativo]);
+
+  // Actualización automática: lo que otra sede carga (ej. un Excel en
+  // Ricaurte) aparece sin recargar la página. Solo con la pestaña a la vista
+  // -- una pestaña en segundo plano no consulta -- y de inmediato al volver
+  // a ella. Cada consulta recorre todo el inventario de todas las sedes, por
+  // eso no se hace cada pocos segundos.
+  useEffect(() => {
+    const actualizarSiVisible = () => {
+      if (document.visibilityState === "visible") cargarComparativo(true);
+    };
+    const intervalo = window.setInterval(actualizarSiVisible, SEGUNDOS_ACTUALIZACION_AUTOMATICA * 1000);
+    document.addEventListener("visibilitychange", actualizarSiVisible);
+    return () => {
+      window.clearInterval(intervalo);
+      document.removeEventListener("visibilitychange", actualizarSiVisible);
+    };
+  }, [cargarComparativo]);
 
   // ---------- Paginación del resumen (10 por página, cada tabla aparte) ----------
   const [paginaRollos, setPaginaRollos] = useState(1);
@@ -301,6 +334,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   return {
     soloLectura,
     comparativo, cargandoComparativo, empresaResumen, setEmpresaResumen,
+    ultimaActualizacion, actualizarComparativo: () => cargarComparativo(true),
 
     rollosResumenPagina, paginacionRollos, paginaRollos, setPaginaRollos,
     productosResumenPagina, paginacionProductos, paginaProductos, setPaginaProductos,

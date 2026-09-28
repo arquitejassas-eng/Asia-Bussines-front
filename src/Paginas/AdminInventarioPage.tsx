@@ -257,6 +257,14 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   ))}
                   <option value={FILTRO_SIN_EMPRESA}>Sin empresa</option>
                 </select>
+                <span className="inventario-carga-ayuda" style={{ margin: "0 0 0 auto" }}>
+                  {c.ultimaActualizacion
+                    ? `Actualizado a las ${c.ultimaActualizacion.toLocaleTimeString("es-CO")} · se actualiza solo cada 30 s`
+                    : ""}
+                </span>
+                <button type="button" className="inventario-boton-cancelar" onClick={c.actualizarComparativo}>
+                  ↻ Actualizar
+                </button>
               </div>
               {c.cargandoComparativo ? (
                 <p className="inventario-cargando">Cargando...</p>
