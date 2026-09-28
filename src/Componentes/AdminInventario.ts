@@ -53,6 +53,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
 
   // ---------- Resumen comparativo entre sedes ----------
   const [comparativo, setComparativo] = useState(COMPARATIVO_VACIO);
+  const [errorComparativo, setErrorComparativo] = useState("");
   const [cargandoComparativo, setCargandoComparativo] = useState(true);
   // Sigla ("AR", "ABG"), "sin_empresa" o "" (todas). Filtra solo los rollos:
   // los productos no llevan empresa.
@@ -99,12 +100,19 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
         rollosSinPesoActualTotal: datos.rollos_sin_peso_actual_total || 0,
         calibresSinEquivalencia: datos.calibres_sin_equivalencia || [],
       });
+      setErrorComparativo("");
       if (!silenciosa) {
         setPaginaRollos(1);
         setPaginaProductos(1);
       }
     } catch {
-      if (!silenciosa && consulta === consultaComparativo.current) setComparativo(COMPARATIVO_VACIO);
+      // Un error NO se muestra como inventario vacío: un vendedor podría
+      // negar una venta creyendo que no hay material. La actualización
+      // automática lo reintenta sola y borra el aviso cuando lo logra.
+      if (!silenciosa && consulta === consultaComparativo.current) {
+        setComparativo(COMPARATIVO_VACIO);
+        setErrorComparativo("No se pudo cargar el inventario (revisa tu conexión). Se reintentará solo en unos segundos; mientras tanto no des por hecho que no hay material.");
+      }
     } finally {
       // La consulta más reciente apaga el indicador, sea o no silenciosa: si
       // una automática reemplazó a una normal en curso, le toca a ella.
@@ -160,22 +168,30 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   const [rollosDelCodigoExpandido, setRollosDelCodigoExpandido] = useState<ReturnType<typeof rolloDesdeApi>[]>([]);
   const [cargandoRollosExpandido, setCargandoRollosExpandido] = useState(false);
 
+  // Si se abre un código y enseguida otro, la respuesta del primero podía
+  // llegar después y mostrar sus rollos debajo del segundo: solo cuenta la
+  // consulta más reciente.
+  const consultaExpandido = useRef(0);
+
   async function alternarExpandirCodigoRollo(codigo: string) {
+    const consulta = ++consultaExpandido.current;
     if (codigoRolloExpandido === codigo) {
       setCodigoRolloExpandido(null);
       return;
     }
     setCodigoRolloExpandido(codigo);
+    setRollosDelCodigoExpandido([]);
     setCargandoRollosExpandido(true);
     try {
       const datos = await api.get<Record<string, unknown>[]>(
         `/admin-inventario/rollos-por-codigo?codigo_interno=${encodeURIComponent(codigo)}${parametroEmpresa ? `&${parametroEmpresa}` : ""}`
       );
+      if (consulta !== consultaExpandido.current) return;
       setRollosDelCodigoExpandido((datos || []).map(rolloDesdeApi));
     } catch {
-      setRollosDelCodigoExpandido([]);
+      if (consulta === consultaExpandido.current) setRollosDelCodigoExpandido([]);
     } finally {
-      setCargandoRollosExpandido(false);
+      if (consulta === consultaExpandido.current) setCargandoRollosExpandido(false);
     }
   }
 
@@ -324,7 +340,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
 
   return {
     soloLectura,
-    comparativo, cargandoComparativo, empresaResumen, setEmpresaResumen,
+    comparativo, cargandoComparativo, errorComparativo, empresaResumen, setEmpresaResumen,
 
     rollosResumenPagina, paginacionRollos, paginaRollos, setPaginaRollos,
     productosResumenPagina, paginacionProductos, paginaProductos, setPaginaProductos,

@@ -258,6 +258,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   <option value={FILTRO_SIN_EMPRESA}>Sin empresa</option>
                 </select>
               </div>
+              {c.errorComparativo && <p className="inventario-error">{c.errorComparativo}</p>}
               {c.cargandoComparativo ? (
                 <p className="inventario-cargando">Cargando...</p>
               ) : (

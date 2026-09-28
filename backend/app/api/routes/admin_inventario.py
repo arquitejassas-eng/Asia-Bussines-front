@@ -104,7 +104,9 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
             func.sum(sin_peso_actual_expr),
         )
         .outerjoin(TablaEspesorEquivalencia, TablaEspesorEquivalencia.espesor == Rollo.calibre)
-        .filter(Rollo.bodega_id.isnot(None))
+        # Solo rollos con material: un agotado inflaba la cantidad de rollos por
+        # bodega que ven los vendedores y los avisos de calibre sin equivalencia.
+        .filter(Rollo.bodega_id.isnot(None), Rollo.metros_disponibles > 0)
     )
     if empresa:
         consulta_rollos = consulta_rollos.filter(Rollo.empresa == filtro_empresa(empresa))
@@ -113,7 +115,7 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
     consulta_faltantes = (
         db.query(Rollo.calibre).distinct()
         .outerjoin(TablaEspesorEquivalencia, TablaEspesorEquivalencia.espesor == Rollo.calibre)
-        .filter(Rollo.bodega_id.isnot(None),
+        .filter(Rollo.bodega_id.isnot(None), Rollo.metros_disponibles > 0,
                 or_(TablaEspesorEquivalencia.mt_por_ton.is_(None), TablaEspesorEquivalencia.mt_por_ton <= 0))
     )
     if empresa:
@@ -162,7 +164,7 @@ def rollos_por_codigo(
     filtro que el resumen."""
     consulta = (
         db.query(Rollo)
-        .filter(Rollo.codigo_interno == codigo_interno, Rollo.bodega_id.isnot(None))
+        .filter(Rollo.codigo_interno == codigo_interno, Rollo.bodega_id.isnot(None), Rollo.metros_disponibles > 0)
     )
     if empresa:
         consulta = consulta.filter(Rollo.empresa == filtro_empresa(empresa))
