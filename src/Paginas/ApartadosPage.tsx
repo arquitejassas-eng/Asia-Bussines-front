@@ -15,6 +15,10 @@ import type { AlmacenGlobal, Sesion } from "../types/dominio";
 // se integre, cambiar a true (o eliminar la condición) en ambos lados.
 const DESPACHOS_INTEGRADO = false;
 
+// Mismos estados que backend/app/services/apartados.py::ESTADOS_CANCELABLES:
+// se puede cancelar mientras la producción no haya terminado.
+const ESTADOS_CANCELABLES = ["apartado", "enviado_a_produccion", "en_produccion"];
+
 const ETIQUETAS_ESTADO: Record<string, string> = {
   apartado: "Apartado",
   enviado_a_produccion: "Enviado a producción",
@@ -38,6 +42,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
   const notificaciones = contarNotificacionesBarraLateral(almacen, sesion);
   const [mensajeInformativo, setMensajeInformativo] = useState("");
+  const [apartadoPorCancelar, setApartadoPorCancelar] = useState<{ id: number; numeroCotizacion: string; estado: string } | null>(null);
 
   // "Iniciar Producción" solo puede navegar de verdad si quien hace clic es
   // jefe_planta (el único rol con acceso a /produccion) -- para
@@ -338,10 +343,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             <td>{formatearFechaColombia(ap.fechaCreacion)}</td>
                             <td className="inventario-acciones">
                               {a.puedeGestionarApartados && ap.estado === "apartado" && (
-                                <>
-                                  <button onClick={() => a.enviarApartadoAProduccion(ap.id)}>Enviar a producción</button>
-                                  <button className="inventario-boton-eliminar" onClick={() => a.cancelarApartado(ap.id)}>Cancelar</button>
-                                </>
+                                <button onClick={() => a.enviarApartadoAProduccion(ap.id)}>Enviar a producción</button>
+                              )}
+                              {a.puedeGestionarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
+                                <button className="inventario-boton-eliminar" onClick={() => setApartadoPorCancelar(ap)}>Cancelar</button>
                               )}
                               {tieneProduccionPendiente && (
                                 <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>Iniciar Producción</button>
@@ -370,6 +375,24 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           mensaje={mensajeInformativo}
           textoConfirmar="Entendido"
           onConfirmar={() => setMensajeInformativo("")}
+        />
+      )}
+      {apartadoPorCancelar && (
+        <ModalConfirmacion
+          titulo={`¿Cancelar el apartado ${apartadoPorCancelar.numeroCotizacion}?`}
+          mensaje={
+            apartadoPorCancelar.estado === "apartado"
+              ? "El material que tenía reservado queda libre para otras ventas."
+              : "Ya fue enviado a producción. Al cancelarlo, el material que faltaba por producir queda libre para otras ventas. Lo que ya se produjo NO vuelve al inventario."
+          }
+          textoCancelar="No, volver"
+          textoConfirmar="Sí, cancelar apartado"
+          onCancelar={() => setApartadoPorCancelar(null)}
+          onConfirmar={() => {
+            const id = apartadoPorCancelar.id;
+            setApartadoPorCancelar(null);
+            a.cancelarApartado(id);
+          }}
         />
       )}
     </div>

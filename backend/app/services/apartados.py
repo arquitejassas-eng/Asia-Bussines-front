@@ -330,10 +330,21 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     return apartado
 
 
+ESTADOS_CANCELABLES = (EstadoApartado.APARTADO, EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION)
+
+
 def cancelar_apartado(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
-    apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
-    if apartado.estado != EstadoApartado.APARTADO:
-        raise HTTPException(status_code=400, detail="Solo se puede cancelar un apartado que aún no fue enviado a producción.")
+    """Cancela un apartado mientras no haya terminado su producción. Antes
+    solo se podía en APARTADO: si el cliente desistía después de enviarlo a
+    producción, la reserva quedaba bloqueada para siempre. Al cancelar, lo
+    que faltaba por producir deja de estar reservado (la reserva se deriva
+    del estado, ver metros_reservados_codigo); lo ya producido no se revierte.
+    El stock de ítems POR_STOCK solo se descuenta al terminar la producción,
+    así que en estos estados todavía no hay nada que devolver."""
+    apartado_de_mi_bodega(db, apartado_id, usuario)
+    apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
+    if apartado.estado not in ESTADOS_CANCELABLES:
+        raise HTTPException(status_code=400, detail="Este apartado ya terminó su producción, fue entregado o ya estaba cancelado: no se puede cancelar.")
     apartado.estado = EstadoApartado.CANCELADO
     apartado.cancelado_por = usuario.correo
     apartado.fecha_cancelado = datetime.now(timezone.utc)
