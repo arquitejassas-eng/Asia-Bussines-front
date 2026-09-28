@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import BarraLateral from "../Componentes/BarraLateral";
 import { formatearFechaColombia } from "../Utils/fechas";
-import { useControladorAdminInventario } from "../Componentes/AdminInventario";
+import { SEGUNDOS_ACTUALIZACION_AUTOMATICA, useControladorAdminInventario } from "../Componentes/AdminInventario";
 import { ESTADOS_ROLLO } from "../Componentes/Rollos";
 import { claseColorMaterial } from "../Utils/colorRollo";
 import Paginacion from "../Componentes/Paginacion";
@@ -259,7 +259,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 </select>
                 <span className="inventario-carga-ayuda" style={{ margin: "0 0 0 auto" }}>
                   {c.ultimaActualizacion
-                    ? `Actualizado a las ${c.ultimaActualizacion.toLocaleTimeString("es-CO")} · se actualiza solo cada 30 s`
+                    ? `Actualizado a las ${c.ultimaActualizacion.toLocaleTimeString("es-CO")} · se actualiza solo cada ${SEGUNDOS_ACTUALIZACION_AUTOMATICA} s`
                     : ""}
                 </span>
                 <button type="button" className="inventario-boton-cancelar" onClick={c.actualizarComparativo}>

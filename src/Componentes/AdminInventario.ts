@@ -26,7 +26,9 @@ const COMPARATIVO_VACIO: Comparativo = {
   pesoActualTotalPorBodega: {}, pesoActualTotalGeneral: 0, rollosSinPesoActualTotal: 0, calibresSinEquivalencia: [],
 };
 const TAMANO_PAGINA_RESUMEN = 10;
-const SEGUNDOS_ACTUALIZACION_AUTOMATICA = 30;
+// 5 s: son pocos vendedores (~5) y un dato viejo puede llevar a vender
+// material que ya no existe. Ver el efecto de actualización automática.
+export const SEGUNDOS_ACTUALIZACION_AUTOMATICA = 5;
 
 function paginar<T>(items: T[], pagina: number) {
   const total = items.length;
@@ -113,11 +115,19 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   // Actualización automática: lo que otra sede carga (ej. un Excel en
   // Ricaurte) aparece sin recargar la página. Solo con la pestaña a la vista
   // -- una pestaña en segundo plano no consulta -- y de inmediato al volver
-  // a ella. Cada consulta recorre todo el inventario de todas las sedes, por
-  // eso no se hace cada pocos segundos.
+  // a ella. Cada consulta recorre todo el inventario de todas las sedes: si
+  // una tarda más que el intervalo, no se lanza otra encima (se salta ese
+  // turno) para que no se acumulen contra la base.
+  const actualizacionEnCurso = useRef(false);
   useEffect(() => {
-    const actualizarSiVisible = () => {
-      if (document.visibilityState === "visible") cargarComparativo(true);
+    const actualizarSiVisible = async () => {
+      if (document.visibilityState !== "visible" || actualizacionEnCurso.current) return;
+      actualizacionEnCurso.current = true;
+      try {
+        await cargarComparativo(true);
+      } finally {
+        actualizacionEnCurso.current = false;
+      }
     };
     const intervalo = window.setInterval(actualizarSiVisible, SEGUNDOS_ACTUALIZACION_AUTOMATICA * 1000);
     document.addEventListener("visibilitychange", actualizarSiVisible);
