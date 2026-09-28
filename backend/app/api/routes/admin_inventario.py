@@ -11,6 +11,7 @@ from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario
 from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComparativoResponse
 from app.schemas.rollos import RolloResponse
+from app.services.clasificacion import formatear_calibre
 
 # Todo este router es de solo lectura, por eso VENDEDOR también entra: es su
 # única vista del inventario (todas las sedes). Si se agrega aquí un endpoint
@@ -48,7 +49,8 @@ def _pivotear(filas, *, con_color: bool, con_peso: bool = False, con_familia: bo
         if con_color and extra and not entrada["color_material"]:
             entrada["color_material"] = extra
         if calibre and not entrada["calibre"]:
-            entrada["calibre"] = str(calibre)
+            # Rollos: número (0.2 -> "0,20"). Productos: ya es texto ("31 - (0,25)").
+            entrada["calibre"] = formatear_calibre(calibre) if isinstance(calibre, (int, float)) else str(calibre)
         if familia and not entrada["familia"]:
             entrada["familia"] = familia
         if con_peso:

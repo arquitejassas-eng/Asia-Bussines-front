@@ -284,18 +284,25 @@ def _buscar_color_por_ral(tablas: TablasEquivalencia, valor: str) -> dict | None
     return None
 
 
+def formatear_calibre(calibre: float) -> str:
+    """Calibre como se escribe en el negocio: siempre dos decimales y coma
+    (0.2 -> "0,20", nunca "0,2"). Es el mismo texto que llevan los códigos de
+    clasificación y las referencias de los rollos."""
+    return f"{calibre:.2f}".replace(".", ",")
+
+
 def _crear_codigo_interno(codigo_tipo: str, color: dict, espesor: float) -> str:
     """Forma el código: tipo + inicial del color + RAL + espesor.
 
-    Ejemplo: Lámina roja RAL3005 de 0.32 mm -> LR30050,32.
+    Ejemplo: Lámina roja RAL3005 de 0.32 mm -> LR30050,32 (y de 0.2 mm ->
+    LR30050,20, con los dos decimales, igual que el código escrito a mano).
     """
     nombre_color = str(color.get("nombre", "")).strip()
     inicial_color = normalizar_texto(nombre_color)[:1].upper()
     ral = str(color.get("ral", "")).strip().upper().replace(" ", "")
     ral_sin_prefijo = ral.removeprefix("RAL")
-    espesor_texto = f"{espesor:g}".replace(".", ",")
 
-    return f"{codigo_tipo}{inicial_color}{ral_sin_prefijo}{espesor_texto}"
+    return f"{codigo_tipo}{inicial_color}{ral_sin_prefijo}{formatear_calibre(espesor)}"
 
 
 def peso_actual_toneladas(

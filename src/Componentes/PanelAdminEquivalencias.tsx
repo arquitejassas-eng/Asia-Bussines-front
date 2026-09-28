@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { useState } from "react";
+import { formatearCalibre } from "../Utils/calibre";
 
 // ---------------------------------------------------------------------------
 // Panel de administración de las 3 tablas de equivalencias (puntos 5 y 6 del
@@ -143,7 +144,7 @@ function PanelAdminEquivalencias({
           <tbody>
             {tablaEspesor.map((e) => (
               <tr key={e.espesor}>
-                <td>{e.espesor.toFixed(2)}</td>
+                <td>{formatearCalibre(e.espesor)}</td>
                 <td>{e.mtPorTon}</td>
                 <td>{e.pesoPorMetro}</td>
               </tr>

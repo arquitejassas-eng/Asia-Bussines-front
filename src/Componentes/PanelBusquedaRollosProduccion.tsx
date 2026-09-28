@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { claseColorMaterial } from "../Utils/colorRollo";
+import { formatearCalibre } from "../Utils/calibre";
 
 const ETIQUETAS_ESTADO = {
   cerrado: "Cerrado",
@@ -76,7 +77,7 @@ function PanelBusquedaRollosProduccion({
                             {rollo.colorMaterial || "Sin color"}
                           </span>
                         </td>
-                        <td>{rollo.calibre}</td>
+                        <td>{formatearCalibre(rollo.calibre)}</td>
                         <td>{rollo.metrosDisponibles}</td>
                         <td>
                           <span className={`produccion-estado-badge estado-${rollo.estado}`}>

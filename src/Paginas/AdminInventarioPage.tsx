@@ -8,14 +8,10 @@ import Paginacion from "../Componentes/Paginacion";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
+import { formatearCalibre } from "../Utils/calibre";
 import "../Style/Inventario.css";
 import "../Style/Rollos.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
-
-// 0.38 -> "0,38", igual que se escribe el calibre en los códigos de rollo.
-function formatearCalibre(calibre: number) {
-  return calibre.toFixed(2).replace(".", ",");
-}
 
 const ETIQUETAS_ESTADO_ENVIO: Record<string, string> = {
   pendiente_confirmacion: "Pendiente de confirmar",
@@ -350,7 +346,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                           title="El calibre de estos rollos no está en la tabla de equivalencias de espesor (metros por tonelada), así que no se puede calcular su peso."
                                         >
                                           no incluye {f.rollosSinPesoActual} rollo{f.rollosSinPesoActual === 1 ? "" : "s"}:
-                                          {" "}{Number(f.calibre) ? `calibre ${formatearCalibre(Number(f.calibre))}` : "calibre vacío"} sin equivalencia
+                                          {" "}{f.calibre ? `calibre ${formatearCalibre(f.calibre)}` : "calibre vacío"} sin equivalencia
                                         </span>
                                       </>
                                     )}

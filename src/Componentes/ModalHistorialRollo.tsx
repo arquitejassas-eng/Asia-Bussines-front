@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { formatearFechaColombia } from "../Utils/fechas";
+import { formatearCalibre } from "../Utils/calibre";
 
 // Modal "Hoja de vida del rollo" de Rollos: muestra los datos del rollo y su
 // historial de movimientos. Extraído de RollosPage.tsx sin cambiar props ni
@@ -32,7 +33,7 @@ function ModalHistorialRollo({
           </div>
           <div>
             <span className="rollos-texto-ayuda">Calibre</span>
-            <p>{rolloParaHistorial.calibre}</p>
+            <p>{formatearCalibre(rolloParaHistorial.calibre)}</p>
           </div>
           <div>
             <span className="rollos-texto-ayuda">Proveedor</span>

@@ -10,6 +10,7 @@ from app.models.usuario import RolUsuario, Usuario
 from app.schemas.bodegas import BodegaCrear, BodegaResponse, SolicitudCrear, SolicitudResponse
 from app.schemas.inventario import ProductoResponse
 from app.services import bodegas as srv_bodegas
+from app.services.clasificacion import formatear_calibre
 from app.services.transferencias import (
     aceptar_solicitud_transferencia,
     crear_solicitud_transferencia,
@@ -58,7 +59,7 @@ def inventario_de_bodega(
     filas_rollos = [{
         "id": -rollo.id, "bodega_id": rollo.bodega_id,
         "codigo_importacion": rollo.codigo_proveedor or "", "codigo": rollo.codigo_interno,
-        "descripcion": rollo.descripcion, "familia": "Rollos de acero", "calibre": str(rollo.calibre),
+        "descripcion": rollo.descripcion, "familia": "Rollos de acero", "calibre": formatear_calibre(rollo.calibre),
         "peso_neto": rollo.peso_neto, "entrada": round(rollo.metros_disponibles + rollo.metros_consumidos, 2),
         "stock": rollo.metros_disponibles, "rollo_id": rollo.id,
         "identificador_rollo": rollo.identificador_rollo,

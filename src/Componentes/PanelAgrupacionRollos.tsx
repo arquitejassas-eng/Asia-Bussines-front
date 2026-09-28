@@ -3,6 +3,7 @@ import { useState } from "react";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { claseColorMaterial } from "../Utils/colorRollo";
 import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
+import { formatearCalibre } from "../Utils/calibre";
 
 // "Arquitejas 3 · Asia Business 2" para la cabecera de cada grupo: el mismo
 // código de clasificación puede tener rollos de las dos empresas.
@@ -66,7 +67,7 @@ function PanelAgrupacionRollos({
                     <span className="rollos-color-muestra" aria-hidden="true" />
                     {grupo.colorMaterial || "Sin color"}
                   </span>
-                  <span>Calibre {grupo.calibre}</span>
+                  <span>Calibre {formatearCalibre(grupo.calibre)}</span>
                   <span>{resumenEmpresas(grupo.rollos)}</span>
                 </span>
               </div>
