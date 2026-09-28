@@ -246,8 +246,20 @@ def historial(
     fecha_hasta: datetime | None = None, pagina: int = Query(1, ge=1), tamano: int = Query(30, ge=1, le=100),
     paginado: bool = False, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Movimiento] | PaginaMovimientos:
-    # Una bodega solo ve los movimientos en que fue origen o destino.
-    consulta = db.query(Movimiento).filter(coincide_bodega(Movimiento.bodega_origen_id, usuario.bodega_id) | coincide_bodega(Movimiento.bodega_destino_id, usuario.bodega_id))
+    # Una bodega solo ve los movimientos en que fue origen o destino. Admin
+    # Inventario ve los de TODAS las sedes. El resto de cuentas sin bodega
+    # (vendedor, superadmin) no tiene historial: antes el filtro "origen o
+    # destino IS NULL" les mostraba todas las entradas y salidas de todas
+    # las sedes, porque cada entrada tiene origen NULL y cada salida destino NULL.
+    consulta = db.query(Movimiento)
+    if usuario.rol == RolUsuario.ADMIN_INVENTARIO:
+        pass
+    elif usuario.bodega_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tu usuario no tiene acceso al historial de movimientos.")
+    else:
+        consulta = consulta.filter(
+            (Movimiento.bodega_origen_id == usuario.bodega_id) | (Movimiento.bodega_destino_id == usuario.bodega_id)
+        )
     if codigo_producto: consulta = consulta.filter(Movimiento.producto_codigo.ilike(f"%{codigo_producto}%"))
     if codigo_rollo: consulta = consulta.filter(Movimiento.identificador_rollo.ilike(f"%{codigo_rollo}%"))
     if cotizacion: consulta = consulta.filter(Movimiento.cotizacion.ilike(f"%{cotizacion}%"))
