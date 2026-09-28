@@ -335,6 +335,16 @@ def confirmar(
         )
     omitidos = [r.rollo.strip() for r in rollos_verificados if r.problema_referencia == "ya_existe"]
     a_registrar = [r for r in rollos_verificados if r.problema_referencia != "ya_existe"]
+    # Hallazgo #9: un rollo sin peso o sin metros reportados no se puede
+    # verificar y entraba con 0 m. La pantalla ya no deja confirmar así,
+    # pero el servidor lo exige igual, sin importar qué haga el cliente.
+    sin_datos = [r for r in a_registrar if r.resultado == "pendiente_datos"]
+    if sin_datos:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hay {len(sin_datos)} rollo(s) con datos faltantes (peso o metros), por ejemplo "
+            f"{_lista_corta([r.rollo.strip() for r in sin_datos])}. Complétalos en el Excel o revisa las columnas elegidas.",
+        )
     if not a_registrar:
         raise HTTPException(
             status_code=400,

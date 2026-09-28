@@ -36,13 +36,16 @@ export function useVerificacionRecepcion({ sesion, archivo }: { sesion: Sesion; 
     const texto = normalizarTextoRecepcion(busquedaClasificacion);
     return rollosCompletos.filter((rollo) => normalizarTextoRecepcion(rollo.codigoClasificacion).includes(texto) || normalizarTextoRecepcion(rollo.rollo).includes(texto));
   }, [rollosCompletos, busquedaClasificacion]);
+  // Sobre TODOS los rollos del archivo, no sobre los que deja ver el
+  // buscador: antes, buscar algo que ocultara las filas con "Faltan datos"
+  // dejaba pendientesDatos en 0 y habilitaba confirmar (hallazgo #9).
   const resumenVerificacion = useMemo(() => ({
-    total: rollos.length, correctos: rollos.filter((rollo) => rollo.resultado === "correcto").length,
-    faltantes: rollos.filter((rollo) => rollo.resultado === "faltante").length,
-    adicionales: rollos.filter((rollo) => rollo.resultado === "adicional").length,
-    pendientesDatos: rollos.filter((rollo) => rollo.resultado === "faltan_datos").length,
-    materialesNuevos: rollos.filter((rollo) => rollo.esMaterialNuevo).length,
-  }), [rollos]);
+    total: rollosCompletos.length, correctos: rollosCompletos.filter((rollo) => rollo.resultado === "correcto").length,
+    faltantes: rollosCompletos.filter((rollo) => rollo.resultado === "faltante").length,
+    adicionales: rollosCompletos.filter((rollo) => rollo.resultado === "adicional").length,
+    pendientesDatos: rollosCompletos.filter((rollo) => rollo.resultado === "faltan_datos").length,
+    materialesNuevos: rollosCompletos.filter((rollo) => rollo.esMaterialNuevo).length,
+  }), [rollosCompletos]);
   const estadoRecepcion = useMemo(() => {
     if (archivo.paso !== "verificacion" || !rollosCompletos.length) return "pendiente_verificacion";
     if (estadoFinal) return estadoFinal;
