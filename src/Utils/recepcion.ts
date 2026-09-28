@@ -31,6 +31,8 @@ export function traducirRolloRecepcion(rollo: Record<string, any>, indice: numbe
     ancho: rollo.ancho, netWeight: rollo.net_weight, grossWeight: rollo.gross_weight,
     coilMeters: rollo.coil_meters, colorTop: rollo.color_top, colorBack: rollo.color_back,
     tipoMaterial: rollo.tipo_material, proveedor: rollo.proveedor, lote: rollo.lote, empresa: rollo.empresa || "",
+    // "" | "sin_referencia" | "repetida_en_archivo" | "ya_existe" (ver backend routes/recepcion.py)
+    problemaReferencia: rollo.problema_referencia || "",
     clasificado: rollo.clasificado, codigoClasificacion: rollo.codigo_clasificacion || "",
     colorNombre: rollo.color_nombre || "", tipoNombre: rollo.tipo_nombre || "",
     metrosCalculados: rollo.metros_calculados, diferencia, resultado, esMaterialNuevo: !rollo.clasificado,

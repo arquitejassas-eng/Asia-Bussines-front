@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
@@ -231,6 +232,7 @@ def verificar(
     df = en_proceso["hojas"][en_proceso["hoja_principal"]]
     tablas = _tablas_equivalencia_desde_bd(db)
     rollos = srv.clasificar_y_verificar_filas(df, datos.mapeo, tablas, datos.tolerancia_porcentaje)
+    _marcar_problemas_de_referencia(db, rollos, usuario.bodega_id)
 
     en_proceso["rollos_verificados"] = rollos
     en_proceso["tolerancia_porcentaje"] = datos.tolerancia_porcentaje
@@ -266,7 +268,39 @@ def _rollo_a_schema(r: srv.RolloClasificado) -> dict:
         "metros_calculados": r.metros_calculados,
         "diferencia_porcentaje": r.diferencia_porcentaje,
         "resultado": r.resultado,
+        "problema_referencia": getattr(r, "problema_referencia", ""),
     }
+
+
+def _marcar_problemas_de_referencia(db: Session, rollos: list[srv.RolloClasificado], bodega_id: int | None) -> None:
+    """La referencia es el identificador único del rollo físico: marca las
+    filas sin referencia, las repetidas dentro del mismo archivo y las que
+    ya están registradas en esta bodega (ej. el mismo packing list subido
+    dos veces). Se recalcula al confirmar, por si otro usuario registró
+    algo entre la verificación y la confirmación."""
+    referencias = [(r.rollo or "").strip() for r in rollos]
+    conteo = Counter(ref for ref in referencias if ref)
+    existentes: set[str] = set()
+    if conteo:
+        existentes = {
+            ref for (ref,) in db.query(Rollo.identificador_rollo)
+            .filter(Rollo.bodega_id == bodega_id, Rollo.identificador_rollo.in_(list(conteo)))
+            .all()
+        }
+    for rollo, ref in zip(rollos, referencias):
+        if not ref:
+            rollo.problema_referencia = "sin_referencia"
+        elif conteo[ref] > 1:
+            rollo.problema_referencia = "repetida_en_archivo"
+        elif ref in existentes:
+            rollo.problema_referencia = "ya_existe"
+        else:
+            rollo.problema_referencia = ""
+
+
+def _lista_corta(referencias: list[str]) -> str:
+    unicas = list(dict.fromkeys(referencias))
+    return ", ".join(unicas[:6]) + (f" y {len(unicas) - 6} más" if len(unicas) > 6 else "")
 
 
 @router.post("/confirmar", response_model=RecepcionResponse, status_code=status.HTTP_201_CREATED,
@@ -285,6 +319,28 @@ def confirmar(
     if not rollos_verificados:
         raise HTTPException(status_code=400, detail="Primero verifica el archivo con /recepcion/verificar.")
 
+    # Nunca registrar dos veces el mismo rollo físico (hallazgo #8 de la
+    # auditoría). Además, la restricción única uq_rollos_bodega_identificador
+    # frena un doble clic o dos confirmaciones simultáneas del mismo archivo.
+    _marcar_problemas_de_referencia(db, rollos_verificados, usuario.bodega_id)
+    sin_referencia = [r for r in rollos_verificados if r.problema_referencia == "sin_referencia"]
+    repetidas = [r.rollo.strip() for r in rollos_verificados if r.problema_referencia == "repetida_en_archivo"]
+    if sin_referencia:
+        filas = _lista_corta([str(r.fila) for r in sin_referencia])
+        raise HTTPException(status_code=400, detail=f"Hay rollos sin referencia en el Excel (filas {filas}). Corrige el archivo y vuelve a subirlo.")
+    if repetidas:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Estas referencias aparecen más de una vez en el Excel: {_lista_corta(repetidas)}. Deja una sola fila por rollo y vuelve a subirlo.",
+        )
+    omitidos = [r.rollo.strip() for r in rollos_verificados if r.problema_referencia == "ya_existe"]
+    a_registrar = [r for r in rollos_verificados if r.problema_referencia != "ya_existe"]
+    if not a_registrar:
+        raise HTTPException(
+            status_code=400,
+            detail="Todos los rollos de este archivo ya están registrados en esta bodega; no hay nada nuevo que confirmar.",
+        )
+
     ahora = datetime.now(timezone.utc)
 
     recepcion = Recepcion(
@@ -299,7 +355,7 @@ def confirmar(
     db.add(recepcion)
     db.flush()
 
-    for r in rollos_verificados:
+    for r in a_registrar:
         codigo_interno = r.codigo_clasificacion or f"SC-{r.tipo_material or '?'}-{r.color_top or '?'}-{r.espesor or '?'}"
         descripcion = (
             f"{r.tipo_nombre or r.tipo_material} {r.color_nombre or r.color_top}"
@@ -313,7 +369,7 @@ def confirmar(
             bodega_id=usuario.bodega_id,
             recepcion_id=recepcion.id,
             codigo_interno=codigo_interno,
-            identificador_rollo=r.rollo,
+            identificador_rollo=r.rollo.strip(),
             empresa=r.empresa,
             codigo_proveedor=r.codigo_proveedor,
             descripcion=descripcion,
@@ -353,6 +409,10 @@ def confirmar(
     db.commit()
     db.refresh(recepcion)
     archivos_recepcion.eliminar(usuario.id)
+    # Solo para la respuesta (no son columnas): cuántos se registraron y
+    # cuáles se omitieron por estar ya en la bodega.
+    recepcion.rollos_registrados = len(a_registrar)
+    recepcion.rollos_omitidos = omitidos
     return recepcion
 
 

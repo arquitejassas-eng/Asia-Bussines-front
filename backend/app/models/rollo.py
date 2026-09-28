@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text, event
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -24,6 +24,10 @@ class Rollo(Base):
     __table_args__ = (
         Index("ix_rollos_bodega_fecha", "bodega_id", "fecha_ingreso"),
         Index("ix_rollos_bodega_estado", "bodega_id", "estado"),
+        # Un rollo físico (su referencia) no puede estar dos veces en la misma
+        # bodega. Igual que en productos, NULL en bodega_id (material de Admin
+        # Inventario) no queda cubierto: SQL no considera iguales dos NULL.
+        UniqueConstraint("bodega_id", "identificador_rollo", name="uq_rollos_bodega_identificador"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

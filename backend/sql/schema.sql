@@ -255,6 +255,7 @@ CREATE TABLE rollos (
 
 CREATE INDEX ix_rollos_bodega_id ON rollos (bodega_id);
 CREATE INDEX ix_rollos_empresa ON rollos (empresa);
+ALTER TABLE rollos ADD CONSTRAINT uq_rollos_bodega_identificador UNIQUE (bodega_id, identificador_rollo);
 CREATE INDEX ix_rollos_codigo_interno ON rollos (codigo_interno);
 CREATE INDEX ix_rollos_bodega_fecha ON rollos (bodega_id, fecha_ingreso);
 CREATE INDEX ix_rollos_bodega_estado ON rollos (bodega_id, estado);

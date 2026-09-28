@@ -185,6 +185,10 @@ class RolloClasificado:
     # verificada antes de existir este campo (guardada con pickle en
     # archivos_recepcion) se pueda seguir confirmando.
     empresa: str = ""
+    # Problema con la referencia del rollo (ver routes/recepcion.py::
+    # _marcar_problemas_de_referencia): "" | "sin_referencia" |
+    # "repetida_en_archivo" | "ya_existe" (ya registrada en la bodega: se omite).
+    problema_referencia: str = ""
 
 
 def _a_float(valor) -> float | None:

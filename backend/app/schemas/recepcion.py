@@ -27,6 +27,8 @@ class PrevisualizacionRollo(BaseModel):
     proveedor: str = ""
     lote: str = ""
     empresa: str = ""  # sigla de la empresa receptora; "" = se deduce de la referencia
+    # "" | "sin_referencia" | "repetida_en_archivo" | "ya_existe" (se omitirá al confirmar)
+    problema_referencia: str = ""
 
     clasificado: bool
     codigo_clasificacion: str | None = None
@@ -85,6 +87,10 @@ class RecepcionResponse(ModeloConFechasUtc):
     archivo_origen: str
     tolerancia_porcentaje: float
     estado: str
+    # Solo en la respuesta de /confirmar (en el historial quedan en su valor
+    # por defecto): rollos registrados y referencias omitidas por existir ya.
+    rollos_registrados: int = 0
+    rollos_omitidos: list[str] = []
 
 
 class EquivalenciaColorInput(BaseModel):

@@ -8,6 +8,12 @@ import PanelAdminEquivalencias from "../Componentes/PanelAdminEquivalencias";
 import { nombreEmpresa } from "../Utils/empresas";
 import "../Style/Recepcionverificacion.css";
 
+const ETIQUETAS_PROBLEMA_REFERENCIA = {
+  ya_existe: { texto: "Ya existe — se omitirá", ayuda: "Este rollo ya está registrado en esta bodega; no se volverá a crear." },
+  repetida_en_archivo: { texto: "Repetido en el Excel", ayuda: "Esta referencia aparece en más de una fila del archivo." },
+  sin_referencia: { texto: "Sin referencia", ayuda: "La fila no trae la referencia (identificador único) del rollo." },
+};
+
 const ETIQUETAS_RESULTADO = {
   correcto: "Correcto",
   faltante: "Falta material",
@@ -325,7 +331,14 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                     <tbody>
                       {c.rollos.map((r) => (
                         <tr key={r.id} className={r.esMaterialNuevo ? "fila-nueva" : ""}>
-                          <td>{r.rollo}</td>
+                          <td>
+                            {r.rollo || "—"}
+                            {r.problemaReferencia && (
+                              <span className="recepcion-tag-nuevo" title={ETIQUETAS_PROBLEMA_REFERENCIA[r.problemaReferencia]?.ayuda}>
+                                {ETIQUETAS_PROBLEMA_REFERENCIA[r.problemaReferencia]?.texto || r.problemaReferencia}
+                              </span>
+                            )}
+                          </td>
                           <td>
                             {r.empresa ? (
                               nombreEmpresa(r.empresa)
@@ -376,6 +389,19 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                   )}
                 </section>
 
+                {c.estadoRecepcion !== "registrada_en_inventario" && c.referenciasConProblema > 0 && (
+                  <p className="recepcion-error">
+                    Hay {c.referenciasConProblema} rollo{c.referenciasConProblema === 1 ? "" : "s"} sin referencia o con la
+                    referencia repetida dentro del Excel. Deja una sola fila por rollo, corrige el archivo y vuelve a subirlo.
+                  </p>
+                )}
+                {c.estadoRecepcion !== "registrada_en_inventario" && c.referenciasYaRegistradas > 0 && (
+                  <p className="recepcion-texto-ayuda">
+                    {c.hayRollosNuevos
+                      ? `${c.referenciasYaRegistradas} rollo${c.referenciasYaRegistradas === 1 ? " ya está registrado" : "s ya están registrados"} en esta bodega (marcados "Ya existe") y se omitirán al confirmar.`
+                      : "Todos los rollos de este archivo ya están registrados en esta bodega: no hay nada nuevo que confirmar."}
+                  </p>
+                )}
                 {c.errorConfirmacion && <p className="recepcion-error">{c.errorConfirmacion}</p>}
 
                 <div className="recepcion-acciones">
@@ -393,7 +419,7 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                       disabled={!c.puedeConfirmar}
                       title={
                         !c.puedeConfirmar
-                          ? "Resuelve los rollos con 'Faltan datos' antes de confirmar"
+                          ? "Resuelve los rollos con 'Faltan datos' o con problemas de referencia antes de confirmar"
                           : ""
                       }
                     >
@@ -406,6 +432,9 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                   <p className="recepcion-exito">
                     Recepción confirmada. El inventario de {sesion?.bodegaNombre} fue actualizado.
                   </p>
+                )}
+                {c.estadoRecepcion === "registrada_en_inventario" && c.avisoConfirmacion && (
+                  <p className="recepcion-texto-ayuda">{c.avisoConfirmacion}</p>
                 )}
               </>
             )}
