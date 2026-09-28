@@ -82,14 +82,99 @@ def metros_reservados_por_bodega(db: Session, *, bodega_id: int) -> list[dict]:
     return [{"codigo_interno": codigo, "metros_reservados": round(float(total or 0), 2)} for codigo, total in filas]
 
 
+def bloquear_rollos_codigo(db: Session, *, bodega_id: int | None, codigo_interno: str) -> list[Rollo]:
+    """Bloquea (FOR UPDATE) TODOS los rollos de un código en una bodega,
+    siempre en el mismo orden (por id) para que dos operaciones sobre rollos
+    distintos del mismo código no se bloqueen entre sí (deadlock). Es el
+    candado que serializa todo lo que toca la reserva de ese código:
+    apartados, consumos, producción, salidas y transferencias.
+    `populate_existing` recarga los valores ya bloqueados aunque el rollo se
+    hubiera leído antes en esta misma sesión."""
+    return (
+        db.query(Rollo)
+        .filter(Rollo.bodega_id == bodega_id, Rollo.codigo_interno == codigo_interno)
+        .order_by(Rollo.id)
+        .with_for_update()
+        .populate_existing()
+        .all()
+    )
+
+
+def _cotizaciones_que_reservan(db: Session, *, bodega_id: int | None, filtro) -> str:
+    cotizaciones = (
+        db.query(Apartado.numero_cotizacion)
+        .join(ApartadoItem, ApartadoItem.apartado_id == Apartado.id)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), filtro)
+        .distinct()
+        .limit(6)
+        .all()
+    )
+    nombres = [c for (c,) in cotizaciones]
+    if not nombres:
+        return ""
+    texto = ", ".join(nombres[:5])
+    return f" (apartados: {texto}{', ...' if len(nombres) > 5 else ''})"
+
+
+def validar_reserva_rollos(
+    db: Session, *, bodega_id: int | None, codigo_interno: str, metros_salen: float,
+    rollos_codigo: list[Rollo], metros_reserva_propia: float = 0.0,
+) -> None:
+    """Impide que salga material de un código que ya está apartado.
+
+    Lo libre de un código es lo físico (metros de sus rollos en la bodega)
+    menos lo reservado por apartados activos. Una operación saca
+    `metros_salen`, de los cuales `metros_reserva_propia` salen de SU PROPIA
+    reserva (la producción de un apartado consume lo que ese apartado tiene
+    reservado): solo el resto tiene que caber en lo libre. Así, después de
+    la operación, lo físico nunca queda por debajo de lo reservado.
+    `rollos_codigo` deben venir de `bloquear_rollos_codigo` (ya bloqueados)
+    para que nadie cambie los números mientras se valida."""
+    fisico = round(sum(r.metros_disponibles for r in rollos_codigo), 2)
+    reservado = metros_reservados_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno)
+    libre = round(fisico - reservado, 2)
+    neto = round(metros_salen - metros_reserva_propia, 2)
+    if neto > libre + 0.005:
+        cotizaciones = _cotizaciones_que_reservan(db, bodega_id=bodega_id, filtro=ApartadoItem.codigo_interno == codigo_interno)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No hay suficiente material libre del código {codigo_interno}: hay {fisico} m en la bodega, "
+                f"pero {reservado} m están apartados para cotizaciones{cotizaciones}. "
+                f"Libres: {max(libre, 0)} m; esta operación necesita {neto} m. "
+                "Para usar material apartado, regístralo desde la producción de ese apartado o cancela el apartado."
+            ),
+        )
+
+
+def validar_reserva_producto(db: Session, *, producto: Producto, cantidad: float | Decimal) -> None:
+    """Igual que `validar_reserva_rollos`, para un producto de stock: lo que
+    sale no puede tocar las unidades apartadas (ítems POR_STOCK de apartados
+    activos). `producto` debe venir ya bloqueado (FOR UPDATE)."""
+    reservado = cantidad_reservada_producto(db, bodega_id=producto.bodega_id, producto_id=producto.id)
+    if reservado <= 0:
+        return
+    stock = round(float(producto.stock), 2)
+    libre = round(stock - reservado, 2)
+    if float(cantidad) > libre + 0.005:
+        cotizaciones = _cotizaciones_que_reservan(db, bodega_id=producto.bodega_id, filtro=ApartadoItem.producto_id == producto.id)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No hay suficiente stock libre de {producto.codigo}: hay {stock}, pero {reservado} están apartados "
+                f"para cotizaciones{cotizaciones}. Libres: {max(libre, 0)}; esta operación necesita {float(cantidad):g}."
+            ),
+        )
+
+
 def disponibilidad_por_codigo(db: Session, *, bodega_id: int, codigo_interno: str, bloquear: bool = False) -> dict:
     """Agrega los rollos de un código de clasificación (color + calibre); con
     `bloquear=True` los bloquea (FOR UPDATE) para serializar apartados
     concurrentes sobre el mismo código."""
-    consulta = db.query(Rollo).filter(Rollo.bodega_id == bodega_id, Rollo.codigo_interno == codigo_interno)
     if bloquear:
-        consulta = consulta.with_for_update()
-    rollos = consulta.all()
+        rollos = bloquear_rollos_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno)
+    else:
+        rollos = db.query(Rollo).filter(Rollo.bodega_id == bodega_id, Rollo.codigo_interno == codigo_interno).all()
 
     metros_disponibles_rollos = round(sum(r.metros_disponibles for r in rollos), 2)
     metros_consumidos = round(sum(r.metros_consumidos for r in rollos), 2)

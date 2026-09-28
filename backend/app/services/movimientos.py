@@ -12,6 +12,7 @@ from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.usuario import Usuario
 from app.schemas.inventario import MovimientoCrear
+from app.services.apartados import validar_reserva_producto
 from app.services.unidades_familia import validar_cantidad_entera_si_aplica
 
 
@@ -82,8 +83,11 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
 
     if datos.tipo == TipoMovimiento.TRASLADO and not datos.bodega_destino_id:
         raise HTTPException(status_code=400, detail="Selecciona a que bodega se traslada el material.")
-    if datos.tipo in (TipoMovimiento.SALIDA, TipoMovimiento.TRASLADO) and cantidad > producto.stock:
-        raise HTTPException(status_code=400, detail="La cantidad supera el stock disponible.")
+    if datos.tipo in (TipoMovimiento.SALIDA, TipoMovimiento.TRASLADO):
+        if cantidad > producto.stock:
+            raise HTTPException(status_code=400, detail="La cantidad supera el stock disponible.")
+        # Las unidades apartadas para una cotización no se pueden vender ni trasladar.
+        validar_reserva_producto(db, producto=producto, cantidad=cantidad)
 
     origen: int | None = usuario.bodega_id
     destino: int | None = usuario.bodega_id

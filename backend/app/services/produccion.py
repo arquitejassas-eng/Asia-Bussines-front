@@ -14,6 +14,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.schemas.produccion import ProduccionCrear, StockAdicionalItemCrear
+from app.services.apartados import bloquear_rollos_codigo, validar_reserva_rollos
 
 # Regla física de los productos "seccionados": el ancho del rollo se divide
 # siempre en N partes iguales según el tipo (3 para caballetes, 5 para
@@ -183,16 +184,26 @@ def _buscar_producto_existente(
 
 def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) -> Produccion:
     if not datos.rollos: raise HTTPException(status_code=400, detail="Selecciona al menos un rollo y sus metros a consumir.")
-    ahora = datetime.now(timezone.utc); bloqueados: list[Rollo] = []
-    for item in datos.rollos:
-        rollo = db.query(Rollo).filter(Rollo.id == item.rollo_id, Rollo.bodega_id == usuario.bodega_id).with_for_update().first()
-        if rollo is None: raise HTTPException(status_code=404, detail=f"Rollo {item.rollo_id} no encontrado.")
+    ahora = datetime.now(timezone.utc)
+    ids = [item.rollo_id for item in datos.rollos]
+    if len(set(ids)) != len(ids): raise HTTPException(status_code=400, detail="No puedes usar el mismo rollo más de una vez.")
+    # Primero se leen sin bloquear solo para saber el código; después se
+    # bloquea el código COMPLETO en orden por id (ver
+    # apartados.bloquear_rollos_codigo): bloquear en el orden del formulario
+    # permitía que dos producciones con [A, B] y [B, A] se trabaran.
+    previos = {r.id: r for r in db.query(Rollo).filter(Rollo.id.in_(ids), Rollo.bodega_id == usuario.bodega_id).all()}
+    for rollo_id in ids:
+        if rollo_id not in previos: raise HTTPException(status_code=404, detail=f"Rollo {rollo_id} no encontrado.")
+    codigo = previos[ids[0]].codigo_interno
+    if any(r.codigo_interno != codigo for r in previos.values()): raise HTTPException(status_code=400, detail="Todos los rollos deben pertenecer al mismo código de clasificación.")
+    rollos_codigo = bloquear_rollos_codigo(db, bodega_id=usuario.bodega_id, codigo_interno=codigo)
+    por_id = {r.id: r for r in rollos_codigo}
+    if any(rollo_id not in por_id for rollo_id in ids):
+        raise HTTPException(status_code=409, detail="Uno de los rollos acaba de cambiar. Recarga e intenta de nuevo.")
+    bloqueados: list[Rollo] = [por_id[rollo_id] for rollo_id in ids]
+    for item, rollo in zip(datos.rollos, bloqueados, strict=True):
         if rollo.estado == "agotado" or item.metros > rollo.metros_disponibles:
             raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} no tiene metros suficientes.")
-        if any(otro.id == rollo.id for otro in bloqueados): raise HTTPException(status_code=400, detail="No puedes usar el mismo rollo más de una vez.")
-        bloqueados.append(rollo)
-    codigo = bloqueados[0].codigo_interno
-    if any(rollo.codigo_interno != codigo for rollo in bloqueados): raise HTTPException(status_code=400, detail="Todos los rollos deben pertenecer al mismo código de clasificación.")
 
     apartado_item = _apartado_item_para_produccion(db, datos.apartado_item_id, usuario) if datos.apartado_item_id else None
 
@@ -319,6 +330,14 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
                     "unidades adicionales — el material de esas unidades también debe salir del rollo."
                 ),
             )
+
+    # Lo que se aplica al apartado sale de SU PROPIA reserva; solo el resto
+    # (producción libre, o lo que exceda al apartado) tiene que caber en el
+    # material libre del código -- nunca en lo que otros apartados reservaron.
+    validar_reserva_rollos(
+        db, bodega_id=usuario.bodega_id, codigo_interno=codigo, metros_salen=total,
+        metros_reserva_propia=aplicado_al_apartado, rollos_codigo=rollos_codigo,
+    )
 
     sello = ahora.strftime("%Y%m%d%H%M%S"); codigo_unico = f"PROD-{sello}-{token_hex(3).upper()}"
     cotizacion = apartado_item.apartado.numero_cotizacion if apartado_item else f"P{token_hex(4).upper()}"

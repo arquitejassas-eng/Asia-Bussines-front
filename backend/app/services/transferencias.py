@@ -10,10 +10,25 @@ from app.models.rollo import Rollo
 from app.models.solicitud import EstadoSolicitud, Solicitud
 from app.models.usuario import Usuario
 from app.schemas.bodegas import SolicitudCrear
+from app.services.apartados import bloquear_rollos_codigo, validar_reserva_producto, validar_reserva_rollos
 
 
 def _decimal(valor: float | Decimal) -> Decimal:
     return Decimal(str(valor))
+
+
+def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int) -> tuple[Rollo, list[Rollo]]:
+    """El rollo y todos los de su código en SU bodega, bloqueados en orden
+    por id (la reserva de apartados es por código; ver
+    apartados.bloquear_rollos_codigo)."""
+    previo = db.get(Rollo, rollo_id)
+    if previo is None:
+        raise HTTPException(status_code=404, detail="Rollo no encontrado.")
+    rollos_codigo = bloquear_rollos_codigo(db, bodega_id=previo.bodega_id, codigo_interno=previo.codigo_interno)
+    rollo = next((r for r in rollos_codigo if r.id == rollo_id), None)
+    if rollo is None:
+        raise HTTPException(status_code=409, detail="El rollo acaba de cambiar. Recarga e intenta de nuevo.")
+    return rollo, rollos_codigo
 
 
 def crear_solicitud_transferencia(
@@ -29,13 +44,17 @@ def crear_solicitud_transferencia(
             detail="Admin Inventario no usa Solicitudes entre sedes; usa /envios para repartir material.",
         )
     if datos.rollo_id is not None:
-        rollo = db.query(Rollo).filter(Rollo.id == datos.rollo_id).with_for_update().first()
-        if rollo is None:
-            raise HTTPException(status_code=404, detail="Rollo no encontrado.")
+        rollo, rollos_codigo = _rollo_bloqueado_con_su_codigo(db, datos.rollo_id)
         if rollo.metros_disponibles <= 0:
             raise HTTPException(status_code=400, detail="El rollo no tiene metros disponibles.")
         if rollo.bodega_id == usuario.bodega_id:
             raise HTTPException(status_code=400, detail="Selecciona un rollo de otra bodega.")
+        # Se avisa desde ya (y se vuelve a validar al aceptar): un rollo cuyo
+        # material está apartado en la otra bodega no se puede pedir.
+        validar_reserva_rollos(
+            db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
+            metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo,
+        )
         if db.query(Solicitud.id).filter(
             Solicitud.rollo_id == rollo.id, Solicitud.estado == EstadoSolicitud.PENDIENTE
         ).first() is not None:
@@ -61,6 +80,7 @@ def crear_solicitud_transferencia(
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero.")
     if _decimal(datos.cantidad) > producto.stock:
         raise HTTPException(status_code=400, detail="La cantidad supera la disponibilidad de esa bodega.")
+    validar_reserva_producto(db, producto=producto, cantidad=_decimal(datos.cantidad))
     return Solicitud(
         fecha=datetime.now(timezone.utc), estado=EstadoSolicitud.PENDIENTE,
         tipo_operacion=datos.tipo_operacion, cantidad=datos.cantidad,
@@ -100,9 +120,17 @@ def aceptar_solicitud_transferencia(
         raise HTTPException(status_code=400, detail="Esta solicitud ya fue procesada.")
 
     if solicitud.rollo_id is not None:
-        rollo = db.query(Rollo).filter(Rollo.id == solicitud.rollo_id).with_for_update().first()
-        if rollo is None or rollo.bodega_id != solicitud.bodega_propietaria_id:
+        previo = db.get(Rollo, solicitud.rollo_id)
+        if previo is None or previo.bodega_id != solicitud.bodega_propietaria_id:
             raise HTTPException(status_code=400, detail="El rollo ya no esta disponible en esta bodega.")
+        rollo, rollos_codigo = _rollo_bloqueado_con_su_codigo(db, solicitud.rollo_id)
+        if rollo.bodega_id != solicitud.bodega_propietaria_id:
+            raise HTTPException(status_code=400, detail="El rollo ya no esta disponible en esta bodega.")
+        # El rollo sale completo de esta bodega: no puede llevarse metros apartados aquí.
+        validar_reserva_rollos(
+            db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
+            metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo,
+        )
         rollo.bodega_id = solicitud.bodega_solicitante_id
         db.add(Movimiento(
             fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.TRANSFERENCIA,
@@ -126,6 +154,7 @@ def aceptar_solicitud_transferencia(
     cantidad = _decimal(solicitud.cantidad)
     if producto_origen is None or producto_origen.stock < cantidad:
         raise HTTPException(status_code=400, detail="Ya no hay stock suficiente para aceptar esta solicitud.")
+    validar_reserva_producto(db, producto=producto_origen, cantidad=cantidad)
     producto_origen.stock -= cantidad
     producto_destino = (
         db.query(Producto)
