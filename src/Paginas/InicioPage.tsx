@@ -4,7 +4,7 @@ import "../Style/Inicio.css";
 
 type Sesion = { correo: string; bodegaId: number; bodegaNombre: string; rol: string };
 
-function InicioPage({ onLogin }: { onLogin: (sesion: Sesion) => void }) {
+function InicioPage({ onLogin, aviso = "" }: { onLogin: (sesion: Sesion) => void; aviso?: string }) {
   const {
     correo,
     setCorreo,
@@ -22,6 +22,7 @@ function InicioPage({ onLogin }: { onLogin: (sesion: Sesion) => void }) {
         <img src="/logo-arquitejas.jpg" alt="Arquitejas" className="inicio-logo" />
         <h1 className="inicio-titulo">Bienvenido  Arquitejas</h1>
         <p className="inicio-subtitulo">Ingresa tus datos para continuar</p>
+        {aviso && <p className="inicio-error" role="status">{aviso}</p>}
 
         <form className="inicio-form" onSubmit={iniciarSesion} noValidate>
           <label className="inicio-label" htmlFor="correo">

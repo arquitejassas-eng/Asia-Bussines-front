@@ -2,6 +2,11 @@ import { obtenerToken } from "../Utils/auth";
 
 const URL_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// Se dispara cuando el servidor rechaza el token (sesión de 8 h vencida o
+// cuenta desactivada). App.tsx lo escucha y cierra la sesión con un aviso:
+// antes la pantalla se quedaba congelada con datos viejos sin explicar nada.
+export const EVENTO_SESION_EXPIRADA = "arquitejas:sesion-expirada";
+
 type OpcionesPeticion = {
   metodo?: string;
   cuerpo?: unknown;
@@ -36,6 +41,10 @@ async function peticion<T = unknown>(ruta: string, opciones: OpcionesPeticion = 
   const esJson = respuesta.headers.get("content-type")?.includes("application/json");
   const datos: unknown = esJson ? await respuesta.json().catch(() => null) : await respuesta.text();
   if (!respuesta.ok) {
+    // En el login un 401 solo significa "contraseña incorrecta".
+    if (respuesta.status === 401 && token && !ruta.startsWith("/auth/")) {
+      window.dispatchEvent(new Event(EVENTO_SESION_EXPIRADA));
+    }
     const detalle = datos && typeof datos === "object" && ("detail" in datos || "message" in datos)
       ? (datos as { detail?: unknown; message?: unknown }).detail ?? (datos as { message?: unknown }).message
       : datos;

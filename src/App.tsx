@@ -1,6 +1,7 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAlmacenGlobal } from "./Componentes/AlmacenGlobal";
+import { EVENTO_SESION_EXPIRADA } from "./Componentes/Api";
 import { borrarToken } from "./Utils/auth";
 import RutaProtegida from "./Componentes/RutaProtegida";
 import ErrorDePantalla from "./Componentes/ErrorDePantalla";
@@ -53,6 +54,26 @@ export default function App() {
     setSesion(null);
   }
 
+  // Sesión vencida (dura 8 h) o cuenta desactivada: el servidor rechaza el
+  // token y Api.ts avisa con este evento. Se cierra la sesión y la pantalla
+  // de inicio explica por qué, en vez de quedar congelada con datos viejos.
+  const [avisoInicio, setAvisoInicio] = useState("");
+  useEffect(() => {
+    function alExpirar() {
+      borrarToken();
+      setSesionState(null);
+      sessionStorage.removeItem(CLAVE_SESION);
+      setAvisoInicio("Tu sesión se cerró porque venció (dura 8 horas) o tu cuenta fue desactivada. Vuelve a iniciar sesión.");
+    }
+    window.addEventListener(EVENTO_SESION_EXPIRADA, alExpirar);
+    return () => window.removeEventListener(EVENTO_SESION_EXPIRADA, alExpirar);
+  }, []);
+
+  function iniciarSesion(nuevaSesion: Sesion) {
+    setAvisoInicio("");
+    setSesion(nuevaSesion);
+  }
+
   function rutaInicioPara(s: Sesion | null) {
     if (!s) return "/";
     if (s.rol === "jefe_planta") return "/produccion";
@@ -79,7 +100,7 @@ export default function App() {
           sesion ? (
             <Navigate to={rutaInicioPara(sesion)} replace />
           ) : (
-            <InicioPage onLogin={setSesion} />
+            <InicioPage onLogin={iniciarSesion} aviso={avisoInicio} />
           )
         }
       />
