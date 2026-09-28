@@ -103,7 +103,9 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
   const refrescarProduccionPendiente = useCallback(async () => {
     if (sesion?.rol !== "jefe_planta") return setProduccionPendienteCount(0);
     try {
-      const datos = await api.get<Record<string, unknown>[]>("/apartados") || [];
+      const datos = await api.get<Record<string, unknown>[]>(
+        `/apartados?${ESTADOS_PRODUCCION_PENDIENTE.map((e) => `estados=${e}`).join("&")}`
+      ) || [];
       const apartadosPendientes = datos.map(apartadoDesdeApi).filter((ap) => ESTADOS_PRODUCCION_PENDIENTE.includes(ap.estado));
       setProduccionPendienteCount(calcularSolicitudesPendientes(apartadosPendientes).length);
     } catch {

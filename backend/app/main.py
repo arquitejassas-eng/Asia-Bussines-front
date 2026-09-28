@@ -4,6 +4,7 @@ import time
 from fastapi import FastAPI, Request
 from fastapi import HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -39,6 +40,10 @@ app = FastAPI(
     # localhost cuando /docs se abre contra el backend desplegado.
     servers=[{"url": settings.URL_BACKEND, "description": settings.ENTORNO}],
 )
+
+# Comprime las respuestas grandes (listas que las pantallas refrescan cada
+# pocos segundos): menos datos por la red y respuestas más rápidas.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,

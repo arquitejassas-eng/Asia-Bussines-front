@@ -145,7 +145,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   // los metros seleccionados mientras Planta llenaba el formulario.
   const cargarSolicitudesPendientes = useCallback(async (silenciosa = false) => {
     try {
-      const datos = await api.get("/apartados");
+      const datos = await api.get(`/apartados?${ESTADOS_SOLICITUD_PENDIENTE.map((e) => `estados=${e}`).join("&")}`);
       const apartados = datos.map(apartadoDesdeApi).filter((ap) => ESTADOS_SOLICITUD_PENDIENTE.includes(ap.estado));
       setApartadosPendientes(apartados);
     } catch {

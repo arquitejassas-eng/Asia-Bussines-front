@@ -53,6 +53,11 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
 @router.get("", response_model=list[ApartadoResponse])
 def listar_apartados(
     estado: EstadoApartado | None = None, numero_cotizacion: str = "",
+    # Varios estados a la vez (?estados=a&estados=b). El globo de Planta y
+    # Registrar Producción solo necesitan los que están en producción y se
+    # refrescan solos: pedir todo el histórico (entregados, cancelados...)
+    # en cada recarga gastaba datos de Supabase sin razón.
+    estados: list[EstadoApartado] = Query(default=[]),
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Apartado]:
     consulta = (
@@ -61,6 +66,7 @@ def listar_apartados(
         .filter(Apartado.bodega_id == usuario.bodega_id)
     )
     if estado: consulta = consulta.filter(Apartado.estado == estado)
+    if estados: consulta = consulta.filter(Apartado.estado.in_(estados))
     if numero_cotizacion: consulta = consulta.filter(Apartado.numero_cotizacion.ilike(f"%{numero_cotizacion}%"))
     return consulta.order_by(Apartado.fecha_creacion.desc()).all()
 

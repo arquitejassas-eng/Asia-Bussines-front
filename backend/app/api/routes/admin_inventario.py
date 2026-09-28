@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import case, func, literal, or_
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, requiere_rol
 from app.api.routes.rollos import asignar_peso_actual, filtro_empresa
@@ -162,7 +162,6 @@ def rollos_por_codigo(
     filtro que el resumen."""
     consulta = (
         db.query(Rollo)
-        .options(selectinload(Rollo.historial_consumos))
         .filter(Rollo.codigo_interno == codigo_interno, Rollo.bodega_id.isnot(None))
     )
     if empresa:

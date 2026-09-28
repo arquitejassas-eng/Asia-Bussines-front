@@ -39,7 +39,9 @@ class RolloResponse(ModeloConFechasUtc):
     proveedor: str
     lote: str
     peso_actual_toneladas: float | None = None
-    historial_consumos: list[HistorialConsumoResponse] = []
+    # Sin historial_consumos: ninguna pantalla lo usaba y viajaba completo con
+    # cada rollo en cada actualización automática (crece con cada consumo).
+    # La hoja de vida del rollo usa GET /rollos/{id}/historial.
 
 
 class PaginaRollos(BaseModel):

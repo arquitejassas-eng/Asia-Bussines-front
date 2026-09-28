@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
@@ -18,6 +20,8 @@ from app.services.transferencias import (
 )
 
 router = APIRouter(prefix="/bodegas", tags=["Bodegas"])
+
+DIAS_HISTORIAL_SOLICITUDES = 60
 
 
 @router.post("", response_model=BodegaResponse, status_code=status.HTTP_201_CREATED,
@@ -98,8 +102,13 @@ def solicitudes_pendientes_para_mi(
 def mis_solicitudes_enviadas(
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)
 ) -> list[Solicitud]:
+    # Las pendientes siempre; las ya respondidas solo de los últimos
+    # DIAS_HISTORIAL_SOLICITUDES días: esta lista se refresca sola cada 10 s
+    # y mandar todo el histórico en cada recarga gastaba datos de Supabase.
+    desde = datetime.now(timezone.utc) - timedelta(days=DIAS_HISTORIAL_SOLICITUDES)
     return db.query(Solicitud).filter(
-        Solicitud.bodega_solicitante_id == usuario.bodega_id
+        Solicitud.bodega_solicitante_id == usuario.bodega_id,
+        (Solicitud.estado == EstadoSolicitud.PENDIENTE) | (Solicitud.fecha >= desde),
     ).order_by(Solicitud.fecha.desc()).all()
 
 
