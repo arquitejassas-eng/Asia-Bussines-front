@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { rolloDesdeApi, reservaCodigoDesdeApi, movimientoDesdeApi } from "./Mapeo";
 import { useCargaRollosInventario } from "../Hooks/useCargaRollosInventario";
+import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 
 export const ESTADOS_ROLLO = {
   cerrado: "Cerrado",
@@ -54,7 +55,9 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
     setPagina(1);
   }
 
-  const cargarRollos = useCallback(async () => {
+  // `silenciosa` (actualización automática): si falla, conserva los rollos
+  // que ya estaban en pantalla en vez de vaciar la lista.
+  const cargarRollos = useCallback(async (silenciosa = false) => {
     const consultaActual = ++ultimaConsulta.current;
     try {
       const parametros = new URLSearchParams();
@@ -83,7 +86,7 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
       setMisRollos(datos.items.map(rolloDesdeApi));
       setPaginacion(datos);
     } catch {
-      if (consultaActual !== ultimaConsulta.current) return;
+      if (consultaActual !== ultimaConsulta.current || silenciosa) return;
       setMisRollos([]);
     }
   }, [filtros, pagina, vista]);
@@ -94,7 +97,7 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
 
   const [reservasPorCodigo, setReservasPorCodigo] = useState<Record<string, number>>({});
 
-  const cargarReservas = useCallback(async () => {
+  const cargarReservas = useCallback(async (silenciosa = false) => {
     try {
       const datos = await api.get("/apartados/reservas");
       const mapa = {};
@@ -103,13 +106,17 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
       }
       setReservasPorCodigo(mapa);
     } catch {
-      setReservasPorCodigo({});
+      if (!silenciosa) setReservasPorCodigo({});
     }
   }, []);
 
   useEffect(() => {
     cargarReservas();
   }, [cargarReservas]);
+
+  // Rollos que otra persona carga o consume aparecen sin recargar, sin
+  // tocar los filtros, la página ni los grupos abiertos.
+  useActualizacionAutomatica(() => Promise.all([cargarRollos(true), cargarReservas(true)]));
 
   const rollosFiltrados = misRollos;
 

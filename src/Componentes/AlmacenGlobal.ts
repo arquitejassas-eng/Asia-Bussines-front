@@ -2,13 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, envioDesdeApi, solicitudDesdeApi } from "./Mapeo";
 import { useUnidadesFamilia } from "../Hooks/useUnidadesFamilia";
+import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import { calcularSolicitudesPendientes } from "../Utils/produccion";
 import type { Bodega, Envio, EnvioApi, Sesion, Solicitud, SolicitudApi } from "../types/dominio";
 
 // Notificaciones de solicitudes/envíos entre bodegas: no hay push del
-// servidor, así que se refrescan solas cada cierto tiempo mientras haya
-// sesión, para que el badge de BarraLateral se entere sin recargar.
-const INTERVALO_POLLING_NOTIFICACIONES_MS = 20_000;
+// servidor, así que se refrescan solas (useActualizacionAutomatica) mientras
+// haya sesión, para que el badge de BarraLateral se entere sin recargar.
 
 // Mismos estados que usa Produccion.ts para filtrar qué apartados cuentan
 // como "pendientes de producción".
@@ -119,29 +119,10 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     if (sesion?.correo) cargarUnidadesFamilia();
   }, [cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente, cargarUnidadesFamilia, sesion?.correo]);
 
-  useEffect(() => {
-    if (!sesion?.correo) return;
-
-    const intervalo = setInterval(() => {
-      refrescarSolicitudesPendientes();
-      refrescarEnviosPendientes();
-      refrescarProduccionPendiente();
-    }, INTERVALO_POLLING_NOTIFICACIONES_MS);
-
-    function alVolverVisible() {
-      if (document.visibilityState === "visible") {
-        refrescarSolicitudesPendientes();
-        refrescarEnviosPendientes();
-        refrescarProduccionPendiente();
-      }
-    }
-    document.addEventListener("visibilitychange", alVolverVisible);
-
-    return () => {
-      clearInterval(intervalo);
-      document.removeEventListener("visibilitychange", alVolverVisible);
-    };
-  }, [sesion?.correo, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente]);
+  useActualizacionAutomatica(
+    () => Promise.all([refrescarSolicitudesPendientes(), refrescarEnviosPendientes(), refrescarProduccionPendiente()]),
+    { activa: Boolean(sesion?.correo) },
+  );
 
   return {
     bodegas, solicitudes, envios, cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes,

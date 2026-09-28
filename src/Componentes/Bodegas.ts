@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { disponibilidadCodigoDesdeApi, envioDesdeApi, productoDesdeApi, rolloDesdeApi, solicitudDesdeApi } from "./Mapeo";
 import { redondearRecepcion } from "../Utils/recepcion";
+import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import type { AlmacenGlobal, Bodega, Envio, EnvioApi, Producto, Sesion, Solicitud, SolicitudApi } from "../types/dominio";
 
 const TIPOS_OPERACION = [
@@ -157,24 +158,26 @@ export function useControladorBodegas(sesion: Sesion | null | undefined, almacen
   // ---------- Notificaciones: solicitudes que me llegan a mí ----------
   const [solicitudesPendientesParaMi, setSolicitudesPendientesParaMi] = useState<Solicitud[]>([]);
 
-  const cargarSolicitudesPendientesParaMi = useCallback(async () => {
+  // `silenciosa` en los tres cargadores de esta sección = actualización
+  // automática: si falla, conserva lo que ya estaba en pantalla.
+  const cargarSolicitudesPendientesParaMi = useCallback(async (silenciosa = false) => {
     try {
       const datos = await api.get<SolicitudApi[]>("/bodegas/solicitudes/recibidas") || [];
       setSolicitudesPendientesParaMi(datos.map((s) => solicitudDesdeApi(s, bodegasPorId)));
     } catch {
-      setSolicitudesPendientesParaMi([]);
+      if (!silenciosa) setSolicitudesPendientesParaMi([]);
     }
   }, [bodegasPorId]);
 
   // ---------- Mis solicitudes enviadas ----------
   const [misSolicitudesEnviadas, setMisSolicitudesEnviadas] = useState<Solicitud[]>([]);
 
-  const cargarMisSolicitudesEnviadas = useCallback(async () => {
+  const cargarMisSolicitudesEnviadas = useCallback(async (silenciosa = false) => {
     try {
       const datos = await api.get<SolicitudApi[]>("/bodegas/solicitudes/enviadas") || [];
       setMisSolicitudesEnviadas(datos.map((s) => solicitudDesdeApi(s, bodegasPorId)));
     } catch {
-      setMisSolicitudesEnviadas([]);
+      if (!silenciosa) setMisSolicitudesEnviadas([]);
     }
   }, [bodegasPorId]);
 
@@ -286,16 +289,21 @@ export function useControladorBodegas(sesion: Sesion | null | undefined, almacen
   // ---------- Material en camino: envíos de Admin Inventario pendientes de confirmar ----------
   const [enviosPendientes, setEnviosPendientes] = useState<Envio[]>([]);
 
-  const cargarEnviosPendientes = useCallback(async () => {
+  const cargarEnviosPendientes = useCallback(async (silenciosa = false) => {
     try {
       const datos = await api.get<EnvioApi[]>("/envios/recibidos") || [];
       setEnviosPendientes(datos.map((e) => envioDesdeApi(e, bodegasPorId)));
     } catch {
-      setEnviosPendientes([]);
+      if (!silenciosa) setEnviosPendientes([]);
     }
   }, [bodegasPorId]);
 
   useEffect(() => { cargarEnviosPendientes(); }, [cargarEnviosPendientes]);
+
+  // Una solicitud o un envío que llega de otra sede aparece sin recargar.
+  useActualizacionAutomatica(() => Promise.all([
+    cargarSolicitudesPendientesParaMi(true), cargarMisSolicitudesEnviadas(true), cargarEnviosPendientes(true),
+  ]));
 
   const [procesandoEnvioId, setProcesandoEnvioId] = useState<number | null>(null);
   const [errorRespuestaEnvio, setErrorRespuestaEnvio] = useState("");

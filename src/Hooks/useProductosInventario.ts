@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ErrorApi } from "../Componentes/Api";
 import { productoDesdeApi } from "../Componentes/Mapeo";
 import { calibrePantalla } from "../Utils/teja";
+import { useActualizacionAutomatica } from "./useActualizacionAutomatica";
 
 const FORMULARIO_VACIO = {
   codigoImportacion: "",
@@ -97,15 +98,17 @@ export function useProductosInventario() {
   const [alertasStock, setAlertasStock] = useState<Producto[]>([]);
   const [cargandoAlertasStock, setCargandoAlertasStock] = useState(false);
 
-  const cargarAlertasStock = useCallback(async () => {
-    setCargandoAlertasStock(true);
+  // `silenciosa` (actualización automática): sin indicador de carga y, si
+  // falla, se conservan los datos que ya estaban en pantalla.
+  const cargarAlertasStock = useCallback(async (silenciosa = false) => {
+    if (!silenciosa) setCargandoAlertasStock(true);
     try {
       const datos = await api.get<Record<string, unknown>[]>("/inventario/productos/alertas");
       setAlertasStock((datos || []).map(productoDesdeApi));
     } catch {
-      setAlertasStock([]);
+      if (!silenciosa) setAlertasStock([]);
     } finally {
-      setCargandoAlertasStock(false);
+      if (!silenciosa) setCargandoAlertasStock(false);
     }
   }, []);
 
@@ -114,10 +117,12 @@ export function useProductosInventario() {
   // Sin paginar: las tarjetas agrupan por familia (ver gruposPorFamilia más
   // abajo) y una familia no puede quedar partida entre páginas — necesitan
   // el catálogo completo para agrupar bien.
-  const cargarProductos = useCallback(async () => {
+  const cargarProductos = useCallback(async (silenciosa = false) => {
     const consultaActual = ++ultimaConsulta.current;
-    setCargandoProductos(true);
-    setErrorProductos("");
+    if (!silenciosa) {
+      setCargandoProductos(true);
+      setErrorProductos("");
+    }
     try {
       const parametros = new URLSearchParams();
       if (busquedaProducto.trim()) parametros.set("busqueda", busquedaProducto.trim());
@@ -126,14 +131,20 @@ export function useProductosInventario() {
       if (consultaActual !== ultimaConsulta.current) return;
       setProductos((datos || []).map(productoDesdeApi));
     } catch {
-      if (consultaActual !== ultimaConsulta.current) return;
+      if (consultaActual !== ultimaConsulta.current || silenciosa) return;
       setErrorProductos("No se pudieron cargar los productos.");
     } finally {
+      // Sin el `!silenciosa`: si una actualización automática reemplazó a
+      // una carga normal en curso, es ella la que debe apagar el indicador.
       if (consultaActual === ultimaConsulta.current) setCargandoProductos(false);
     }
   }, [busquedaProducto]);
 
   useEffect(() => { cargarProductos(); }, [cargarProductos]);
+
+  // Lo que otra persona registra en esta bodega (una venta, una carga de
+  // Excel) aparece sin recargar, sin tocar la búsqueda ni el formulario.
+  useActualizacionAutomatica(() => Promise.all([cargarProductos(true), cargarAlertasStock(true)]));
 
   function actualizarCampoProducto(campo: keyof FormularioProducto, valor: string | number) {
     setFormularioProducto((actual) => ({ ...actual, [campo]: valor }));

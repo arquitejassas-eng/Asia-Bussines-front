@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ErrorApi } from "../Componentes/Api";
+import { useActualizacionAutomatica } from "./useActualizacionAutomatica";
 import { apartadoDesdeApi, disponibilidadCodigoDesdeApi, disponibilidadProductoDesdeApi, productoDesdeApi } from "../Componentes/Mapeo";
 
 // Cada línea del formulario declara su propia modalidad -- un mismo apartado
@@ -49,23 +50,35 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
   const [errorApartados, setErrorApartados] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
 
-  const cargarApartados = useCallback(async () => {
-    setCargandoApartados(true);
-    setErrorApartados("");
+  // `silenciosa` (actualización automática): sin "Cargando..." ni mensaje de
+  // error, y sin tocar el formulario de nuevo apartado. `ultimaConsulta`
+  // descarta una respuesta vieja (ej. de otro filtro de estado) que llegue
+  // después de una más nueva.
+  const ultimaConsulta = useRef(0);
+  const consultarApartados = useCallback(async (silenciosa: boolean) => {
+    const consulta = ++ultimaConsulta.current;
+    if (!silenciosa) {
+      setCargandoApartados(true);
+      setErrorApartados("");
+    }
     try {
       const parametros = new URLSearchParams();
       if (filtroEstado) parametros.set("estado", filtroEstado);
       const cadena = parametros.toString();
       const datos = await api.get(`/apartados${cadena ? `?${cadena}` : ""}`);
+      if (consulta !== ultimaConsulta.current) return;
       setApartados((datos as Record<string, unknown>[]).map(apartadoDesdeApi));
     } catch {
-      setErrorApartados("No se pudieron cargar los apartados.");
+      if (!silenciosa && consulta === ultimaConsulta.current) setErrorApartados("No se pudieron cargar los apartados.");
     } finally {
-      setCargandoApartados(false);
+      if (consulta === ultimaConsulta.current) setCargandoApartados(false);
     }
   }, [filtroEstado]);
 
+  const cargarApartados = useCallback(() => consultarApartados(false), [consultarApartados]);
+
   useEffect(() => { cargarApartados(); }, [cargarApartados]);
+  useActualizacionAutomatica(() => consultarApartados(true));
 
   const [formulario, setFormulario] = useState<FormularioApartado>(FORMULARIO_VACIO);
   const [mostrarFormularioApartado, setMostrarFormularioApartado] = useState(false);

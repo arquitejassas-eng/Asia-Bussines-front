@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { envioDesdeApi, rolloDesdeApi } from "./Mapeo";
+import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
 type RolloResumen = {
@@ -26,8 +27,9 @@ const COMPARATIVO_VACIO: Comparativo = {
   pesoActualTotalPorBodega: {}, pesoActualTotalGeneral: 0, rollosSinPesoActualTotal: 0, calibresSinEquivalencia: [],
 };
 const TAMANO_PAGINA_RESUMEN = 10;
-// 5 s: son pocos vendedores (~5) y un dato viejo puede llevar a vender
-// material que ya no existe. Ver el efecto de actualización automática.
+// 5 s (el resto de pantallas usa SEGUNDOS_ACTUALIZACION_PANTALLAS): es la
+// pantalla de los vendedores (~5), y un dato viejo puede llevar a ofrecer
+// material que ya no existe.
 const SEGUNDOS_ACTUALIZACION_AUTOMATICA = 5;
 
 function paginar<T>(items: T[], pagina: number) {
@@ -104,36 +106,17 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     } catch {
       if (!silenciosa && consulta === consultaComparativo.current) setComparativo(COMPARATIVO_VACIO);
     } finally {
-      if (!silenciosa && consulta === consultaComparativo.current) setCargandoComparativo(false);
+      // La consulta más reciente apaga el indicador, sea o no silenciosa: si
+      // una automática reemplazó a una normal en curso, le toca a ella.
+      if (consulta === consultaComparativo.current) setCargandoComparativo(false);
     }
   }, [parametroEmpresa]);
 
   useEffect(() => { cargarComparativo(); }, [cargarComparativo]);
 
-  // Actualización automática: lo que otra sede carga (ej. un Excel en
-  // Ricaurte) aparece sin recargar la página. Solo con la pestaña a la vista
-  // -- una pestaña en segundo plano no consulta -- y de inmediato al volver
-  // a ella. Cada consulta recorre todo el inventario de todas las sedes: si
-  // una tarda más que el intervalo, no se lanza otra encima (se salta ese
-  // turno) para que no se acumulen contra la base.
-  const actualizacionEnCurso = useRef(false);
-  useEffect(() => {
-    const actualizarSiVisible = async () => {
-      if (document.visibilityState !== "visible" || actualizacionEnCurso.current) return;
-      actualizacionEnCurso.current = true;
-      try {
-        await cargarComparativo(true);
-      } finally {
-        actualizacionEnCurso.current = false;
-      }
-    };
-    const intervalo = window.setInterval(actualizarSiVisible, SEGUNDOS_ACTUALIZACION_AUTOMATICA * 1000);
-    document.addEventListener("visibilitychange", actualizarSiVisible);
-    return () => {
-      window.clearInterval(intervalo);
-      document.removeEventListener("visibilitychange", actualizarSiVisible);
-    };
-  }, [cargarComparativo]);
+  // Lo que otra sede carga (ej. un Excel en Ricaurte) aparece sin recargar
+  // la página.
+  useActualizacionAutomatica(() => cargarComparativo(true), { segundos: SEGUNDOS_ACTUALIZACION_AUTOMATICA });
 
   // ---------- Paginación del resumen (10 por página, cada tabla aparte) ----------
   const [paginaRollos, setPaginaRollos] = useState(1);
