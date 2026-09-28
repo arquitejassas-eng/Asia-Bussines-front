@@ -28,7 +28,7 @@ const COMPARATIVO_VACIO: Comparativo = {
 const TAMANO_PAGINA_RESUMEN = 10;
 // 5 s: son pocos vendedores (~5) y un dato viejo puede llevar a vender
 // material que ya no existe. Ver el efecto de actualización automática.
-export const SEGUNDOS_ACTUALIZACION_AUTOMATICA = 5;
+const SEGUNDOS_ACTUALIZACION_AUTOMATICA = 5;
 
 function paginar<T>(items: T[], pagina: number) {
   const total = items.length;
@@ -57,7 +57,6 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   const [empresaResumen, setEmpresaResumen] = useState("");
   const parametroEmpresa = empresaResumen ? `empresa=${encodeURIComponent(empresaResumen)}` : "";
 
-  const [ultimaActualizacion, setUltimaActualizacion] = useState<Date | null>(null);
   // Si una respuesta vieja llega después de una más nueva (ej. se cambió el
   // filtro de empresa justo durante una actualización automática), se ignora.
   const consultaComparativo = useRef(0);
@@ -98,7 +97,6 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
         rollosSinPesoActualTotal: datos.rollos_sin_peso_actual_total || 0,
         calibresSinEquivalencia: datos.calibres_sin_equivalencia || [],
       });
-      setUltimaActualizacion(new Date());
       if (!silenciosa) {
         setPaginaRollos(1);
         setPaginaProductos(1);
@@ -344,7 +342,6 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   return {
     soloLectura,
     comparativo, cargandoComparativo, empresaResumen, setEmpresaResumen,
-    ultimaActualizacion, actualizarComparativo: () => cargarComparativo(true),
 
     rollosResumenPagina, paginacionRollos, paginaRollos, setPaginaRollos,
     productosResumenPagina, paginacionProductos, paginaProductos, setPaginaProductos,
