@@ -25,7 +25,10 @@ ALIAS_CAMPOS: dict[str, list[str]] = {
     "codigo_interno": ["codigo de producto", "codigo producto", "codigo interno", "codigo clasificacion", "codigo"],
     "identificador_rollo": ["referencia", "identificador de rollo", "id rollo", "n rollo"],
     "descripcion": ["descripcion"],
-    "calibre": ["calibre", "cal /esp", "espesor"],
+    # "espesor" antes que "cal /esp": en los Excel del negocio ESPESOR trae el
+    # número limpio (0.29), mientras CAL /ESP es texto escrito a mano
+    # ("30 - (0,29)") y un paréntesis olvidado cambia el calibre leído.
+    "calibre": ["calibre", "espesor", "cal /esp"],
     "peso_neto": ["peso", "peso neto", "kg net=neto", "net weight"],
     "color_material": ["color"],
     "metros_disponibles": ["disponible sticker", "disponible real", "disponible practico", "disponible", "metros disponibles"],
@@ -37,6 +40,11 @@ ALIAS_CAMPOS: dict[str, list[str]] = {
 }
 
 ESTADOS_VIGENTES = {"cerrado", "abierto"}
+
+# Todos los espesores de este negocio son menores a 1 mm (ver
+# `_match_equivalencias` en routes/rollos.py): un calibre de 1 o más es un
+# error de lectura o de digitación, nunca un rollo real.
+CALIBRE_MAXIMO = 1.0
 
 # Mismos colores que reconoce el frontend en Utils/colorRollo.ts — si el
 # Excel no trae una columna de color separada (como la hoja CONTROL, que solo
@@ -76,7 +84,9 @@ def _texto(fila: pd.Series, mapeo: dict[str, str], campo: str) -> str:
 
 def _parsear_numero(texto: str) -> float | None:
     """Intenta leer un número tal cual; si no puede (ej. "32 - (0,20)"),
-    busca el número entre paréntesis o el primer número decimal del texto."""
+    busca el número entre paréntesis o el primer número decimal del texto.
+    El paréntesis de cierre es opcional: "30 - (0,29" (olvidado al escribir)
+    se lee 0,29 y no 30."""
     if not texto:
         return None
     limpio = texto.strip().replace(",", ".")
@@ -84,7 +94,7 @@ def _parsear_numero(texto: str) -> float | None:
         return float(limpio)
     except ValueError:
         pass
-    entre_parentesis = re.search(r"\(([\d.,]+)\)", texto)
+    entre_parentesis = re.search(r"\(\s*(\d+(?:[.,]\d+)?)", texto)
     if entre_parentesis:
         try:
             return float(entre_parentesis.group(1).replace(",", "."))
@@ -153,7 +163,14 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
         if metros_totales is None:
             metros_totales = round(metros_disponibles + metros_consumidos, 2)
 
-        calibre = _parsear_numero(_texto(fila, mapeo, "calibre")) or 0.0
+        calibre_texto = _texto(fila, mapeo, "calibre")
+        calibre = _parsear_numero(calibre_texto) or 0.0
+        if calibre >= CALIBRE_MAXIMO:
+            resultado.omitidas.append(FilaOmitida(
+                numero_fila, identificador_rollo,
+                f"Calibre '{calibre_texto}' no válido (se leyó {calibre:g}; debe ser menor a 1 mm, ej. 0,29). Corrige la celda.",
+            ))
+            continue
         peso_neto = _parsear_numero(_texto(fila, mapeo, "peso_neto"))
         descripcion = _texto(fila, mapeo, "descripcion")
         color_material = _texto(fila, mapeo, "color_material") or _extraer_color_de_texto(descripcion)
