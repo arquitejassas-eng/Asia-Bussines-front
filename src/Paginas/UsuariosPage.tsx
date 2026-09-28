@@ -10,6 +10,7 @@ const ETIQUETAS_ROL: Record<string, string> = {
   admin_inventario: "Admin Inventario",
   administrativo: "Administrativo",
   jefe_planta: "Jefe de Planta",
+  vendedor: "Vendedor",
 };
 
 function UsuariosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
@@ -62,6 +63,7 @@ function UsuariosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
                     <option value="administrativo">Administrativo</option>
                     <option value="jefe_planta">Jefe de Planta</option>
                     <option value="admin_inventario">Admin Inventario</option>
+                    <option value="vendedor">Vendedor</option>
                     <option value="superadmin">SUPERADMIN</option>
                   </select>
                 </div>
@@ -215,6 +217,7 @@ function UsuariosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
                     <option value="administrativo">Administrativo</option>
                     <option value="jefe_planta">Jefe de Planta</option>
                     <option value="admin_inventario">Admin Inventario</option>
+                    <option value="vendedor">Vendedor</option>
                     <option value="superadmin">SUPERADMIN</option>
                   </select>
                   <label>Bodega</label>

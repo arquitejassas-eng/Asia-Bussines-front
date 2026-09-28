@@ -65,7 +65,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
         <div className="inventario-page">
           <div className="inventario-header">
             <h1 className="inventario-titulo">Inventario total</h1>
-            {!c.mostrarFormularioEnvio && (
+            {!c.soloLectura && !c.mostrarFormularioEnvio && (
               <div style={{ display: "flex", gap: "0.6rem" }}>
                 <button
                   className="inventario-boton-cancelar"
@@ -80,8 +80,14 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
             )}
           </div>
           <p className="inventario-carga-ayuda">
-            Consulta el inventario real de cada sede y reparte el material que recibiste entre ellas.
-            Al enviar, la sede destino recibe una notificación para confirmar si ya llegó.
+            {c.soloLectura ? (
+              "Consulta el inventario real de productos y rollos en cada sede."
+            ) : (
+              <>
+                Consulta el inventario real de cada sede y reparte el material que recibiste entre ellas.
+                Al enviar, la sede destino recibe una notificación para confirmar si ya llegó.
+              </>
+            )}
           </p>
 
           {mostrarAdminUnidades && !c.mostrarFormularioEnvio && (
@@ -400,7 +406,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                       ⚠ {c.comparativo.rollosSinPesoActualTotal} rollo{c.comparativo.rollosSinPesoActualTotal === 1 ? "" : "s"} en
                       total no {c.comparativo.rollosSinPesoActualTotal === 1 ? "tiene" : "tienen"} su calibre registrado en la
                       tabla de equivalencias, así que no {c.comparativo.rollosSinPesoActualTotal === 1 ? "está incluido" : "están incluidos"} en
-                      estos totales de peso — corrígelo en Administrar tablas de equivalencias.
+                      estos totales de peso{c.soloLectura ? "." : " — corrígelo en Administrar tablas de equivalencias."}
                     </p>
                   )}
 
@@ -460,8 +466,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 </>
               )}
 
-              <h2 className="inventario-form-subtitulo">Envíos enviados</h2>
-              {c.cargandoEnvios ? (
+              {!c.soloLectura && <h2 className="inventario-form-subtitulo">Envíos enviados</h2>}
+              {c.soloLectura ? null : c.cargandoEnvios ? (
                 <p className="inventario-cargando">Cargando...</p>
               ) : (
                 <div className="inventario-tabla-contenedor">

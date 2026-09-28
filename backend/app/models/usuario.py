@@ -14,6 +14,10 @@ class RolUsuario(str, enum.Enum):
     # cualquier bodega y rol) — no participa de los flujos operativos
     # (inventario, apartados, producción, etc.), solo de app/services/usuarios.py.
     SUPERADMIN = "superadmin"
+    # Solo lectura: consulta el inventario de productos y rollos de TODAS las
+    # sedes (resumen de app/api/routes/admin_inventario.py). No tiene ningún
+    # endpoint de escritura, ni bodega fija.
+    VENDEDOR = "vendedor"
 
 
 class Usuario(Base):
@@ -25,8 +29,8 @@ class Usuario(Base):
     rol: Mapped[RolUsuario] = mapped_column(Enum(RolUsuario), nullable=False)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    # NULL únicamente para ADMIN_INVENTARIO y SUPERADMIN: son las únicas cuentas
-    # sin bodega fija (ven/administran entre todas las sedes — ver
+    # NULL únicamente para ADMIN_INVENTARIO, SUPERADMIN y VENDEDOR: son las únicas
+    # cuentas sin bodega fija (ven/administran entre todas las sedes — ver
     # app/api/deps.py::coincide_bodega).
     bodega_id: Mapped[int | None] = mapped_column(ForeignKey("bodegas.id"), nullable=True)
     bodega = relationship("Bodega", back_populates="usuarios")

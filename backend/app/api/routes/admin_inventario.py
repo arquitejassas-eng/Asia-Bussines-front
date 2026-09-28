@@ -12,9 +12,12 @@ from app.models.usuario import RolUsuario
 from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComparativoResponse
 from app.schemas.rollos import RolloResponse
 
+# Todo este router es de solo lectura, por eso VENDEDOR también entra: es su
+# única vista del inventario (todas las sedes). Si se agrega aquí un endpoint
+# de escritura, debe restringirse solo a ADMIN_INVENTARIO en el endpoint.
 router = APIRouter(
     prefix="/admin-inventario", tags=["Admin Inventario"],
-    dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))],
+    dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.VENDEDOR))],
 )
 
 

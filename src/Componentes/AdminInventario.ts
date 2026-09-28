@@ -39,8 +39,10 @@ function paginar<T>(items: T[], pagina: number) {
 
 /** Controlador de la página "Inventario total" de Admin Inventario: resumen
  * comparativo entre sedes (con detalle expandible por rollo individual) y
- * despacho de material propio (envíos). */
+ * despacho de material propio (envíos). El vendedor usa la misma página en
+ * solo lectura: únicamente el resumen, sin inventario propio ni envíos. */
 export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGlobal) {
+  const soloLectura = sesion?.rol === "vendedor";
   const bodegasPorId: Record<string, string> = (almacen?.bodegas || []).reduce((acc, b) => ({ ...acc, [b.id]: b.nombre }), {});
 
   // ---------- Resumen comparativo entre sedes ----------
@@ -166,7 +168,13 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     }
   }, []);
 
-  useEffect(() => { cargarInventarioPropio(); }, [cargarInventarioPropio]);
+  useEffect(() => {
+    if (soloLectura) {
+      setCargandoPropio(false);
+      return;
+    }
+    cargarInventarioPropio();
+  }, [cargarInventarioPropio, soloLectura]);
 
   // ---------- Formulario de nuevo envío ----------
   const FORMULARIO_VACIO: FormularioEnvio = { bodegaDestinoId: "", rollosSeleccionados: [], itemsProducto: [], observaciones: "" };
@@ -273,9 +281,16 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(bodegasPorId)]);
 
-  useEffect(() => { cargarEnviosEnviados(); }, [cargarEnviosEnviados]);
+  useEffect(() => {
+    if (soloLectura) {
+      setCargandoEnvios(false);
+      return;
+    }
+    cargarEnviosEnviados();
+  }, [cargarEnviosEnviados, soloLectura]);
 
   return {
+    soloLectura,
     comparativo, cargandoComparativo,
 
     rollosResumenPagina, paginacionRollos, paginaRollos, setPaginaRollos,

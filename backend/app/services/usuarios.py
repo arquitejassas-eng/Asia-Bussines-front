@@ -14,11 +14,11 @@ from app.models.usuario import RolUsuario, Usuario
 def _validar_alcance_creacion(rol: RolUsuario, bodega_id: int | None, creador: Usuario) -> None:
     """SUPERADMIN no tiene restricción: crea cualquier rol en cualquier
     bodega. Un ADMINISTRATIVO solo puede crear cuentas de su propia bodega,
-    con un rol que no exceda su propio alcance (ni ADMIN_INVENTARIO ni
-    SUPERADMIN)."""
+    con un rol que no exceda su propio alcance (ni ADMIN_INVENTARIO, ni
+    SUPERADMIN, ni VENDEDOR, que ve el inventario de todas las sedes)."""
     if creador.rol == RolUsuario.SUPERADMIN:
         return
-    if rol in (RolUsuario.ADMIN_INVENTARIO, RolUsuario.SUPERADMIN):
+    if rol in (RolUsuario.ADMIN_INVENTARIO, RolUsuario.SUPERADMIN, RolUsuario.VENDEDOR):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para crear una cuenta con ese rol.")
     if bodega_id != creador.bodega_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo puedes crear usuarios para tu propia bodega.")

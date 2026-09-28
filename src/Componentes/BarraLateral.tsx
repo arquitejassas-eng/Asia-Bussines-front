@@ -13,7 +13,7 @@ const MODULOS = [
   { clave: "recepcion", etiqueta: "Recepción y Verificación", ruta: "/recepcion", disponible: true, roles: ["administrativo", "admin_inventario"] },
   { clave: "bodegas", etiqueta: "Bodegas", ruta: "/bodegas", disponible: true, notificable: true, roles: ["administrativo"] },
   { clave: "rollos", etiqueta: "Rollos almacenados", ruta: "/rollos", disponible: true, roles: ["administrativo", "admin_inventario"] },
-  { clave: "admin_inventario", etiqueta: "Inventario total", ruta: "/admin-inventario", disponible: true, roles: ["admin_inventario"] },
+  { clave: "admin_inventario", etiqueta: "Inventario total", ruta: "/admin-inventario", disponible: true, roles: ["admin_inventario", "vendedor"] },
   { clave: "reportes", etiqueta: "Reportes", ruta: "/reportes", disponible: true, roles: ["administrativo"] },
   { clave: "ia", etiqueta: "Asistente de IA", ruta: "/ia", disponible: true, roles: ["administrativo", "admin_inventario"] },
   { clave: "produccion", etiqueta: "Registrar Producción", ruta: "/produccion", disponible: true, notificable: true, roles: ["jefe_planta"] },

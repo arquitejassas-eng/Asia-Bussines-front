@@ -54,7 +54,7 @@ export default function App() {
   function rutaInicioPara(s: Sesion | null) {
     if (!s) return "/";
     if (s.rol === "jefe_planta") return "/produccion";
-    if (s.rol === "admin_inventario") return "/admin-inventario";
+    if (s.rol === "admin_inventario" || s.rol === "vendedor") return "/admin-inventario";
     if (s.rol === "superadmin") return "/usuarios";
     return "/inventario";
   }
@@ -102,7 +102,7 @@ export default function App() {
       />
       <Route
         path="/admin-inventario"
-        element={paginaProtegida(["admin_inventario"], AdminInventarioPage)}
+        element={paginaProtegida(["admin_inventario", "vendedor"], AdminInventarioPage)}
       />
       <Route
         path="/reportes"
