@@ -14,16 +14,20 @@ import pandas as pd
 from app.models.rollo import Rollo
 from app.services import clasificacion
 from app.services.clasificacion import normalizar_texto
+from app.services.empresas import sigla_empresa_desde_nombre
 
 CAMPOS_REQUERIDOS = ["codigo_interno", "identificador_rollo", "metros_disponibles"]
 CAMPOS_OPCIONALES = [
-    "descripcion", "calibre", "peso_neto", "color_material",
+    "empresa", "descripcion", "calibre", "peso_neto", "color_material",
     "metros_consumidos", "metros_totales", "proveedor", "lote", "estado_origen",
 ]
 
 ALIAS_CAMPOS: dict[str, list[str]] = {
     "codigo_interno": ["codigo de producto", "codigo producto", "codigo interno", "codigo clasificacion", "codigo"],
     "identificador_rollo": ["referencia", "identificador de rollo", "id rollo", "n rollo"],
+    # Dueña del material. Es la fuente confiable de la empresa del rollo; si
+    # no se mapea, se deduce de la referencia (ver app/services/empresas.py).
+    "empresa": ["empresa receptora", "empresa", "empresa ingreso", "propietario"],
     "descripcion": ["descripcion"],
     # "espesor" antes que "cal /esp": en los Excel del negocio ESPESOR trae el
     # número limpio (0.29), mientras CAL /ESP es texto escrito a mano
@@ -172,6 +176,9 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
             ))
             continue
         peso_neto = _parsear_numero(_texto(fila, mapeo, "peso_neto"))
+        # "" (columna sin mapear, vacía o con una empresa desconocida) deja
+        # que el rollo nuevo la deduzca de su referencia al guardarse.
+        empresa = sigla_empresa_desde_nombre(_texto(fila, mapeo, "empresa"))
         descripcion = _texto(fila, mapeo, "descripcion")
         color_material = _texto(fila, mapeo, "color_material") or _extraer_color_de_texto(descripcion)
         proveedor = _texto(fila, mapeo, "proveedor")
@@ -184,6 +191,7 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
             existente.metros_consumidos = metros_consumidos
             existente.metros_proveedor = metros_totales
             existente.metros_calculados = metros_totales
+            if empresa: existente.empresa = empresa
             if descripcion: existente.descripcion = descripcion
             if calibre: existente.calibre = calibre
             if peso_neto is not None: existente.peso_neto = peso_neto
@@ -195,7 +203,7 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
         else:
             nuevo = Rollo(
                 bodega_id=bodega_id, recepcion_id=None,
-                codigo_interno=codigo_interno, identificador_rollo=identificador_rollo,
+                codigo_interno=codigo_interno, identificador_rollo=identificador_rollo, empresa=empresa,
                 descripcion=descripcion, familia="Rollos de acero", color_material=color_material,
                 calibre=calibre, peso_neto=peso_neto,
                 metros_proveedor=metros_totales, metros_calculados=metros_totales,
