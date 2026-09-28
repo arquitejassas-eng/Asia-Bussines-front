@@ -35,6 +35,14 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/recepcion", tags=["Recepción y Verificación"])
 
+# Las tablas de equivalencias (espesor -> metros por tonelada, color/RAL,
+# tipo de material) son UNA sola para toda la empresa: con ellas se calculan
+# los metros de cada recepción y el peso de Inventario total de todas las
+# sedes. Decisión del negocio: solo Admin Inventario y el superadmin las
+# cambian -- antes cualquier administrativo de sede podía, incluso sin
+# querer al previsualizar un Excel que trajera esas hojas.
+ROLES_EDITAN_EQUIVALENCIAS = (RolUsuario.ADMIN_INVENTARIO, RolUsuario.SUPERADMIN)
+
 # Cache en memoria del último archivo procesado por sesión de usuario, para
 # no tener que volver a subirlo entre "previsualizar" y "confirmar".
 # TODO producción: mover a Redis o similar si hay más de un worker.
@@ -101,6 +109,14 @@ async def previsualizar_archivo(
     mapeo_sugerido = srv.auto_detectar_mapeo(encabezados)
 
     importadas_espesor = importadas_color = 0
+    nota = ""
+    if (hoja_espesor or hoja_color) and usuario.rol not in ROLES_EDITAN_EQUIVALENCIAS:
+        # Una sede no cambia las tablas globales: se ignoran esas hojas.
+        nota = (
+            "El archivo trae hojas de equivalencias (espesores o colores), pero no se importaron: "
+            "solo Admin Inventario puede cambiar esas tablas."
+        )
+        hoja_espesor = hoja_color = None
 
     if hoja_espesor:
         filas_espesor, filas_tipo = srv.leer_hoja_equivalencia_espesor(hojas[hoja_espesor])
@@ -144,7 +160,6 @@ async def previsualizar_archivo(
                 db.flush()
         importadas_color = len(filas_color)
 
-    nota = ""
     if importadas_espesor or importadas_color:
         db.commit()
         partes = []
@@ -452,7 +467,7 @@ def obtener_equivalencias(
 
 
 @router.post("/equivalencias/colores", response_model=EquivalenciaColorResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(*ROLES_EDITAN_EQUIVALENCIAS))])
 def guardar_equivalencia_color(
     datos: EquivalenciaColorInput,
     db: Session = Depends(get_db),
@@ -471,7 +486,7 @@ def guardar_equivalencia_color(
 
 
 @router.post("/equivalencias/tipos", response_model=EquivalenciaTipoResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(*ROLES_EDITAN_EQUIVALENCIAS))])
 def guardar_equivalencia_tipo(
     datos: EquivalenciaTipoInput,
     db: Session = Depends(get_db),
@@ -489,7 +504,7 @@ def guardar_equivalencia_tipo(
 
 
 @router.post("/equivalencias/espesor", response_model=EquivalenciaEspesorResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(*ROLES_EDITAN_EQUIVALENCIAS))])
 def guardar_equivalencia_espesor(
     datos: EquivalenciaEspesorInput,
     db: Session = Depends(get_db),

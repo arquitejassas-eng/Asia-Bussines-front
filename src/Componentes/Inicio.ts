@@ -49,6 +49,8 @@ export function useControladorInicio(onLogin: (sesion: Sesion) => void) {
     } catch (err) {
       if (err instanceof ErrorApi && err.status === 401) {
         setError("Correo o contraseña incorrectos.");
+      } else if (err instanceof ErrorApi && err.status === 429) {
+        setError(err.message); // "Demasiados intentos fallidos. Espera N minuto(s)..."
       } else {
         setError("No se pudo iniciar sesión. Verifica tu conexión e intenta de nuevo.");
       }

@@ -4,6 +4,8 @@ import { usuarioDesdeApi } from "../Componentes/Mapeo";
 import type { Usuario } from "../types/dominio";
 
 const FORMULARIO_VACIO = { correo: "", contrasena: "", rol: "administrativo", bodegaId: "" };
+// Mismo mínimo que LONGITUD_MINIMA_CONTRASENA en backend/app/schemas/usuario.py.
+const LONGITUD_MINIMA_CONTRASENA = 8;
 
 type FormularioUsuario = typeof FORMULARIO_VACIO;
 type RegistroApi = Record<string, unknown>;
@@ -54,6 +56,10 @@ export function useUsuarios() {
     evento.preventDefault();
     if (!formulario.correo.trim() || !formulario.contrasena.trim()) {
       setErrorFormulario("Correo y contraseña son obligatorios.");
+      return;
+    }
+    if (formulario.contrasena.length < LONGITUD_MINIMA_CONTRASENA) {
+      setErrorFormulario(`La contraseña debe tener al menos ${LONGITUD_MINIMA_CONTRASENA} caracteres.`);
       return;
     }
     setGuardando(true);
@@ -163,6 +169,10 @@ export function useUsuarios() {
     evento.preventDefault();
     if (!usuarioRestableciendo || !nuevaContrasena.trim()) {
       setErrorRestablecer("Escribe la nueva contraseña.");
+      return;
+    }
+    if (nuevaContrasena.length < LONGITUD_MINIMA_CONTRASENA) {
+      setErrorRestablecer(`La contraseña debe tener al menos ${LONGITUD_MINIMA_CONTRASENA} caracteres.`);
       return;
     }
     setGuardandoRestablecer(true);

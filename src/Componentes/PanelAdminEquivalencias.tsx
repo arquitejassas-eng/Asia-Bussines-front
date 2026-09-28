@@ -16,6 +16,9 @@ function PanelAdminEquivalencias({
   agregarEquivalenciaColor,
   agregarEquivalenciaTipo,
   agregarEquivalenciaEspesor,
+  // false = solo lectura (encargados de sede): las tablas son globales y solo
+  // Admin Inventario / superadmin las cambian (el backend también lo exige).
+  puedeEditar = true,
 }) {
   const [formColor, setFormColor] = useState({ ral: "", nombre: "", codigoInterno: "" });
   const [formTipo, setFormTipo] = useState({ nombre: "", codigoInterno: "" });
@@ -74,7 +77,7 @@ function PanelAdminEquivalencias({
             ))}
           </tbody>
         </table>
-        <form className="recepcion-admin-form" onSubmit={enviarColor}>
+        {puedeEditar !== false && (<form className="recepcion-admin-form" onSubmit={enviarColor}>
           <input
             placeholder="RAL (ej. 5017)"
             value={formColor.ral}
@@ -93,7 +96,7 @@ function PanelAdminEquivalencias({
           <button className="recepcion-boton-secundario" type="submit">
             Agregar / actualizar
           </button>
-        </form>
+        </form>)}
       </div>
 
       <div className="recepcion-admin-columna">
@@ -114,7 +117,7 @@ function PanelAdminEquivalencias({
             ))}
           </tbody>
         </table>
-        <form className="recepcion-admin-form" onSubmit={enviarTipo}>
+        {puedeEditar !== false && (<form className="recepcion-admin-form" onSubmit={enviarTipo}>
           <input
             placeholder="Tipo (ej. Lamina)"
             value={formTipo.nombre}
@@ -128,7 +131,7 @@ function PanelAdminEquivalencias({
           <button className="recepcion-boton-secundario" type="submit">
             Agregar / actualizar
           </button>
-        </form>
+        </form>)}
       </div>
 
       <div className="recepcion-admin-columna">
@@ -151,7 +154,7 @@ function PanelAdminEquivalencias({
             ))}
           </tbody>
         </table>
-        <form className="recepcion-admin-form" onSubmit={enviarEspesor}>
+        {puedeEditar !== false && (<form className="recepcion-admin-form" onSubmit={enviarEspesor}>
           <input
             placeholder="Espesor (ej. 0.25)"
             value={formEspesor.espesor}
@@ -170,7 +173,7 @@ function PanelAdminEquivalencias({
           <button className="recepcion-boton-secundario" type="submit">
             Agregar / actualizar
           </button>
-        </form>
+        </form>)}
         <p className="recepcion-texto-ayuda">
           Solo necesitas llenar uno de los dos valores (MT x TON o Peso/m); el sistema
           calcula el otro automáticamente.

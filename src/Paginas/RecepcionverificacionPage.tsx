@@ -44,6 +44,8 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
   // tablas de equivalencias (puntos 5 y 6 del requerimiento). No necesita
   // vivir en el controlador porque no afecta ningún cálculo.
   const [mostrarAdmin, setMostrarAdmin] = useState(false);
+  // Mismos roles que ROLES_EDITAN_EQUIVALENCIAS en backend/app/api/routes/recepcion.py.
+  const puedeEditarEquivalencias = ["admin_inventario", "superadmin"].includes(sesion?.rol);
 
   // ---- Detección de equivalencias faltantes (para guiar a la encargada) ----
   // El controlador ya marca esMaterialNuevo (tipo/color sin equivalencia) y
@@ -109,11 +111,17 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                 className="recepcion-boton-secundario"
                 onClick={() => setMostrarAdmin((actual) => !actual)}
               >
-                {mostrarAdmin ? "Ocultar" : "Administrar"} tablas de equivalencias
+                {mostrarAdmin ? "Ocultar" : puedeEditarEquivalencias ? "Administrar" : "Ver"} tablas de equivalencias
               </button>
 
+              {mostrarAdmin && !puedeEditarEquivalencias && (
+                <p className="recepcion-texto-ayuda">
+                  Estas tablas son de toda la empresa: solo Admin Inventario puede cambiarlas.
+                </p>
+              )}
               {mostrarAdmin && (
                 <PanelAdminEquivalencias
+                  puedeEditar={puedeEditarEquivalencias}
                   tablaColores={c.tablaColores}
                   tablaTipos={c.tablaTipos}
                   tablaEspesor={c.tablaEspesor}
@@ -155,7 +163,7 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                 </p>
                 {c.notaImportacionEquivalencias && (
                   <p className="recepcion-texto-ayuda recepcion-nota-importacion">
-                    ✓ {c.notaImportacionEquivalencias}
+                    {c.notaImportacionEquivalencias.includes("no se importaron") ? "⚠" : "✓"} {c.notaImportacionEquivalencias}
                   </p>
                 )}
 
@@ -272,9 +280,9 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                   <section className="recepcion-tarjeta recepcion-aviso-equivalencias">
                     <h4>Hay equivalencias que aún no están configuradas</h4>
                     <p className="recepcion-texto-ayuda">
-                      Estos rollos no se pudieron clasificar o calcular porque falta agregar
-                      su equivalencia. Agrégalas en el panel de administración (más abajo) y
-                      el sistema recalculará todo automáticamente.
+                      {puedeEditarEquivalencias
+                        ? "Estos rollos no se pudieron clasificar o calcular porque falta agregar su equivalencia. Agrégalas en el panel de administración (más abajo) y el sistema recalculará todo automáticamente."
+                        : "Estos rollos no se pudieron clasificar o calcular porque falta su equivalencia. Pídele a Admin Inventario que la agregue y luego vuelve a verificar el archivo."}
                     </p>
                     <ul className="recepcion-lista-faltantes">
                       {tiposFaltantes.map((tipo) => (
@@ -293,12 +301,14 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                         </li>
                       ))}
                     </ul>
-                    <button
-                      className="recepcion-boton-secundario"
-                      onClick={() => setMostrarAdmin(true)}
-                    >
-                      Ir a administrar tablas de equivalencias
-                    </button>
+                    {puedeEditarEquivalencias && (
+                      <button
+                        className="recepcion-boton-secundario"
+                        onClick={() => setMostrarAdmin(true)}
+                      >
+                        Ir a administrar tablas de equivalencias
+                      </button>
+                    )}
                   </section>
                 )}
 
