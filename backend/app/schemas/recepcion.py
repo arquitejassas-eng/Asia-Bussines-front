@@ -26,6 +26,7 @@ class PrevisualizacionRollo(BaseModel):
     tipo_material: str = ""
     proveedor: str = ""
     lote: str = ""
+    empresa: str = ""  # sigla de la empresa receptora; "" = se deduce de la referencia
 
     clasificado: bool
     codigo_clasificacion: str | None = None

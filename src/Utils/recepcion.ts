@@ -5,6 +5,7 @@ export const ETIQUETAS_CAMPOS_RECEPCION = {
   coil_meters: "Coil Meters (reportado)", color_top: "Color TOP", color_back: "Color BACK",
   codigo_proveedor: "Código del proveedor", tipo_material: "Información del material / Tipo (opcional si solo manejas Lámina)",
   proveedor: "Proveedor", lote: "Lote",
+  empresa: "Empresa receptora — dueña del material (recomendado; si no, se deduce de la referencia)",
 };
 export const TODOS_LOS_CAMPOS_RECEPCION = Object.keys(ETIQUETAS_CAMPOS_RECEPCION);
 
@@ -29,7 +30,7 @@ export function traducirRolloRecepcion(rollo: Record<string, any>, indice: numbe
     id: indice + 1, rollo: rollo.rollo, codigoProveedor: rollo.codigo_proveedor, espesor: rollo.espesor,
     ancho: rollo.ancho, netWeight: rollo.net_weight, grossWeight: rollo.gross_weight,
     coilMeters: rollo.coil_meters, colorTop: rollo.color_top, colorBack: rollo.color_back,
-    tipoMaterial: rollo.tipo_material, proveedor: rollo.proveedor, lote: rollo.lote,
+    tipoMaterial: rollo.tipo_material, proveedor: rollo.proveedor, lote: rollo.lote, empresa: rollo.empresa || "",
     clasificado: rollo.clasificado, codigoClasificacion: rollo.codigo_clasificacion || "",
     colorNombre: rollo.color_nombre || "", tipoNombre: rollo.tipo_nombre || "",
     metrosCalculados: rollo.metros_calculados, diferencia, resultado, esMaterialNuevo: !rollo.clasificado,

@@ -5,6 +5,7 @@ import { formatearFechaColombia } from "../Utils/fechas";
 import { useControladorRecepcion } from "../Componentes/Recepcionverificacion";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import PanelAdminEquivalencias from "../Componentes/PanelAdminEquivalencias";
+import { nombreEmpresa } from "../Utils/empresas";
 import "../Style/Recepcionverificacion.css";
 
 const ETIQUETAS_RESULTADO = {
@@ -310,6 +311,7 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                     <thead>
                       <tr>
                         <th>Rollo (ID único)</th>
+                        <th>Empresa</th>
                         <th>Código interno</th>
                         <th>Tipo / Color</th>
                         <th>Espesor</th>
@@ -324,6 +326,15 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                       {c.rollos.map((r) => (
                         <tr key={r.id} className={r.esMaterialNuevo ? "fila-nueva" : ""}>
                           <td>{r.rollo}</td>
+                          <td>
+                            {r.empresa ? (
+                              nombreEmpresa(r.empresa)
+                            ) : (
+                              <span className="recepcion-texto-secundario" title="Sin columna de empresa receptora: se deduce de la referencia al guardar.">
+                                Por referencia
+                              </span>
+                            )}
+                          </td>
                           <td>
                             {r.clasificado ? (
                               r.codigoClasificacion

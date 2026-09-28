@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from app.services.empresas import sigla_empresa_desde_nombre
+
 CAMPOS_REQUERIDOS = ["rollo", "espesor", "net_weight", "coil_meters"]
 
 ALIAS_CAMPOS: dict[str, list[str]] = {
@@ -37,6 +39,10 @@ ALIAS_CAMPOS: dict[str, list[str]] = {
     "tipo_material": ["tipo de material", "tipo material", "material", "informacion del material", "descripcion"],
     "proveedor": ["proveedor", "empresa proveedora", "supplier"],
     "lote": ["lote", "batch"],
+    # Dueña del material (no confundir con "empresa proveedora"): igual que
+    # en la carga masiva de rollos, es la fuente confiable de la empresa del
+    # rollo; si no se mapea, se deduce de la referencia.
+    "empresa": ["empresa receptora", "empresa", "empresa ingreso", "propietario"],
 }
 
 TOLERANCIA_PORCENTAJE_DEFECTO = 2.0
@@ -174,6 +180,12 @@ class RolloClasificado:
     diferencia_porcentaje: float | None
     resultado: str  # "ok" | "diferencia" | "pendiente_datos"
 
+    # Sigla de la empresa receptora ("AR", "ABG") o "" para deducirla de la
+    # referencia al guardar. Con valor por defecto para que una recepción
+    # verificada antes de existir este campo (guardada con pickle en
+    # archivos_recepcion) se pueda seguir confirmando.
+    empresa: str = ""
+
 
 def _a_float(valor) -> float | None:
     try:
@@ -258,6 +270,7 @@ def clasificar_y_verificar_filas(
                 tipo_material=tipo_material,
                 proveedor=obtener("proveedor"),
                 lote=obtener("lote"),
+                empresa=sigla_empresa_desde_nombre(obtener("empresa")),
                 clasificado=clasificado,
                 codigo_clasificacion=codigo_clasificacion,
                 color_nombre=color_nombre,
