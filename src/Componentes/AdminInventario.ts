@@ -48,16 +48,21 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   // ---------- Resumen comparativo entre sedes ----------
   const [comparativo, setComparativo] = useState(COMPARATIVO_VACIO);
   const [cargandoComparativo, setCargandoComparativo] = useState(true);
+  // Sigla ("AR", "ABG"), "sin_empresa" o "" (todas). Filtra solo los rollos:
+  // los productos no llevan empresa.
+  const [empresaResumen, setEmpresaResumen] = useState("");
+  const parametroEmpresa = empresaResumen ? `empresa=${encodeURIComponent(empresaResumen)}` : "";
 
   const cargarComparativo = useCallback(async () => {
     setCargandoComparativo(true);
+    setCodigoRolloExpandido(null);
     try {
       const datos = await api.get<{
         bodegas?: { id: number; nombre: string }[];
         rollos?: Record<string, any>[]; productos?: Record<string, any>[];
         peso_actual_total_por_bodega?: Record<string, number>; peso_actual_total_general?: number;
         rollos_sin_peso_actual_total?: number;
-      }>("/admin-inventario/comparativo");
+      }>(`/admin-inventario/comparativo${parametroEmpresa ? `?${parametroEmpresa}` : ""}`);
       if (!datos) throw new Error("Respuesta vacía del servidor.");
       setComparativo({
         bodegas: datos.bodegas || [],
@@ -83,7 +88,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     } finally {
       setCargandoComparativo(false);
     }
-  }, []);
+  }, [parametroEmpresa]);
 
   useEffect(() => { cargarComparativo(); }, [cargarComparativo]);
 
@@ -137,7 +142,9 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     setCodigoRolloExpandido(codigo);
     setCargandoRollosExpandido(true);
     try {
-      const datos = await api.get<Record<string, unknown>[]>(`/admin-inventario/rollos-por-codigo?codigo_interno=${encodeURIComponent(codigo)}`);
+      const datos = await api.get<Record<string, unknown>[]>(
+        `/admin-inventario/rollos-por-codigo?codigo_interno=${encodeURIComponent(codigo)}${parametroEmpresa ? `&${parametroEmpresa}` : ""}`
+      );
       setRollosDelCodigoExpandido((datos || []).map(rolloDesdeApi));
     } catch {
       setRollosDelCodigoExpandido([]);
@@ -291,7 +298,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
 
   return {
     soloLectura,
-    comparativo, cargandoComparativo,
+    comparativo, cargandoComparativo, empresaResumen, setEmpresaResumen,
 
     rollosResumenPagina, paginacionRollos, paginaRollos, setPaginaRollos,
     productosResumenPagina, paginacionProductos, paginaProductos, setPaginaProductos,

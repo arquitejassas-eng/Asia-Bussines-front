@@ -1,9 +1,10 @@
 import enum
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.services.empresas import sigla_empresa_desde_referencia
 
 
 class EstadoRollo(str, enum.Enum):
@@ -33,6 +34,11 @@ class Rollo(Base):
     codigo_interno: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
     identificador_rollo: Mapped[str] = mapped_column(String(60), nullable=False)
     codigo_proveedor: Mapped[str] = mapped_column(String(60), default="")
+    # Sigla de la empresa dueña del rollo ("AR" = Arquitejas, "ABG" = Asia
+    # Business). Se deduce sola de `identificador_rollo` al crear el rollo
+    # (ver `_completar_empresa` abajo) y se puede corregir a mano. "" = la
+    # referencia no la traía.
+    empresa: Mapped[str] = mapped_column(String(10), default="", index=True)
     descripcion: Mapped[str] = mapped_column(String(255), default="")
     familia: Mapped[str] = mapped_column(String(50), default="Rollos de acero")
     color_material: Mapped[str] = mapped_column(String(60), default="")
@@ -70,6 +76,15 @@ class Rollo(Base):
             self.estado = EstadoRollo.AGOTADO
         else:
             self.estado = EstadoRollo.ABIERTO
+
+
+@event.listens_for(Rollo, "before_insert")
+def _completar_empresa(_mapper, _conexion, rollo: Rollo) -> None:
+    """Un solo punto para los tres caminos que crean rollos (recepción, carga
+    por Excel e ingreso manual): si nadie indicó la empresa, se deduce de la
+    referencia."""
+    if not rollo.empresa:
+        rollo.empresa = sigla_empresa_desde_referencia(rollo.identificador_rollo, rollo.codigo_interno)
 
 
 class HistorialConsumoRollo(Base):

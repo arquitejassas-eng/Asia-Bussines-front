@@ -2,6 +2,17 @@
 import { useState } from "react";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { claseColorMaterial } from "../Utils/colorRollo";
+import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
+
+// "Arquitejas 3 · Asia Business 2" para la cabecera de cada grupo: el mismo
+// código de clasificación puede tener rollos de las dos empresas.
+function resumenEmpresas(rollos) {
+  const conteo = {};
+  for (const rollo of rollos) conteo[rollo.empresa || ""] = (conteo[rollo.empresa || ""] || 0) + 1;
+  return Object.entries(conteo)
+    .map(([sigla, cantidad]) => `${sigla ? EMPRESAS[sigla] || sigla : "Sin empresa"} ${cantidad}`)
+    .join(" · ");
+}
 
 // Sección "Agrupación visual por código" de Rollos: la tabla principal,
 // agrupada por código interno, expandible por grupo. Extraído de
@@ -13,6 +24,7 @@ function PanelAgrupacionRollos({
   ESTADOS_ROLLO,
   actualizarFamiliaRollo,
   actualizarAnchoRollo,
+  actualizarEmpresaRollo,
   abrirConsumo,
   abrirHistorial,
   abrirSalidaExterna,
@@ -55,6 +67,7 @@ function PanelAgrupacionRollos({
                     {grupo.colorMaterial || "Sin color"}
                   </span>
                   <span>Calibre {grupo.calibre}</span>
+                  <span>{resumenEmpresas(grupo.rollos)}</span>
                 </span>
               </div>
               <div className="rollos-grupo-cantidad">
@@ -79,6 +92,7 @@ function PanelAgrupacionRollos({
                 <thead>
                   <tr>
                     <th>Referencia</th>
+                    <th>Empresa</th>
                     <th>Familia</th>
                     <th>Ancho (m)</th>
                     <th>Proveedor</th>
@@ -98,6 +112,19 @@ function PanelAgrupacionRollos({
                   {grupo.rollos.map((rollo) => (
                     <tr key={rollo.id}>
                       <td>{rollo.identificadorRollo}</td>
+                      <td>
+                        <select
+                          className="rollos-input-familia"
+                          value={rollo.empresa}
+                          title="Se deduce sola de la referencia; cámbiala solo si quedó mal."
+                          onChange={(e) => actualizarEmpresaRollo(rollo.id, e.target.value)}
+                        >
+                          <option value="">Sin empresa</option>
+                          {[...new Set([...Object.keys(EMPRESAS), rollo.empresa].filter(Boolean))].map((sigla) => (
+                            <option key={sigla} value={sigla}>{nombreEmpresa(sigla)}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td>
                         <input
                           className="rollos-input-familia"

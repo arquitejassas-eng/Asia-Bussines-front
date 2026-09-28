@@ -51,7 +51,7 @@ export function solicitudDesdeApi(s: RegistroApi, bodegasPorId: BodegasPorId = {
 export function rolloDesdeApi(r: RegistroApi) {
   const historial = Array.isArray(r.historial_consumos) ? r.historial_consumos : [];
   return { id: numero(r.id), bodegaId: numeroOpcional(r.bodega_id), codigoInterno: texto(r.codigo_interno),
-    identificadorRollo: texto(r.identificador_rollo), codigoProveedor: texto(r.codigo_proveedor),
+    identificadorRollo: texto(r.identificador_rollo), codigoProveedor: texto(r.codigo_proveedor), empresa: texto(r.empresa),
     descripcion: texto(r.descripcion), familia: texto(r.familia), colorMaterial: texto(r.color_material),
     calibre: numero(r.calibre), anchoMaterial: numero(r.ancho_material), pesoNeto: r.peso_neto == null ? null : numero(r.peso_neto),
     pesoActualToneladas: r.peso_actual_toneladas == null ? null : numero(r.peso_actual_toneladas),

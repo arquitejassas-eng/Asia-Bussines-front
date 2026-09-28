@@ -11,7 +11,7 @@ from app.models.rollo import EstadoRollo, Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.inventario import MovimientoResponse
 from app.schemas.rollos import (
-    ActualizarAnchoRollo, ActualizarFamiliaRollo, ActualizarObservacionesRollo, ClasificacionSugeridaResponse, ConfirmarCargaRollosRequest,
+    ActualizarAnchoRollo, ActualizarEmpresaRollo, ActualizarFamiliaRollo, ActualizarObservacionesRollo, ClasificacionSugeridaResponse, ConfirmarCargaRollosRequest,
     ConsumoRolloCrear, PaginaRollos, PrevisualizacionCargaRollosResponse, ResultadoCargaRollosResponse, RolloCrear,
     SalidaExternaRolloCrear,
     RolloResponse, SeleccionarHojaCargaRollosRequest, SugerenciaReferenciaResponse,
@@ -34,7 +34,8 @@ def _rollo_de_mi_bodega(db: Session, rollo_id: int, usuario: Usuario) -> Rollo:
 @router.get("", response_model=list[RolloResponse] | PaginaRollos)
 def listar_rollos(
     codigo_interno: str = "", identificador_rollo: str = "", codigo_proveedor: str = "", descripcion: str = "", familia: str = "",
-    color_material: str = "", calibre: str = "", estado: str = "", proveedor: str = "", fecha_desde: datetime | None = None,
+    color_material: str = "", calibre: str = "", estado: str = "", proveedor: str = "", empresa: str = "",
+    fecha_desde: datetime | None = None,
     fecha_hasta: datetime | None = None, pagina: int = Query(1, ge=1), tamano: int = Query(30, ge=1, le=100),
     paginado: bool = False, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Rollo] | PaginaRollos:
@@ -51,6 +52,7 @@ def listar_rollos(
     if color_material: consulta = consulta.filter(Rollo.color_material.ilike(f"%{color_material}%"))
     if calibre: consulta = consulta.filter(Rollo.calibre == float(calibre))
     if proveedor: consulta = consulta.filter(Rollo.proveedor.ilike(f"%{proveedor}%"))
+    if empresa: consulta = consulta.filter(Rollo.empresa == filtro_empresa(empresa))
     # Sin filtro de estado explícito = "inventario activo": los agotados no
     # deben hacer bulto en la búsqueda normal. Para verlos, se pide el estado
     # explícitamente (ej. estado=agotado), igual que cualquier otro filtro.
@@ -68,6 +70,13 @@ def listar_rollos(
     asignar_peso_actual(db, items)
     return PaginaRollos(items=items, total=total,
                          pagina=pagina, tamano=tamano, total_paginas=max(1, (total + tamano - 1) // tamano))
+
+
+def filtro_empresa(empresa: str) -> str:
+    """Valor a comparar con `Rollo.empresa` a partir del filtro recibido:
+    "sin_empresa" busca los rollos cuya referencia no traía empresa (los que
+    hay que corregir a mano)."""
+    return "" if empresa == "sin_empresa" else empresa.strip().upper()
 
 
 def asignar_peso_actual(db: Session, rollos: list[Rollo]) -> None:
@@ -317,6 +326,20 @@ def actualizar_familia(
     lo agrupe correctamente (recepción registra todo como "Rollos de acero")."""
     rollo = _rollo_de_mi_bodega(db, rollo_id, usuario)
     rollo.familia = datos.familia
+    db.commit()
+    db.refresh(rollo)
+    return rollo
+
+
+@router.patch("/{rollo_id}/empresa", response_model=RolloResponse,
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+def actualizar_empresa(
+    rollo_id: int, datos: ActualizarEmpresaRollo, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Rollo:
+    """Corrige la empresa dueña del rollo cuando la referencia no la traía
+    o se dedujo mal (normalmente se llena sola al crear el rollo)."""
+    rollo = _rollo_de_mi_bodega(db, rollo_id, usuario)
+    rollo.empresa = datos.empresa.strip().upper()
     db.commit()
     db.refresh(rollo)
     return rollo

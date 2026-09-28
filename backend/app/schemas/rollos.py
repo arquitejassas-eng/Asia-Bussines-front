@@ -22,6 +22,7 @@ class RolloResponse(ModeloConFechasUtc):
     codigo_interno: str
     identificador_rollo: str
     codigo_proveedor: str
+    empresa: str = ""
     descripcion: str
     familia: str
     color_material: str
@@ -107,6 +108,12 @@ class ActualizarFamiliaRollo(BaseModel):
     inventario reclasifica el rollo a la familia real (ej. "Teja Colonial")
     para que el módulo Inventario lo agrupe correctamente."""
     familia: str = Field(min_length=1, default="Rollos de acero")
+
+
+class ActualizarEmpresaRollo(BaseModel):
+    """Corrige a mano la empresa dueña del rollo cuando la referencia no la
+    traía o se dedujo mal. "" = sin empresa."""
+    empresa: str = Field(max_length=10, pattern=r"^[A-Za-z]*$")
 
 
 class ActualizarAnchoRollo(BaseModel):

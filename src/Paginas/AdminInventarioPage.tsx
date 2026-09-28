@@ -7,6 +7,7 @@ import { claseColorMaterial } from "../Utils/colorRollo";
 import Paginacion from "../Componentes/Paginacion";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
+import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
 import "../Style/Inventario.css";
 import "../Style/Rollos.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
@@ -42,7 +43,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
       fila["Rollos sin peso actual"] = f.rollosSinPesoActual;
       return fila;
     });
-    exportarArregloAExcel(filas, "Resumen_Rollos_Por_Codigo.xlsx", "Rollos por código");
+    const sufijoEmpresa = c.empresaResumen ? `_${c.empresaResumen === FILTRO_SIN_EMPRESA ? "Sin_empresa" : c.empresaResumen}` : "";
+    exportarArregloAExcel(filas, `Resumen_Rollos_Por_Codigo${sufijoEmpresa}.xlsx`, "Rollos por código");
   }
 
   function exportarResumenProductos() {
@@ -240,6 +242,21 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   </button>
                 )}
               </div>
+              <div className="inventario-buscador" style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <label htmlFor="resumen-empresa" style={{ margin: 0 }}>Empresa</label>
+                <select
+                  id="resumen-empresa"
+                  value={c.empresaResumen}
+                  onChange={(e) => c.setEmpresaResumen(e.target.value)}
+                  style={{ maxWidth: 260 }}
+                >
+                  <option value="">Todas</option>
+                  {Object.keys(EMPRESAS).map((sigla) => (
+                    <option key={sigla} value={sigla}>{nombreEmpresa(sigla)}</option>
+                  ))}
+                  <option value={FILTRO_SIN_EMPRESA}>Sin empresa</option>
+                </select>
+              </div>
               {c.cargandoComparativo ? (
                 <p className="inventario-cargando">Cargando...</p>
               ) : (
@@ -344,6 +361,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                             <tr>
                                               <th>Bodega</th>
                                               <th>Referencia</th>
+                                              <th>Empresa</th>
                                               <th>Peso neto (t)</th>
                                               <th>Peso actual (t)</th>
                                               <th>Metros disponibles</th>
@@ -357,6 +375,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                               <tr key={rollo.id}>
                                                 <td>{bodegas.find((b) => b.id === rollo.bodegaId)?.nombre || "—"}</td>
                                                 <td>{rollo.identificadorRollo}</td>
+                                                <td>{nombreEmpresa(rollo.empresa)}</td>
                                                 <td><strong>{rollo.pesoNeto ?? "—"}</strong></td>
                                                 <td>{rollo.pesoActualToneladas ?? "—"}</td>
                                                 <td>{rollo.metrosDisponibles}</td>
@@ -420,7 +439,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   </div>
                   <p className="inventario-carga-ayuda">
                     Igual que la tabla de arriba, pero para productos (mercancía por unidades, no rollos de
-                    materia prima).
+                    materia prima).{c.empresaResumen && " El filtro de empresa no aplica aquí: los productos no llevan empresa."}
                   </p>
                   <div className="inventario-buscador">
                     <input

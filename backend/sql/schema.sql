@@ -247,12 +247,14 @@ CREATE TABLE rollos (
 	lote VARCHAR(60) NOT NULL,
 	peso_neto FLOAT,
 	ancho_material FLOAT NOT NULL DEFAULT 122,
+	empresa VARCHAR(10) NOT NULL DEFAULT '',
 	PRIMARY KEY (id),
 	FOREIGN KEY(bodega_id) REFERENCES bodegas (id),
 	FOREIGN KEY(recepcion_id) REFERENCES recepciones (id)
 );
 
 CREATE INDEX ix_rollos_bodega_id ON rollos (bodega_id);
+CREATE INDEX ix_rollos_empresa ON rollos (empresa);
 CREATE INDEX ix_rollos_codigo_interno ON rollos (codigo_interno);
 CREATE INDEX ix_rollos_bodega_fecha ON rollos (bodega_id, fecha_ingreso);
 CREATE INDEX ix_rollos_bodega_estado ON rollos (bodega_id, estado);

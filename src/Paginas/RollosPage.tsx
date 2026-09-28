@@ -80,6 +80,7 @@ function RollosPage({ sesion, onCerrarSesion, almacen }) {
             ESTADOS_ROLLO={r.ESTADOS_ROLLO}
             actualizarFamiliaRollo={r.actualizarFamiliaRollo}
             actualizarAnchoRollo={r.actualizarAnchoRollo}
+            actualizarEmpresaRollo={r.actualizarEmpresaRollo}
             abrirConsumo={r.abrirConsumo}
             abrirHistorial={r.abrirHistorial}
             abrirSalidaExterna={r.abrirSalidaExterna}

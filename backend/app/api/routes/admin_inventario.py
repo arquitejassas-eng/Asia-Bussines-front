@@ -3,7 +3,7 @@ from sqlalchemy import case, func, literal, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_db, requiere_rol
-from app.api.routes.rollos import asignar_peso_actual
+from app.api.routes.rollos import asignar_peso_actual, filtro_empresa
 from app.models.bodega import Bodega
 from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.producto import Producto
@@ -71,12 +71,13 @@ def _pivotear(filas, *, con_color: bool, con_peso: bool = False, con_familia: bo
 
 
 @router.get("/comparativo", response_model=ComparativoInventarioResponse)
-def comparativo_inventario(db: Session = Depends(get_db)) -> dict:
+def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> dict:
     """Compara el inventario de todas las sedes en un solo lugar. Solo
     lectura (SELECT + GROUP BY) — no reasigna la propiedad de ningún rollo
     ni producto. Admin Inventario nunca aparece: su propio material sin
     asignar (bodega_id IS NULL) se consulta en /rollos e
-    /inventario/productos, no aquí."""
+    /inventario/productos, no aquí. `empresa` (sigla o "sin_empresa")
+    filtra solo los rollos: los productos no llevan empresa."""
     bodegas = db.query(Bodega).order_by(Bodega.nombre).all()
 
     # Peso ACTUAL por rollo (no el peso neto de ingreso): metros disponibles
@@ -94,7 +95,7 @@ def comparativo_inventario(db: Session = Depends(get_db)) -> dict:
         else_=0,
     )
 
-    filas_rollos = (
+    consulta_rollos = (
         db.query(
             Rollo.codigo_interno, func.max(Rollo.descripcion), Rollo.bodega_id, func.sum(Rollo.metros_disponibles),
             func.max(Rollo.color_material), func.max(Rollo.calibre), func.sum(peso_actual_expr), func.count(Rollo.id),
@@ -102,9 +103,10 @@ def comparativo_inventario(db: Session = Depends(get_db)) -> dict:
         )
         .outerjoin(TablaEspesorEquivalencia, TablaEspesorEquivalencia.espesor == Rollo.calibre)
         .filter(Rollo.bodega_id.isnot(None))
-        .group_by(Rollo.codigo_interno, Rollo.bodega_id)
-        .all()
     )
+    if empresa:
+        consulta_rollos = consulta_rollos.filter(Rollo.empresa == filtro_empresa(empresa))
+    filas_rollos = consulta_rollos.group_by(Rollo.codigo_interno, Rollo.bodega_id).all()
     filas_productos = (
         db.query(
             # _pivotear desempaqueta por posición (codigo, descripcion, bodega_id,
@@ -138,18 +140,20 @@ def comparativo_inventario(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/rollos-por-codigo", response_model=list[RolloResponse])
 def rollos_por_codigo(
-    codigo_interno: str = Query(..., min_length=1), db: Session = Depends(get_db),
+    codigo_interno: str = Query(..., min_length=1), empresa: str = "", db: Session = Depends(get_db),
 ) -> list[Rollo]:
-    """Rollos individuales (uno por uno, con su propio peso, bodega y
-    estado) de un código específico, en todas las sedes — para poder ver,
-    desde una fila del resumen comparativo, exactamente cuál rollo pesa
-    cuánto y en qué sede está."""
-    rollos = (
+    """Rollos individuales (uno por uno, con su propio peso, bodega,
+    empresa y estado) de un código específico, en todas las sedes — para
+    poder ver, desde una fila del resumen comparativo, exactamente cuál rollo
+    pesa cuánto, de quién es y en qué sede está. `empresa` aplica el mismo
+    filtro que el resumen."""
+    consulta = (
         db.query(Rollo)
         .options(selectinload(Rollo.historial_consumos))
         .filter(Rollo.codigo_interno == codigo_interno, Rollo.bodega_id.isnot(None))
-        .order_by(Rollo.bodega_id.asc(), Rollo.fecha_ingreso.desc())
-        .all()
     )
+    if empresa:
+        consulta = consulta.filter(Rollo.empresa == filtro_empresa(empresa))
+    rollos = consulta.order_by(Rollo.bodega_id.asc(), Rollo.fecha_ingreso.desc()).all()
     asignar_peso_actual(db, rollos)
     return rollos

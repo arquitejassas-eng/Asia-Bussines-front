@@ -20,6 +20,7 @@ const FILTROS_VACIOS = {
   calibre: "",
   estado: "",
   proveedor: "",
+  empresa: "",
   fechaDesde: "",
   fechaHasta: "",
 };
@@ -65,6 +66,7 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
       if (filtros.colorMaterial) parametros.set("color_material", filtros.colorMaterial);
       if (filtros.calibre) parametros.set("calibre", filtros.calibre);
       if (filtros.proveedor) parametros.set("proveedor", filtros.proveedor);
+      if (filtros.empresa) parametros.set("empresa", filtros.empresa);
       // En la vista "Rollos acabados" el estado queda fijo en agotado, sin
       // importar el filtro de Estado (se oculta en esa vista); en "Activos"
       // no se manda nada y el backend ya excluye agotados por defecto.
@@ -401,6 +403,19 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
     }
   }
 
+  // La empresa se deduce sola de la referencia al crear el rollo; esto es
+  // solo para corregirla cuando la referencia no la traía.
+  async function actualizarEmpresaRollo(idRollo: number, empresa: string) {
+    try {
+      await api.patch(`/rollos/${idRollo}/empresa`, { empresa });
+      setMisRollos((actual) =>
+        actual.map((r) => (r.id === idRollo ? { ...r, empresa } : r))
+      );
+    } catch {
+      // Si falla, la empresa simplemente no queda actualizada.
+    }
+  }
+
   // La mayoría de rollos miden 122 m de ancho (default); si uno específico
   // es distinto, se corrige aquí — Producción de Caballetes lo usa para
   // calcular el ancho de cada sección (ancho ÷ 3), sin que nadie tenga que
@@ -494,6 +509,7 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
     actualizarObservacionesRollo,
     actualizarFamiliaRollo,
     actualizarAnchoRollo,
+    actualizarEmpresaRollo,
 
     mostrarFormularioRollo, formularioRollo, guardandoRollo, errorFormularioRollo,
     abrirFormularioRollo, cerrarFormularioRollo, actualizarCampoRollo, crearRollo,

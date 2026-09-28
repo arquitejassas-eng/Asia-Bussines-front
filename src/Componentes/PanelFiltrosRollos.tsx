@@ -1,4 +1,5 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
+import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
 
 // Sección "Filtros / búsqueda" de Rollos. Extraído de RollosPage.tsx sin
 // cambiar props ni comportamiento -- no usa estado local propio, todo viene
@@ -17,6 +18,22 @@ function PanelFiltrosRollos({
       <h2>Buscar rollos</h2>
       <div className="rollos-filtros-grid">
         <div>
+          <label htmlFor="rollos-f-empresa">Empresa</label>
+          <select
+            id="rollos-f-empresa"
+            value={filtros.empresa}
+            onChange={(e) => actualizarFiltro("empresa", e.target.value)}
+          >
+            <option value="">Todas</option>
+            {Object.keys(EMPRESAS).map((sigla) => (
+              <option key={sigla} value={sigla}>
+                {nombreEmpresa(sigla)}
+              </option>
+            ))}
+            <option value={FILTRO_SIN_EMPRESA}>Sin empresa</option>
+          </select>
+        </div>
+        <div>
           <label htmlFor="rollos-f-codigo-interno">Código interno</label>
           <input
             id="rollos-f-codigo-interno"
@@ -33,7 +50,7 @@ function PanelFiltrosRollos({
             type="text"
             value={filtros.identificadorRollo}
             onChange={(e) => actualizarFiltro("identificadorRollo", e.target.value)}
-            placeholder="Ej. 4LA50170,20-04"
+            placeholder="Ej. 13ARLA50170,50-05"
           />
         </div>
         <div>
