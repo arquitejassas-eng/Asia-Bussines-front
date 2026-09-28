@@ -160,6 +160,11 @@ def _consultar_movimientos(
     db: Session, es_admin_inventario: bool, bodega_id_propio: int | None,
     dias: int = 7, tipo: str = "", bodega_id: int | None = None, bodega_nombre: str = "", **_: Any,
 ) -> dict:
+    # Misma regla que GET /inventario/historial: el historial de movimientos
+    # es solo de cada sede. Una cuenta sin bodega (Admin Inventario) no lo
+    # consulta, ni de todas las sedes ni de una en particular.
+    if bodega_id_propio is None:
+        return {"error": "Esta cuenta no tiene acceso al historial de movimientos; cada bodega consulta solo el suyo."}
     bid, error, aviso = _resolver_bodega(db, es_admin_inventario, bodega_id_propio, bodega_id, bodega_nombre)
     if error:
         return {"error": error}
