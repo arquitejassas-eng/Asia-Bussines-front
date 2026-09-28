@@ -75,7 +75,14 @@ def metros_reservados_por_bodega(db: Session, *, bodega_id: int) -> list[dict]:
             func.coalesce(func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos), 0),
         )
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
-        .filter(Apartado.bodega_id == bodega_id, Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA))
+        # Solo reservas de ROLLO: los ítems POR_STOCK no tienen código (NULL)
+        # y producían una fila {codigo_interno: None} que hacía fallar la
+        # respuesta -- "Rollos almacenados" terminaba mostrando 0 m reservados.
+        .filter(
+            Apartado.bodega_id == bodega_id,
+            Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+            ApartadoItem.modalidad == ModalidadApartado.POR_ROLLO,
+        )
         .group_by(ApartadoItem.codigo_interno)
         .all()
     )

@@ -20,7 +20,7 @@ from app.services import carga_productos as srv_carga
 from app.services import archivos_carga_productos
 from app.services import clasificacion as srv_excel
 from app.services import productos as srv_productos
-from app.services.movimientos import registrar_movimiento as aplicar_movimiento
+from app.services.movimientos import aplicar_stock_editado, registrar_movimiento as aplicar_movimiento
 from app.services.unidades_familia import validar_cantidad_entera_si_aplica
 
 router = APIRouter(prefix="/inventario", tags=["Inventario"])
@@ -95,10 +95,17 @@ def crear_producto(datos: ProductoCrear, db: Session = Depends(get_db), usuario:
 @router.put("/productos/{producto_id}", response_model=ProductoResponse,
             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
 def actualizar_producto(producto_id: int, datos: ProductoActualizar, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Producto:
-    producto = _producto_de_mi_bodega(db, producto_id, usuario)
+    _producto_de_mi_bodega(db, producto_id, usuario)
+    # Bloqueado: el stock se decide con el valor actual (ver aplicar_stock_editado).
+    producto = db.query(Producto).filter(Producto.id == producto_id).with_for_update().populate_existing().one()
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.entrada)
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.stock)
-    for campo, valor in datos.model_dump().items(): setattr(producto, campo, valor)
+    campos_de_stock = {"stock", "entrada", "stock_anterior", "entrada_anterior"}
+    for campo, valor in datos.model_dump(exclude=campos_de_stock).items(): setattr(producto, campo, valor)
+    aplicar_stock_editado(
+        db, producto, stock=datos.stock, stock_anterior=datos.stock_anterior,
+        entrada=datos.entrada, entrada_anterior=datos.entrada_anterior, usuario=usuario,
+    )
     # Mismo criterio que en crear_producto: si esta edición quita el m² por
     # caja, el producto deja de ser "por conversión"; si lo agrega, lo pasa
     # a ser. No toca tipo_producto si el producto viene de Producción

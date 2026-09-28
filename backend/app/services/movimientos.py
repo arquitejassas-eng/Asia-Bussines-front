@@ -29,6 +29,59 @@ def _producto_existente(db: Session, producto_id: int, usuario: Usuario) -> Prod
     )
 
 
+def _valor_tras_edicion(producto: Producto, campo: str, nombre: str, nuevo: float, anterior: float | None) -> Decimal:
+    """Qué valor de `campo` (stock o entrada) debe quedar al editar el
+    producto. El formulario manda también el valor que vio al abrirse
+    (`anterior`):
+    - si el usuario no lo tocó, se conserva el ACTUAL (aunque una venta o
+      una carga lo haya cambiado mientras el formulario estaba abierto);
+    - si lo cambió, pero alguien más también lo movió mientras tanto, se
+      rechaza en vez de pisar ese cambio.
+    Sin `anterior` (cliente viejo) se usa el valor enviado, como antes."""
+    actual = _decimal(getattr(producto, campo) or 0)
+    if anterior is None:
+        return _decimal(nuevo)
+    if abs(_decimal(nuevo) - _decimal(anterior)) <= Decimal("0.005"):
+        return actual
+    if abs(actual - _decimal(anterior)) > Decimal("0.005"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"El {nombre} de {producto.codigo} cambió mientras editabas: ahora es {float(actual):g} "
+                f"(cuando abriste el formulario era {float(anterior):g}). Revisa el valor y vuelve a guardar."
+            ),
+        )
+    return _decimal(nuevo)
+
+
+def aplicar_stock_editado(
+    db: Session, producto: Producto, *, stock: float, stock_anterior: float | None,
+    entrada: float, entrada_anterior: float | None, usuario: Usuario,
+) -> None:
+    """Aplica stock y entrada al editar un producto (ya bloqueado) sin pisar
+    movimientos ajenos. Si el stock cambia de verdad, es un AJUSTE manual:
+    no puede quedar por debajo de lo apartado y queda en el historial como
+    una entrada o salida con motivo "ajuste" -- antes cambiaba sin rastro."""
+    stock_final = _valor_tras_edicion(producto, "stock", "stock", stock, stock_anterior)
+    entrada_final = _valor_tras_edicion(producto, "entrada", "total de entradas", entrada, entrada_anterior)
+    stock_actual = _decimal(producto.stock or 0)
+    diferencia = stock_final - stock_actual
+    if abs(diferencia) > Decimal("0.005"):
+        if diferencia < 0:
+            validar_reserva_producto(db, producto=producto, cantidad=-diferencia)
+        entra = diferencia > 0
+        db.add(Movimiento(
+            fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.ENTRADA if entra else TipoMovimiento.SALIDA,
+            motivo="ajuste", producto_codigo=producto.codigo, producto_descripcion=producto.descripcion,
+            bodega_origen_id=None if entra else producto.bodega_id,
+            bodega_destino_id=producto.bodega_id if entra else None,
+            cantidad=float(abs(diferencia)), usuario=usuario.correo,
+            observaciones=f"Ajuste manual al editar el producto: stock {float(stock_actual):g} → {float(stock_final):g}.",
+        ))
+    producto.stock = stock_final
+    producto.entrada = entrada_final
+
+
 def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) -> Movimiento:
     """Aplica la regla completa, sin hacer commit para permitir composicion."""
     cantidad = _decimal(datos.cantidad)

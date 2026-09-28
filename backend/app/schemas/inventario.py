@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.fechas import ModeloConFechasUtc
 
@@ -28,11 +28,18 @@ class ProductoBase(BaseModel):
 
 
 class ProductoCrear(ProductoBase):
-    pass
+    # Sin negativos al crear o editar. (No se pone en ProductoBase porque la
+    # respuesta también hereda de ahí y hay stock histórico en negativo.)
+    entrada: float = Field(default=0, ge=0)
+    stock: float = Field(default=0, ge=0)
 
 
-class ProductoActualizar(ProductoBase):
-    pass
+class ProductoActualizar(ProductoCrear):
+    # Valores de stock/entrada que el formulario vio al abrirse: permiten no
+    # pisar una venta o carga hecha mientras se editaba (ver
+    # services/movimientos.py::aplicar_stock_editado).
+    stock_anterior: float | None = None
+    entrada_anterior: float | None = None
 
 
 class ProductoResponse(ProductoBase):

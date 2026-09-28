@@ -161,7 +161,13 @@ export function useProductosInventario() {
     setMostrarFormularioProducto(true);
   }
 
+  // Stock y entrada tal como estaban al abrir la edición: el backend los usa
+  // para no pisar una venta o carga hecha mientras el formulario seguía
+  // abierto (ver aplicar_stock_editado en backend/app/services/movimientos.py).
+  const valoresAlAbrirEdicion = useRef<{ stock: number; entrada: number } | null>(null);
+
   function abrirFormularioEdicionProducto(producto: Producto) {
+    valoresAlAbrirEdicion.current = { stock: Number(producto.stock) || 0, entrada: Number(producto.entrada) || 0 };
     setFormularioProducto({
       codigoImportacion: producto.codigoImportacion,
       codigo: producto.codigo,
@@ -191,6 +197,10 @@ export function useProductosInventario() {
       setErrorProductos("Código y descripción son obligatorios.");
       return;
     }
+    if (Number(formularioProducto.stock) < 0 || Number(formularioProducto.entrada) < 0) {
+      setErrorProductos("El stock y la entrada no pueden ser negativos.");
+      return;
+    }
     setGuardandoProducto(true);
     setErrorProductos("");
     try {
@@ -206,7 +216,13 @@ export function useProductosInventario() {
         stock_minimo: formularioProducto.stockMinimo === "" ? null : Number(formularioProducto.stockMinimo),
         metros_por_unidad: formularioProducto.metrosPorUnidad === "" ? null : Number(formularioProducto.metrosPorUnidad),
       };
-      if (editandoProductoId) await api.put(`/inventario/productos/${editandoProductoId}`, cuerpo);
+      if (editandoProductoId) {
+        await api.put(`/inventario/productos/${editandoProductoId}`, {
+          ...cuerpo,
+          stock_anterior: valoresAlAbrirEdicion.current?.stock ?? null,
+          entrada_anterior: valoresAlAbrirEdicion.current?.entrada ?? null,
+        });
+      }
       else await api.post("/inventario/productos", cuerpo);
       await Promise.all([cargarProductos(), cargarAlertasStock()]);
       setMostrarFormularioProducto(false);
