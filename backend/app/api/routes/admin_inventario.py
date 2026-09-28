@@ -107,6 +107,16 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
     if empresa:
         consulta_rollos = consulta_rollos.filter(Rollo.empresa == filtro_empresa(empresa))
     filas_rollos = consulta_rollos.group_by(Rollo.codigo_interno, Rollo.bodega_id).all()
+
+    consulta_faltantes = (
+        db.query(Rollo.calibre).distinct()
+        .outerjoin(TablaEspesorEquivalencia, TablaEspesorEquivalencia.espesor == Rollo.calibre)
+        .filter(Rollo.bodega_id.isnot(None),
+                or_(TablaEspesorEquivalencia.mt_por_ton.is_(None), TablaEspesorEquivalencia.mt_por_ton <= 0))
+    )
+    if empresa:
+        consulta_faltantes = consulta_faltantes.filter(Rollo.empresa == filtro_empresa(empresa))
+    calibres_sin_equivalencia = sorted(float(c or 0) for (c,) in consulta_faltantes.all())
     filas_productos = (
         db.query(
             # _pivotear desempaqueta por posición (codigo, descripcion, bodega_id,
@@ -135,6 +145,7 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
         "peso_actual_total_por_bodega": peso_actual_total_por_bodega,
         "peso_actual_total_general": round(sum(peso_actual_total_por_bodega.values()), 2),
         "rollos_sin_peso_actual_total": sum(fila.rollos_sin_peso_actual for fila in rollos_pivotados),
+        "calibres_sin_equivalencia": calibres_sin_equivalencia,
     }
 
 

@@ -16,13 +16,14 @@ type ProductoResumen = {
 type Comparativo = {
   bodegas: { id: number; nombre: string }[]; rollos: RolloResumen[]; productos: ProductoResumen[];
   pesoActualTotalPorBodega: Record<string, number>; pesoActualTotalGeneral: number; rollosSinPesoActualTotal: number;
+  calibresSinEquivalencia: number[];
 };
 type ItemProducto = { codigo: string; cantidad: string };
 type FormularioEnvio = { bodegaDestinoId: string; rollosSeleccionados: number[]; itemsProducto: ItemProducto[]; observaciones: string };
 
 const COMPARATIVO_VACIO: Comparativo = {
   bodegas: [], rollos: [], productos: [],
-  pesoActualTotalPorBodega: {}, pesoActualTotalGeneral: 0, rollosSinPesoActualTotal: 0,
+  pesoActualTotalPorBodega: {}, pesoActualTotalGeneral: 0, rollosSinPesoActualTotal: 0, calibresSinEquivalencia: [],
 };
 const TAMANO_PAGINA_RESUMEN = 10;
 
@@ -61,7 +62,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
         bodegas?: { id: number; nombre: string }[];
         rollos?: Record<string, any>[]; productos?: Record<string, any>[];
         peso_actual_total_por_bodega?: Record<string, number>; peso_actual_total_general?: number;
-        rollos_sin_peso_actual_total?: number;
+        rollos_sin_peso_actual_total?: number; calibres_sin_equivalencia?: number[];
       }>(`/admin-inventario/comparativo${parametroEmpresa ? `?${parametroEmpresa}` : ""}`);
       if (!datos) throw new Error("Respuesta vacía del servidor.");
       setComparativo({
@@ -80,6 +81,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
         pesoActualTotalPorBodega: datos.peso_actual_total_por_bodega || {},
         pesoActualTotalGeneral: datos.peso_actual_total_general || 0,
         rollosSinPesoActualTotal: datos.rollos_sin_peso_actual_total || 0,
+        calibresSinEquivalencia: datos.calibres_sin_equivalencia || [],
       });
       setPaginaRollos(1);
       setPaginaProductos(1);

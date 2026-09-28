@@ -12,6 +12,11 @@ import "../Style/Inventario.css";
 import "../Style/Rollos.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
+// 0.38 -> "0,38", igual que se escribe el calibre en los códigos de rollo.
+function formatearCalibre(calibre: number) {
+  return calibre.toFixed(2).replace(".", ",");
+}
+
 const ETIQUETAS_ESTADO_ENVIO: Record<string, string> = {
   pendiente_confirmacion: "Pendiente de confirmar",
   recibido: "Recibido",
@@ -342,9 +347,10 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                         <span
                                           className="rollos-texto-ayuda"
                                           style={{ margin: 0 }}
-                                          title="Estos rollos no tienen su calibre registrado en la tabla de equivalencias, así que no se pueden sumar aquí."
+                                          title="El calibre de estos rollos no está en la tabla de equivalencias de espesor (metros por tonelada), así que no se puede calcular su peso."
                                         >
-                                          no incluye {f.rollosSinPesoActual} sin calibre
+                                          no incluye {f.rollosSinPesoActual} rollo{f.rollosSinPesoActual === 1 ? "" : "s"}:
+                                          {" "}{Number(f.calibre) ? `calibre ${formatearCalibre(Number(f.calibre))}` : "calibre vacío"} sin equivalencia
                                         </span>
                                       </>
                                     )}
@@ -422,10 +428,12 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   </p>
                   {c.comparativo.rollosSinPesoActualTotal > 0 && (
                     <p className="inventario-carga-ayuda" style={{ marginTop: "0.25rem" }}>
-                      ⚠ {c.comparativo.rollosSinPesoActualTotal} rollo{c.comparativo.rollosSinPesoActualTotal === 1 ? "" : "s"} en
-                      total no {c.comparativo.rollosSinPesoActualTotal === 1 ? "tiene" : "tienen"} su calibre registrado en la
-                      tabla de equivalencias, así que no {c.comparativo.rollosSinPesoActualTotal === 1 ? "está incluido" : "están incluidos"} en
-                      estos totales de peso{c.soloLectura ? "." : " — corrígelo en Administrar tablas de equivalencias."}
+                      ⚠ {c.comparativo.rollosSinPesoActualTotal} rollo{c.comparativo.rollosSinPesoActualTotal === 1 ? "" : "s"} no
+                      {c.comparativo.rollosSinPesoActualTotal === 1 ? " está incluido" : " están incluidos"} en estos totales de peso
+                      porque {c.comparativo.calibresSinEquivalencia.length === 1 ? "su calibre no está" : "sus calibres no están"} en
+                      la tabla de equivalencias de espesor (metros por tonelada):{" "}
+                      <strong>{c.comparativo.calibresSinEquivalencia.map((cal) => (cal ? formatearCalibre(cal) : "vacío")).join(", ")}</strong>.
+                      {c.soloLectura ? "" : " Agrégalos en Recepción y Verificación → Administrar tablas de equivalencias."}
                     </p>
                   )}
 

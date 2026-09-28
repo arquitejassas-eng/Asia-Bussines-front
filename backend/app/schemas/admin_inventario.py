@@ -35,3 +35,6 @@ class ComparativoInventarioResponse(BaseModel):
     peso_actual_total_por_bodega: dict[int, float] = {}
     peso_actual_total_general: float = 0.0
     rollos_sin_peso_actual_total: int = 0
+    # Calibres de esos rollos que faltan en la tabla de equivalencias de
+    # espesor: para decirle al usuario exactamente cuáles registrar.
+    calibres_sin_equivalencia: list[float] = []
