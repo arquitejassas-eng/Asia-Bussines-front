@@ -1,8 +1,9 @@
 import { lazy, Suspense, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAlmacenGlobal } from "./Componentes/AlmacenGlobal";
 import { borrarToken } from "./Utils/auth";
 import RutaProtegida from "./Componentes/RutaProtegida";
+import ErrorDePantalla from "./Componentes/ErrorDePantalla";
 
 // Cada módulo se descarga solo al abrir su ruta. Al crecer la aplicación, una
 // pantalla nueva no penaliza el primer acceso de los demás usuarios.
@@ -45,6 +46,7 @@ export default function App() {
   }
 
   const almacen = useAlmacenGlobal(sesion);
+  const { pathname } = useLocation();
 
   function cerrarSesion() {
     borrarToken();
@@ -68,6 +70,7 @@ export default function App() {
   }
 
   return (
+    <ErrorDePantalla key={pathname}>
     <Suspense fallback={<main aria-live="polite">Cargando módulo...</main>}>
       <Routes>
       <Route
@@ -127,5 +130,6 @@ export default function App() {
       <Route path="*" element={<Navigate to={rutaInicioPara(sesion)} replace />} />
       </Routes>
     </Suspense>
+    </ErrorDePantalla>
   );
 }
