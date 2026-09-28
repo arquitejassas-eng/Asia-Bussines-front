@@ -121,11 +121,23 @@ class FilaOmitida:
 
 
 @dataclass
+class DiferenciaRollo:
+    """Dato de un rollo que YA existía y que el Excel trae distinto. No se
+    aplica: se informa para que alguien lo revise (ver procesar_filas)."""
+    fila: int
+    identificador_rollo: str
+    campo: str
+    en_la_app: str
+    en_el_excel: str
+
+
+@dataclass
 class ResultadoCarga:
     filas_totales: int = 0
     creados: int = 0
     actualizados: int = 0
     omitidas: list[FilaOmitida] = field(default_factory=list)
+    diferencias: list[DiferenciaRollo] = field(default_factory=list)
 
 
 def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int | None) -> ResultadoCarga:
@@ -140,6 +152,7 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
         for r in db.query(Rollo).filter(filtro_bodega_todos).all()
     }
 
+    vistas_en_archivo: set[str] = set()
     for indice, fila in df.iterrows():
         numero_fila = indice + 2  # +1 índice 0-based, +1 fila de encabezado.
         codigo_interno = _texto(fila, mapeo, "codigo_interno")
@@ -148,6 +161,10 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
         if not codigo_interno or not identificador_rollo:
             resultado.omitidas.append(FilaOmitida(numero_fila, identificador_rollo, "Falta código interno o referencia del rollo."))
             continue
+        if identificador_rollo in vistas_en_archivo:
+            resultado.omitidas.append(FilaOmitida(numero_fila, identificador_rollo, "Referencia repetida en el archivo: se usó solo la primera fila."))
+            continue
+        vistas_en_archivo.add(identificador_rollo)
 
         estado_origen = normalizar_texto(_texto(fila, mapeo, "estado_origen"))
         if mapeo.get("estado_origen") and estado_origen and estado_origen not in ESTADOS_VIGENTES:
@@ -186,11 +203,21 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
 
         existente = existentes.get(identificador_rollo)
         if existente:
-            existente.codigo_interno = codigo_interno
-            existente.metros_disponibles = metros_disponibles
-            existente.metros_consumidos = metros_consumidos
-            existente.metros_proveedor = metros_totales
-            existente.metros_calculados = metros_totales
+            # El rollo ya existe: sus METROS y su CÓDIGO no se tocan. La app
+            # es la que sabe lo consumido desde la última carga (consumos,
+            # producciones, salidas); pisarlos con un Excel viejo "devolvía"
+            # metros ya gastados sin dejar rastro, y cambiar el código movía
+            # el rollo de una reserva de apartados a otra (hallazgo #10 de la
+            # auditoría). Si el Excel dice otra cosa, se informa para revisar.
+            if abs((existente.metros_disponibles or 0) - metros_disponibles) > 0.005:
+                resultado.diferencias.append(DiferenciaRollo(
+                    numero_fila, identificador_rollo, "Metros disponibles",
+                    f"{existente.metros_disponibles:g}", f"{metros_disponibles:g}",
+                ))
+            if existente.codigo_interno != codigo_interno:
+                resultado.diferencias.append(DiferenciaRollo(
+                    numero_fila, identificador_rollo, "Código de clasificación", existente.codigo_interno, codigo_interno,
+                ))
             if empresa: existente.empresa = empresa
             if descripcion: existente.descripcion = descripcion
             if calibre: existente.calibre = calibre
@@ -198,7 +225,6 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
             if color_material: existente.color_material = color_material
             if proveedor: existente.proveedor = proveedor
             if lote: existente.lote = lote
-            existente.recalcular_estado()
             resultado.actualizados += 1
         else:
             nuevo = Rollo(

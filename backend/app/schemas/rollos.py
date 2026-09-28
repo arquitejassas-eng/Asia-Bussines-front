@@ -146,12 +146,24 @@ class FilaCargaRolloOmitida(BaseModel):
     motivo: str
 
 
+class DiferenciaCargaRollo(BaseModel):
+    fila: int
+    identificador_rollo: str
+    campo: str
+    en_la_app: str
+    en_el_excel: str
+
+
 class ResultadoCargaRollosResponse(BaseModel):
     filas_totales: int
     creados: int
+    # Rollos que ya existían: se actualizaron sus datos descriptivos, nunca
+    # sus metros ni su código (ver services/carga_rollos.py::procesar_filas).
     actualizados: int
     omitidas: int
     detalle_omitidas: list[FilaCargaRolloOmitida]
+    # Lo que el Excel trae distinto en rollos existentes y NO se aplicó.
+    diferencias: list[DiferenciaCargaRollo] = []
 
 
 class FiltrosRollos(BaseModel):

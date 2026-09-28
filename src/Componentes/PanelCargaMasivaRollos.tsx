@@ -146,13 +146,53 @@ function PanelCargaMasivaRollos({
                 </div>
                 <div>
                   <span className="numero">{resultadoCargaRollos.actualizados}</span>
-                  <span>Actualizados</span>
+                  <span title="Se actualizaron sus datos (descripción, color, empresa...), nunca sus metros ni su código.">Ya existían</span>
                 </div>
                 <div>
                   <span className="numero">{resultadoCargaRollos.omitidas}</span>
                   <span>Omitidas</span>
                 </div>
               </div>
+
+              {resultadoCargaRollos.actualizados > 0 && (
+                <p className="rollos-texto-ayuda">
+                  De los rollos que ya existían solo se actualizaron sus datos (descripción, color, empresa,
+                  peso, proveedor, lote). Sus metros y su código NO se cambian con el Excel: la app ya tiene
+                  registrado lo que se ha consumido.
+                </p>
+              )}
+
+              {(resultadoCargaRollos.diferencias || []).length > 0 && (
+                <>
+                  <h3>Diferencias sin aplicar ({resultadoCargaRollos.diferencias.length})</h3>
+                  <p className="rollos-texto-ayuda">
+                    En estos rollos el Excel dice algo distinto a la app. No se cambió nada: si el Excel es el
+                    correcto, corrígelo en el rollo (consumo, salida o edición) para que quede registrado.
+                  </p>
+                  <table className="rollos-tabla">
+                    <thead>
+                      <tr>
+                        <th>Fila</th>
+                        <th>Referencia</th>
+                        <th>Dato</th>
+                        <th>En la app</th>
+                        <th>En el Excel</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resultadoCargaRollos.diferencias.map((d, indice) => (
+                        <tr key={indice}>
+                          <td>{d.fila}</td>
+                          <td>{d.identificador_rollo}</td>
+                          <td>{d.campo}</td>
+                          <td>{d.en_la_app}</td>
+                          <td>{d.en_el_excel}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
 
               {resultadoCargaRollos.detalle_omitidas.length > 0 && (
                 <>

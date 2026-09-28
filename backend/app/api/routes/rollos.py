@@ -448,7 +448,9 @@ def cambiar_hoja_carga_rollos(
 def confirmar_carga_rollos(
     datos: ConfirmarCargaRollosRequest, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> ResultadoCargaRollosResponse:
-    """Paso 2: aplica el mapeo confirmado y hace upsert por (bodega_id, identificador_rollo)."""
+    """Paso 2: aplica el mapeo confirmado. Crea los rollos nuevos y, de los
+    que ya existen (por bodega_id + identificador_rollo), actualiza solo sus
+    datos descriptivos: metros y código se informan como diferencias."""
     en_proceso = archivos_carga_rollos.obtener(usuario.id)
     if not en_proceso:
         raise HTTPException(status_code=400, detail="Primero sube un archivo con /rollos/carga/previsualizar.")
@@ -466,4 +468,5 @@ def confirmar_carga_rollos(
         filas_totales=resultado.filas_totales, creados=resultado.creados, actualizados=resultado.actualizados,
         omitidas=len(resultado.omitidas),
         detalle_omitidas=[{"fila": o.fila, "identificador_rollo": o.identificador_rollo, "motivo": o.motivo} for o in resultado.omitidas],
+        diferencias=[vars(d) for d in resultado.diferencias],
     )
