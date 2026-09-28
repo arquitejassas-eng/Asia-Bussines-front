@@ -73,11 +73,13 @@ class Rollo(Base):
     )
 
     def recalcular_estado(self) -> None:
-        """Deriva el estado a partir de los metros — nunca se asigna a mano."""
-        if self.metros_consumidos <= 0:
-            self.estado = EstadoRollo.CERRADO
-        elif self.metros_disponibles <= 0:
+        """Deriva el estado a partir de los metros — nunca se asigna a mano.
+        Sin metros disponibles es AGOTADO aunque nunca se haya consumido nada
+        (antes, un rollo con 0 m y 0 consumidos quedaba "cerrado", como nuevo)."""
+        if self.metros_disponibles <= 0:
             self.estado = EstadoRollo.AGOTADO
+        elif self.metros_consumidos <= 0:
+            self.estado = EstadoRollo.CERRADO
         else:
             self.estado = EstadoRollo.ABIERTO
 

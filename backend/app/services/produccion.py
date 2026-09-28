@@ -112,6 +112,16 @@ def _longitud_efectiva(metros_por_unidad: float | None, codigo: str) -> float | 
     return _longitud_desde_codigo(codigo)
 
 
+def _misma_longitud(a, b) -> bool:
+    """La longitud guardada llega como Decimal (columna Numeric) y la del
+    formulario como float: Decimal('2.35') == 2.35 da False en Python, así
+    que cada producción de 2,35 m creaba una fila de TEJA nueva en vez de
+    sumar a la existente. Se comparan como números con tolerancia."""
+    if a is None or b is None:
+        return a is None and b is None
+    return abs(float(a) - float(b)) < 0.005
+
+
 def _buscar_producto_existente(
     db: Session,
     usuario: Usuario,
@@ -162,7 +172,7 @@ def _buscar_producto_existente(
             if (
                 _calibre_identidad(candidato.calibre) == calibre_nuevo
                 and _calidad_efectiva(candidato.calidad, candidato.codigo) == item_stock.calidad
-                and _longitud_efectiva(candidato.metros_por_unidad, candidato.codigo) == datos.metros_por_unidad
+                and _misma_longitud(_longitud_efectiva(candidato.metros_por_unidad, candidato.codigo), datos.metros_por_unidad)
             ):
                 return candidato
         return None

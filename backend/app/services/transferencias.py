@@ -11,6 +11,7 @@ from app.models.solicitud import EstadoSolicitud, Solicitud
 from app.models.usuario import Usuario
 from app.schemas.bodegas import SolicitudCrear
 from app.services.apartados import bloquear_rollos_codigo, validar_reserva_producto, validar_reserva_rollos
+from app.services.productos import nuevo_producto_en_bodega
 
 
 def _decimal(valor: float | Decimal) -> Decimal:
@@ -166,14 +167,7 @@ def aceptar_solicitud_transferencia(
         producto_destino.stock += cantidad
         producto_destino.entrada += cantidad
     else:
-        db.add(Producto(
-            bodega_id=solicitud.bodega_solicitante_id,
-            codigo_importacion=producto_origen.codigo_importacion, codigo=producto_origen.codigo,
-            referencia=producto_origen.referencia,
-            descripcion=producto_origen.descripcion, familia=producto_origen.familia,
-            calibre=producto_origen.calibre, stock_minimo=producto_origen.stock_minimo,
-            entrada=solicitud.cantidad, stock=solicitud.cantidad,
-        ))
+        db.add(nuevo_producto_en_bodega(producto_origen, bodega_id=solicitud.bodega_solicitante_id, cantidad=solicitud.cantidad))
     db.add(Movimiento(
         fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.TRANSFERENCIA,
         motivo=solicitud.tipo_operacion.value, producto_codigo=solicitud.producto_codigo,

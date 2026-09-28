@@ -22,6 +22,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.schemas.envios import EnvioCrear
+from app.services.productos import nuevo_producto_en_bodega
 from app.services.unidades_familia import validar_cantidad_entera_si_aplica
 
 
@@ -151,25 +152,21 @@ def confirmar_envio_recibido(db: Session, envio_id: int, usuario: Usuario) -> En
                 producto_destino.stock += cantidad
                 producto_destino.entrada += cantidad
             else:
-                # Copia familia/calibre/referencia/etc. del producto de Admin
-                # Inventario (siempre existe: es de donde salió el envío) para
-                # que la fila nueva en la bodega destino no quede sin
-                # clasificar — antes se perdían y rompían la columna "Unidad"
-                # (que depende de familia) y cualquier stock_minimo configurado.
+                # Copia la identidad COMPLETA del producto de Admin Inventario
+                # (siempre existe: es de donde salió el envío) -- ver
+                # productos.nuevo_producto_en_bodega.
                 producto_origen = (
                     db.query(Producto)
                     .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id.is_(None))
                     .first()
                 )
-                db.add(Producto(
-                    bodega_id=usuario.bodega_id, codigo=item.producto_codigo, descripcion=item.descripcion,
-                    familia=producto_origen.familia if producto_origen else "",
-                    calibre=producto_origen.calibre if producto_origen else "",
-                    codigo_importacion=producto_origen.codigo_importacion if producto_origen else "",
-                    referencia=producto_origen.referencia if producto_origen else "",
-                    stock_minimo=producto_origen.stock_minimo if producto_origen else None,
-                    entrada=item.cantidad, stock=item.cantidad,
-                ))
+                if producto_origen is not None:
+                    db.add(nuevo_producto_en_bodega(producto_origen, bodega_id=usuario.bodega_id, cantidad=item.cantidad))
+                else:
+                    db.add(Producto(
+                        bodega_id=usuario.bodega_id, codigo=item.producto_codigo, descripcion=item.descripcion,
+                        entrada=item.cantidad, stock=item.cantidad,
+                    ))
             db.add(Movimiento(
                 fecha=ahora, tipo=TipoMovimiento.TRANSFERENCIA, motivo="envio_admin_inventario",
                 producto_codigo=item.producto_codigo, producto_descripcion=item.descripcion,

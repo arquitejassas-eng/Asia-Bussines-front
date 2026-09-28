@@ -13,6 +13,7 @@ from app.models.producto import Producto
 from app.models.usuario import Usuario
 from app.schemas.inventario import MovimientoCrear
 from app.services.apartados import validar_reserva_producto
+from app.services.productos import nuevo_producto_en_bodega
 from app.services.unidades_familia import validar_cantidad_entera_si_aplica
 
 
@@ -165,11 +166,7 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
             producto_destino.stock += cantidad
             producto_destino.entrada += cantidad
         else:
-            db.add(Producto(
-                bodega_id=destino, codigo_importacion=producto.codigo_importacion, codigo=producto.codigo,
-                descripcion=producto.descripcion, familia=producto.familia, calibre=producto.calibre,
-                entrada=cantidad, stock=cantidad,
-            ))
+            db.add(nuevo_producto_en_bodega(producto, bodega_id=destino, cantidad=cantidad))
 
     movimiento = Movimiento(
         fecha=datetime.now(timezone.utc), tipo=datos.tipo, motivo=datos.motivo,

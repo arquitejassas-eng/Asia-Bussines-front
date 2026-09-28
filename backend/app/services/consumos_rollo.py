@@ -13,6 +13,18 @@ from app.services.apartados import bloquear_rollos_codigo, validar_reserva_rollo
 from app.services.envios import envio_pendiente_del_rollo
 
 
+# Medio centímetro: por debajo de esto un resto de metros es ruido de
+# redondeo, no material real.
+TOLERANCIA_METROS = 0.005
+
+
+def _metros_limpios(valor: float) -> float:
+    """Redondea a centímetros y deja en 0 cualquier resto menor a medio
+    centímetro (para que el rollo pase a "agotado")."""
+    valor = round(valor, 2)
+    return 0.0 if valor < TOLERANCIA_METROS else valor
+
+
 def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int, usuario: Usuario) -> tuple[Rollo, list[Rollo]]:
     """Devuelve el rollo y TODOS los rollos de su código, ya bloqueados en
     orden por id: la reserva de los apartados es por código, así que para
@@ -47,15 +59,20 @@ def registrar_consumo_rollo(
     rollo, rollos_codigo = _rollo_bloqueado_con_su_codigo(db, rollo_id, usuario)
     if cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero.")
-    if cantidad > rollo.metros_disponibles:
-        raise HTTPException(status_code=400, detail=f"Ese rollo solo tiene {rollo.metros_disponibles} m disponibles.")
+    # Todo a 2 decimales (centímetros): restar sin redondear dejaba restos
+    # como 9.599999999999996 m -- la pantalla mostraba 9,6 pero no dejaba
+    # consumir 9,6, y el rollo nunca llegaba a "agotado".
+    disponibles = round(rollo.metros_disponibles, 2)
+    if round(cantidad, 2) > disponibles + TOLERANCIA_METROS:
+        raise HTTPException(status_code=400, detail=f"Ese rollo solo tiene {disponibles:g} m disponibles.")
+    cantidad = round(min(cantidad, rollo.metros_disponibles), 2)
     validar_reserva_rollos(
         db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
         metros_salen=cantidad, rollos_codigo=rollos_codigo,
     )
     ahora = datetime.now(timezone.utc)
-    rollo.metros_disponibles -= cantidad
-    rollo.metros_consumidos += cantidad
+    rollo.metros_disponibles = _metros_limpios(rollo.metros_disponibles - cantidad)
+    rollo.metros_consumidos = round(rollo.metros_consumidos + cantidad, 2)
     rollo.recalcular_estado()
     db.add(HistorialConsumoRollo(rollo_id=rollo.id, fecha=ahora, cantidad=cantidad, usuario=usuario.correo, observaciones=observaciones))
     db.add(Movimiento(
@@ -86,8 +103,8 @@ def registrar_salida_externa_rollo(
         metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo,
     )
     ahora = datetime.now(timezone.utc)
-    cantidad = rollo.metros_disponibles
-    rollo.metros_consumidos += cantidad
+    cantidad = round(rollo.metros_disponibles, 2)
+    rollo.metros_consumidos = round(rollo.metros_consumidos + cantidad, 2)
     rollo.metros_disponibles = 0
     rollo.recalcular_estado()
     db.add(Movimiento(
