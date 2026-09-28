@@ -27,32 +27,44 @@ function PanelAdminEquivalencias({
   // El código interno del color es opcional: si se deja vacío, el sistema
   // lo genera solo con la inicial del nombre (regla del documento de
   // clasificación). Por eso aquí solo se exige el RAL y el nombre.
-  function enviarColor(e) {
+  // Los formularios solo se limpian si se guardó: antes se borraban de
+  // inmediato y, si el servidor lo rechazaba, lo escrito se perdía sin aviso.
+  const [errorGuardado, setErrorGuardado] = useState("");
+  const MENSAJE_NO_GUARDADO = "No se pudo guardar. Revisa los datos (o si ya existe) e intenta de nuevo.";
+
+  async function enviarColor(e) {
     e.preventDefault();
     if (!formColor.ral || !formColor.nombre) return;
-    agregarEquivalenciaColor(formColor.ral, formColor.nombre, formColor.codigoInterno);
-    setFormColor({ ral: "", nombre: "", codigoInterno: "" });
+    setErrorGuardado("");
+    if (await agregarEquivalenciaColor(formColor.ral, formColor.nombre, formColor.codigoInterno)) {
+      setFormColor({ ral: "", nombre: "", codigoInterno: "" });
+    } else setErrorGuardado(MENSAJE_NO_GUARDADO);
   }
 
-  function enviarTipo(e) {
+  async function enviarTipo(e) {
     e.preventDefault();
     if (!formTipo.nombre || !formTipo.codigoInterno) return;
-    agregarEquivalenciaTipo(formTipo.nombre, formTipo.codigoInterno);
-    setFormTipo({ nombre: "", codigoInterno: "" });
+    setErrorGuardado("");
+    if (await agregarEquivalenciaTipo(formTipo.nombre, formTipo.codigoInterno)) {
+      setFormTipo({ nombre: "", codigoInterno: "" });
+    } else setErrorGuardado(MENSAJE_NO_GUARDADO);
   }
 
-  function enviarEspesor(e) {
+  async function enviarEspesor(e) {
     e.preventDefault();
     if (!formEspesor.espesor) return;
-    agregarEquivalenciaEspesor(formEspesor.espesor, {
+    setErrorGuardado("");
+    const guardado = await agregarEquivalenciaEspesor(formEspesor.espesor, {
       mtPorTonTexto: formEspesor.mtPorTon,
       pesoPorMetroTexto: formEspesor.pesoPorMetro,
     });
-    setFormEspesor({ espesor: "", mtPorTon: "", pesoPorMetro: "" });
+    if (guardado) setFormEspesor({ espesor: "", mtPorTon: "", pesoPorMetro: "" });
+    else setErrorGuardado(MENSAJE_NO_GUARDADO);
   }
 
   return (
     <div className="recepcion-admin-panel">
+      {errorGuardado && <p className="recepcion-error" style={{ flexBasis: "100%" }}>{errorGuardado}</p>}
       <div className="recepcion-admin-columna">
         <h4>Colores (RAL → código interno)</h4>
         <p className="recepcion-texto-ayuda">

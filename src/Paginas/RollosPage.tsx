@@ -75,6 +75,12 @@ function RollosPage({ sesion, onCerrarSesion, almacen }) {
           />
 
           {/* ================== AGRUPACIÓN VISUAL POR CÓDIGO ================== */}
+          {r.errorEdicionRollo && (
+            <p className="rollos-error" role="alert">
+              {r.errorEdicionRollo}{" "}
+              <button type="button" className="rollos-boton-secundario" onClick={r.limpiarErrorEdicionRollo}>Cerrar</button>
+            </p>
+          )}
           <PanelAgrupacionRollos
             gruposPorCodigo={r.gruposPorCodigo}
             ESTADOS_ROLLO={r.ESTADOS_ROLLO}

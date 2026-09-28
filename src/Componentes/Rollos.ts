@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { rolloDesdeApi, reservaCodigoDesdeApi, movimientoDesdeApi } from "./Mapeo";
 import { useCargaRollosInventario } from "../Hooks/useCargaRollosInventario";
+import { finDelDiaColombia, inicioDelDiaColombia } from "../Utils/fechas";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 
 export const ESTADOS_ROLLO = {
@@ -75,8 +76,8 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
       // no se manda nada y el backend ya excluye agotados por defecto.
       if (vista === "acabados") parametros.set("estado", "agotado");
       else if (filtros.estado) parametros.set("estado", filtros.estado);
-      if (filtros.fechaDesde) parametros.set("fecha_desde", filtros.fechaDesde);
-      if (filtros.fechaHasta) parametros.set("fecha_hasta", `${filtros.fechaHasta}T23:59:59`);
+      if (filtros.fechaDesde) parametros.set("fecha_desde", inicioDelDiaColombia(filtros.fechaDesde));
+      if (filtros.fechaHasta) parametros.set("fecha_hasta", finDelDiaColombia(filtros.fechaHasta));
       parametros.set("paginado", "true");
       parametros.set("pagina", String(pagina));
       parametros.set("tamano", "30");
@@ -387,56 +388,46 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
     }
   }
 
-  async function actualizarObservacionesRollo(idRollo: number, texto: string) {
+  // Ediciones en línea de un rollo (observaciones, familia, empresa, ancho).
+  // Antes, si fallaban no se avisaba nada y el usuario creía que se había
+  // guardado: ahora se muestra qué cambio no se guardó y por qué.
+  const [errorEdicionRollo, setErrorEdicionRollo] = useState("");
+
+  async function editarRollo(idRollo: number, ruta: string, cuerpo: Record<string, unknown>, cambios: Record<string, unknown>, dato: string) {
     try {
-      await api.patch(`/rollos/${idRollo}/observaciones`, { observaciones: texto });
-      setMisRollos((actual) =>
-        actual.map((r) => (r.id === idRollo ? { ...r, observaciones: texto } : r))
+      await api.patch(`/rollos/${idRollo}/${ruta}`, cuerpo);
+      setErrorEdicionRollo("");
+      setMisRollos((actual) => actual.map((r) => (r.id === idRollo ? { ...r, ...cambios } : r)));
+    } catch (err) {
+      const referencia = misRollos.find((r) => r.id === idRollo)?.identificadorRollo || `#${idRollo}`;
+      setErrorEdicionRollo(
+        `No se guardó ${dato} del rollo ${referencia}: ${err instanceof ErrorApi ? err.message : "revisa tu conexión e intenta de nuevo."}`
       );
-    } catch {
-      // Si falla, el texto simplemente no queda guardado.
     }
   }
 
-  async function actualizarFamiliaRollo(idRollo: number, familia: string) {
+  function actualizarObservacionesRollo(idRollo: number, texto: string) {
+    return editarRollo(idRollo, "observaciones", { observaciones: texto }, { observaciones: texto }, "la observación");
+  }
+
+  function actualizarFamiliaRollo(idRollo: number, familia: string) {
     if (!familia.trim()) return;
-    try {
-      await api.patch(`/rollos/${idRollo}/familia`, { familia: familia.trim() });
-      setMisRollos((actual) =>
-        actual.map((r) => (r.id === idRollo ? { ...r, familia: familia.trim() } : r))
-      );
-    } catch {
-      // Si falla, la familia simplemente no queda actualizada.
-    }
+    return editarRollo(idRollo, "familia", { familia: familia.trim() }, { familia: familia.trim() }, "la familia");
   }
 
   // La empresa se deduce sola de la referencia al crear el rollo; esto es
   // solo para corregirla cuando la referencia no la traía.
-  async function actualizarEmpresaRollo(idRollo: number, empresa: string) {
-    try {
-      await api.patch(`/rollos/${idRollo}/empresa`, { empresa });
-      setMisRollos((actual) =>
-        actual.map((r) => (r.id === idRollo ? { ...r, empresa } : r))
-      );
-    } catch {
-      // Si falla, la empresa simplemente no queda actualizada.
-    }
+  function actualizarEmpresaRollo(idRollo: number, empresa: string) {
+    return editarRollo(idRollo, "empresa", { empresa }, { empresa }, "la empresa");
   }
 
   // La mayoría de rollos miden 122 m de ancho (default); si uno específico
   // es distinto, se corrige aquí — Producción de Caballetes lo usa para
   // calcular el ancho de cada sección (ancho ÷ 3), sin que nadie tenga que
   // escribirlo ni calcularlo a mano en el formulario de producción.
-  async function actualizarAnchoRollo(idRollo: number, ancho: number) {
+  function actualizarAnchoRollo(idRollo: number, ancho: number) {
     if (!(ancho > 0)) return;
-    try {
-      await api.patch(`/rollos/${idRollo}/ancho`, { ancho_material: ancho });
-      setMisRollos((actual) =>
-        actual.map((r) => (r.id === idRollo ? { ...r, anchoMaterial: ancho } : r))
-      );
-    } catch {
-      // Si falla, el ancho simplemente no queda actualizado.
-    }
+    return editarRollo(idRollo, "ancho", { ancho_material: ancho }, { anchoMaterial: ancho }, "el ancho");
   }
 
   const [rolloParaHistorial, setRolloParaHistorial] = useState<Rollo | null>(null);
@@ -517,6 +508,8 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
     actualizarFamiliaRollo,
     actualizarAnchoRollo,
     actualizarEmpresaRollo,
+    errorEdicionRollo,
+    limpiarErrorEdicionRollo: () => setErrorEdicionRollo(""),
 
     mostrarFormularioRollo, formularioRollo, guardandoRollo, errorFormularioRollo,
     abrirFormularioRollo, cerrarFormularioRollo, actualizarCampoRollo, crearRollo,

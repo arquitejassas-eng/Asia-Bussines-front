@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../Componentes/Api";
 import { movimientoDesdeApi } from "../Componentes/Mapeo";
+import { finDelDiaColombia, inicioDelDiaColombia } from "../Utils/fechas";
 import { useActualizacionAutomatica } from "./useActualizacionAutomatica";
 
 const FILTROS_VACIOS = { codigoProducto: "", cotizacion: "", empresaExterna: "", fechaDesde: "", fechaHasta: "" };
@@ -37,8 +38,8 @@ export function useHistorialInventario(bodegaId: number | undefined) {
       if (filtros.codigoProducto) parametros.set("codigo_producto", filtros.codigoProducto);
       if (filtros.cotizacion) parametros.set("cotizacion", filtros.cotizacion);
       if (filtros.empresaExterna) parametros.set("empresa_externa", filtros.empresaExterna);
-      if (filtros.fechaDesde) parametros.set("fecha_desde", filtros.fechaDesde);
-      if (filtros.fechaHasta) parametros.set("fecha_hasta", filtros.fechaHasta);
+      if (filtros.fechaDesde) parametros.set("fecha_desde", inicioDelDiaColombia(filtros.fechaDesde));
+      if (filtros.fechaHasta) parametros.set("fecha_hasta", finDelDiaColombia(filtros.fechaHasta));
       const datos = await api.get<RespuestaHistorial>(`/inventario/historial?${parametros.toString()}`);
       if (!datos) throw new Error("Respuesta vacía del servidor.");
       if (consulta !== ultimaConsulta.current) return;

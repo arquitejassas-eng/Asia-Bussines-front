@@ -90,12 +90,24 @@ class PaginaProductos(BaseModel):
     total_paginas: int
 
 
+class ResumenMovimientos(BaseModel):
+    """Totales de TODOS los movimientos que cumplen el filtro, no solo de la
+    página visible (antes Reportes sumaba los 30 de la página)."""
+    entradas: int = 0
+    salidas: int = 0
+    traslados: int = 0
+    transferencias: int = 0
+    cantidad_entrada: float = 0
+    cantidad_salida: float = 0
+
+
 class PaginaMovimientos(BaseModel):
     items: list[MovimientoResponse]
     total: int
     pagina: int
     tamano: int
     total_paginas: int
+    resumen: ResumenMovimientos = ResumenMovimientos()
 
 
 class FiltrosHistorial(BaseModel):

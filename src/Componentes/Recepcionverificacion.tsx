@@ -13,7 +13,8 @@ export function useControladorRecepcion(sesion: Sesion) {
   const verificacion = useVerificacionRecepcion({ sesion, archivo });
   const { cargarEquivalencias } = equivalencias;
   useEffect(() => { if (archivo.notaImportacionEquivalencias) cargarEquivalencias(); }, [archivo.notaImportacionEquivalencias, cargarEquivalencias]);
-  async function agregarYReverificar(accion: () => Promise<boolean>) { const guardada = await accion(); if (guardada && archivo.paso === "verificacion") await verificacion.verificarEnServidor(); }
+  // Devuelve si se guardó: el panel solo limpia su formulario si fue así.
+  async function agregarYReverificar(accion: () => Promise<boolean>) { const guardada = await accion(); if (guardada && archivo.paso === "verificacion") await verificacion.verificarEnServidor(); return guardada; }
   function iniciarNuevaRecepcion() { archivo.reiniciarArchivo(); verificacion.reiniciarVerificacion(); }
   return {
     ...archivo, ...verificacion, ...equivalencias,

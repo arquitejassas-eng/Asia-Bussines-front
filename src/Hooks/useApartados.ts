@@ -38,6 +38,18 @@ type Apartado = {
   items: ApartadoItem[];
 };
 
+/** Quita la posición `indice` de un objeto indexado por posición y corre
+ * una posición hacia arriba todo lo que estaba después. */
+function quitarPosicion<T>(porPosicion: Record<number, T>, indice: number): Record<number, T> {
+  const resultado: Record<number, T> = {};
+  for (const [clave, valor] of Object.entries(porPosicion)) {
+    const posicion = Number(clave);
+    if (posicion < indice) resultado[posicion] = valor;
+    else if (posicion > indice) resultado[posicion - 1] = valor;
+  }
+  return resultado;
+}
+
 /** Estado y operaciones del módulo Apartados (reserva de material por cotización).
  * Cada línea del formulario elige su modalidad (POR_ROLLO/POR_STOCK) de forma
  * independiente -- ver ITEM_VACIO arriba. */
@@ -110,14 +122,12 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
 
   function quitarItemApartado(indice: number) {
     setFormulario((actual) => ({ ...actual, items: actual.items.filter((_, i) => i !== indice) }));
-    setDisponibilidadItems((actual) => {
-      const { [indice]: _quitado, ...resto } = actual;
-      return resto;
-    });
-    setResultadosBusquedaProducto((actual) => {
-      const { [indice]: _quitado, ...resto } = actual;
-      return resto;
-    });
+    // Disponibilidad y búsquedas se guardan por POSICIÓN de la línea: al quitar
+    // una, las siguientes suben un puesto y sus datos tienen que subir con
+    // ellas. Antes se quedaban en la posición vieja y la línea de al lado
+    // mostraba la disponibilidad de otro código.
+    setDisponibilidadItems((actual) => quitarPosicion(actual, indice));
+    setResultadosBusquedaProducto((actual) => quitarPosicion(actual, indice));
   }
 
   function actualizarItemApartado(indice: number, campo: keyof ItemFormulario, valor: string) {

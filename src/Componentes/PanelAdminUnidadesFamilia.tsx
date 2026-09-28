@@ -14,11 +14,18 @@ function PanelAdminUnidadesFamilia({ unidadesFamilia, guardarUnidadFamilia }: {
   guardarUnidadFamilia?: (familia: string, unidad: string, permiteDecimales?: boolean) => Promise<boolean> | void;
 }) {
   const [form, setForm] = useState({ familia: "", unidad: "", permiteDecimales: true });
+  const [error, setError] = useState("");
 
-  function enviar(e: React.FormEvent) {
+  // Solo se limpia si se guardó; antes se borraba aunque fallara, sin aviso.
+  async function enviar(e: React.FormEvent) {
     e.preventDefault();
     if (!form.familia.trim() || !form.unidad.trim()) return;
-    guardarUnidadFamilia?.(form.familia.trim(), form.unidad.trim(), form.permiteDecimales);
+    setError("");
+    const guardado = await guardarUnidadFamilia?.(form.familia.trim(), form.unidad.trim(), form.permiteDecimales);
+    if (guardado === false) {
+      setError("No se pudo guardar la unidad. Revisa los datos e intenta de nuevo.");
+      return;
+    }
     setForm({ familia: "", unidad: "", permiteDecimales: true });
   }
 
@@ -75,6 +82,7 @@ function PanelAdminUnidadesFamilia({ unidadesFamilia, guardarUnidadFamilia }: {
           Agregar / actualizar
         </button>
       </form>
+      {error && <p className="inventario-error">{error}</p>}
     </div>
   );
 }

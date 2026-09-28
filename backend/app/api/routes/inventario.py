@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
@@ -12,7 +13,7 @@ from app.models.usuario import RolUsuario, Usuario
 from app.schemas.inventario import (
     ConfirmarCargaProductosRequest, MovimientoCrear, MovimientoResponse, PaginaMovimientos,
     PaginaProductos, PrevisualizacionCargaProductosResponse, ProductoActualizar, ProductoCrear,
-    ProductoResponse, ResultadoCargaProductosResponse,
+    ProductoResponse, ResultadoCargaProductosResponse, ResumenMovimientos,
     SeleccionarHojaCargaProductosRequest,
 )
 from app.schemas.unidad_familia import UnidadFamiliaInput, UnidadFamiliaResponse
@@ -267,8 +268,24 @@ def historial(
     consulta = consulta.order_by(Movimiento.fecha.desc())
     if not paginado: return consulta.all()
     total = consulta.count()
+    # Totales sobre todo el filtro (una sola consulta agrupada por tipo).
+    por_tipo = {
+        tipo: (cuantos, float(suma or 0))
+        for tipo, cuantos, suma in consulta.order_by(None)
+        .with_entities(Movimiento.tipo, func.count(Movimiento.id), func.sum(Movimiento.cantidad))
+        .group_by(Movimiento.tipo).all()
+    }
+    resumen = ResumenMovimientos(
+        entradas=por_tipo.get(TipoMovimiento.ENTRADA, (0, 0))[0],
+        salidas=por_tipo.get(TipoMovimiento.SALIDA, (0, 0))[0],
+        traslados=por_tipo.get(TipoMovimiento.TRASLADO, (0, 0))[0],
+        transferencias=por_tipo.get(TipoMovimiento.TRANSFERENCIA, (0, 0))[0],
+        cantidad_entrada=round(por_tipo.get(TipoMovimiento.ENTRADA, (0, 0))[1], 2),
+        cantidad_salida=round(por_tipo.get(TipoMovimiento.SALIDA, (0, 0))[1], 2),
+    )
     return PaginaMovimientos(items=consulta.offset((pagina - 1) * tamano).limit(tamano).all(), total=total,
-                             pagina=pagina, tamano=tamano, total_paginas=max(1, (total + tamano - 1) // tamano))
+                             pagina=pagina, tamano=tamano, total_paginas=max(1, (total + tamano - 1) // tamano),
+                             resumen=resumen)
 
 
 @router.get("/unidades-familia", response_model=list[UnidadFamiliaResponse])
