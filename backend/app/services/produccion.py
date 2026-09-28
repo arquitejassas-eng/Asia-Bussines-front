@@ -206,6 +206,25 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
             raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} no tiene metros suficientes.")
 
     apartado_item = _apartado_item_para_produccion(db, datos.apartado_item_id, usuario) if datos.apartado_item_id else None
+    if apartado_item is not None:
+        # Hallazgo #12 de la auditoría: la producción de un apartado debe
+        # salir de rollos DEL CÓDIGO que ese apartado reservó. Antes se
+        # aceptaba cualquier código: se descontaba un rollo de otro color y
+        # se daba por atendida la reserva del apartado, que quedaba liberada
+        # para otros. Un ítem de stock no tiene metros (esa reserva se
+        # descuenta al marcar la producción terminada) y terminaba en 500.
+        if apartado_item.modalidad != ModalidadApartado.POR_ROLLO:
+            raise HTTPException(
+                status_code=400,
+                detail="Ese ítem del apartado es de producto de stock, no de rollo: no se registra con rollos "
+                "(su stock se descuenta al marcar la producción como terminada).",
+            )
+        if apartado_item.codigo_interno != codigo:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Este apartado es de {apartado_item.codigo_interno} y elegiste rollos de {codigo}. "
+                f"Selecciona rollos del código {apartado_item.codigo_interno}.",
+            )
 
     # Cuánto se consume del rollo: para tejas es libre (lo que el usuario
     # seleccionó); para productos seccionados (caballete/flanche) es un
