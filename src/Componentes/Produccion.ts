@@ -4,11 +4,12 @@ import { useSearchParams } from "react-router-dom";
 import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, produccionDesdeApi, rolloDesdeApi } from "./Mapeo";
 import { calcularSolicitudesPendientes, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/produccion";
+import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 
-// Refresco automático de solicitudes pendientes / historial de producción --
-// mismo patrón e intervalo que AlmacenGlobal.ts (bodegas): ver ese archivo
-// para el razonamiento completo (escala pequeña, sin infraestructura de push).
-const INTERVALO_POLLING_PRODUCCION_MS = 20_000;
+// Refresco automático de solicitudes pendientes / historial de producción.
+// Más espaciado que el resto de pantallas (10 s): el historial completo de
+// producción es la consulta más pesada de la app.
+const SEGUNDOS_POLLING_PRODUCCION = 20;
 
 const ESTADOS_SOLICITUD_PENDIENTE = ["enviado_a_produccion", "en_produccion"];
 
@@ -122,7 +123,10 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   const [codigoBusqueda, setCodigoBusqueda] = useState("");
   const [rollosDeMiBodega, setRollosDeMiBodega] = useState<Rollo[]>([]);
 
+  // Rollos y solicitudes solo los necesita quien registra producción; Hoja
+  // de Vida (que comparte este hook) no los usa.
   useEffect(() => {
+    if (!puedeRegistrarProduccion) return;
     (async () => {
       try {
         const datos = await api.get("/rollos");
@@ -131,24 +135,27 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         setRollosDeMiBodega([]);
       }
     })();
-  }, []);
+  }, [puedeRegistrarProduccion]);
 
   const [apartadosPendientes, setApartadosPendientes] = useState([]);
   const [apartadoItemId, setApartadoItemId] = useState(null);
 
-  const cargarSolicitudesPendientes = useCallback(async () => {
+  // `silenciosa` (actualización automática): si falla, conserva la lista que
+  // ya estaba -- vaciarla hacía desaparecer el panel de solicitudes y movía
+  // los metros seleccionados mientras Planta llenaba el formulario.
+  const cargarSolicitudesPendientes = useCallback(async (silenciosa = false) => {
     try {
       const datos = await api.get("/apartados");
       const apartados = datos.map(apartadoDesdeApi).filter((ap) => ESTADOS_SOLICITUD_PENDIENTE.includes(ap.estado));
       setApartadosPendientes(apartados);
     } catch {
-      setApartadosPendientes([]);
+      if (!silenciosa) setApartadosPendientes([]);
     }
   }, []);
 
   useEffect(() => {
-    cargarSolicitudesPendientes();
-  }, [cargarSolicitudesPendientes]);
+    if (puedeRegistrarProduccion) cargarSolicitudesPendientes();
+  }, [puedeRegistrarProduccion, cargarSolicitudesPendientes]);
 
   const solicitudesPendientesSinOrdenar = useMemo(
     () => calcularSolicitudesPendientes(apartadosPendientes),
@@ -334,6 +341,11 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   // borrada), pero antes hace un último ajuste al pendiente del apartado.
   const gestionandoStockRef = useRef(false);
 
+  const pendienteSolicitudElegida = useMemo(() => {
+    const solicitud = apartadoItemId ? solicitudesPendientes.find((s) => s.itemId === apartadoItemId) : null;
+    return solicitud ? solicitud.metrosPendientes : 0;
+  }, [apartadoItemId, solicitudesPendientes]);
+
   useEffect(() => {
     // Caballetes/Flanches: el rollo lo elige Planta a mano (ver
     // alternarSeleccionRollo) -- el total EXACTO que exige el corte físico lo
@@ -354,16 +366,19 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       gestionandoStockRef.current = false; // último ajuste: soltar el control.
     }
 
-    const solicitud = apartadoItemId ? solicitudesPendientes.find((s) => s.itemId === apartadoItemId) : null;
-    const pendienteApartado = solicitud ? solicitud.metrosPendientes : 0;
-    const objetivoTotal = redondear(pendienteApartado + metrosNecesariosStock);
+    const objetivoTotal = redondear(pendienteSolicitudElegida + metrosNecesariosStock);
 
     const candidatos = [...rollosDisponibles].sort(
       (a, b) => new Date(a.fechaIngreso).getTime() - new Date(b.fechaIngreso).getTime()
     );
     setSeleccion((actual) => calcularAsignacionRollos(objetivoTotal, candidatos, actual).seleccion);
+    // Depende del NÚMERO pendiente de la solicitud elegida, no de la lista de
+    // solicitudes: la actualización automática crea una lista nueva en cada
+    // recarga aunque nada cambie, y eso recalculaba la asignación y deshacía
+    // los metros que Planta había ajustado a mano. Solo si el pendiente cambia
+    // de verdad (ej. otro registro para el mismo apartado) se recalcula.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipoProducto, stockAdicional, metrosPorUnidad, apartadoItemId, rollosDisponibles, solicitudesPendientes]);
+  }, [tipoProducto, stockAdicional, metrosPorUnidad, apartadoItemId, rollosDisponibles, pendienteSolicitudElegida]);
 
   // Siembra la línea de stock adicional con el sobrante calculado (5
   // unidades pedidas -> corte de 6 -> 1 de sobrante), pero solo si el
@@ -594,12 +609,12 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
 
   const [produccionesRegistradas, setProduccionesRegistradas] = useState([]);
 
-  const cargarProducciones = useCallback(async () => {
+  const cargarProducciones = useCallback(async (silenciosa = false) => {
     try {
       const datos = await api.get("/produccion");
       setProduccionesRegistradas(datos.map(produccionDesdeApi));
     } catch {
-      setProduccionesRegistradas([]);
+      if (!silenciosa) setProduccionesRegistradas([]);
     }
   }, []);
 
@@ -609,29 +624,13 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
 
   // Refresco automático mientras esta pantalla esté abierta (Producción o
   // Hoja de Vida, que comparten este mismo hook): historial de producción
-  // siempre; solicitudes pendientes solo si puede registrarlas -- evita que
-  // Hoja de Vida (administrativo) consulte /apartados sin necesitarlo. No es
-  // un estado global (a diferencia de AlmacenGlobal.ts): dura lo que dure
-  // esta pantalla montada, que es justo lo que se pidió.
-  useEffect(() => {
-    const intervalo = setInterval(() => {
-      if (puedeRegistrarProduccion) cargarSolicitudesPendientes();
-      cargarProducciones();
-    }, INTERVALO_POLLING_PRODUCCION_MS);
-
-    function alVolverVisible() {
-      if (document.visibilityState === "visible") {
-        if (puedeRegistrarProduccion) cargarSolicitudesPendientes();
-        cargarProducciones();
-      }
-    }
-    document.addEventListener("visibilitychange", alVolverVisible);
-
-    return () => {
-      clearInterval(intervalo);
-      document.removeEventListener("visibilitychange", alVolverVisible);
-    };
-  }, [puedeRegistrarProduccion, cargarSolicitudesPendientes, cargarProducciones]);
+  // siempre; solicitudes pendientes solo si puede registrarlas. Silencioso
+  // (si falla, conserva lo que había), solo con la pestaña a la vista y sin
+  // encimar consultas -- ver useActualizacionAutomatica.
+  useActualizacionAutomatica(
+    () => Promise.all([puedeRegistrarProduccion ? cargarSolicitudesPendientes(true) : null, cargarProducciones(true)]),
+    { segundos: SEGUNDOS_POLLING_PRODUCCION },
+  );
 
   const misProducciones = produccionesRegistradas;
 
