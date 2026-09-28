@@ -17,7 +17,7 @@ const MODULOS = [
   { clave: "reportes", etiqueta: "Reportes", ruta: "/reportes", disponible: true, roles: ["administrativo"] },
   { clave: "ia", etiqueta: "Asistente de IA", ruta: "/ia", disponible: true, roles: ["administrativo", "admin_inventario"] },
   { clave: "produccion", etiqueta: "Registrar Producción", ruta: "/produccion", disponible: true, notificable: true, roles: ["jefe_planta"] },
-  { clave: "hoja_vida", etiqueta: "Hoja de Vida", ruta: "/hoja-vida", disponible: true, roles: ["administrativo"] },
+  { clave: "hoja_vida", etiqueta: "Hoja de Vida", ruta: "/hoja-vida", disponible: true, roles: ["administrativo", "admin_inventario"] },
   { clave: "usuarios", etiqueta: "Administrar usuarios", ruta: "/usuarios", disponible: true, roles: ["superadmin"] },
 ];
 

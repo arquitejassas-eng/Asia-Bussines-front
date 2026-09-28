@@ -121,7 +121,7 @@ export default function App() {
       />
       <Route
         path="/hoja-vida"
-        element={paginaProtegida(["administrativo"], HojaVidaPage)}
+        element={paginaProtegida(["administrativo", "admin_inventario"], HojaVidaPage)}
       />
       <Route
         path="/usuarios"

@@ -16,4 +16,11 @@ def registrar_produccion(datos: ProduccionCrear, db: Session = Depends(get_db), 
 
 @router.get("", response_model=list[ProduccionResponse])
 def listar_producciones(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> list[Produccion]:
-    return db.query(Produccion).filter(coincide_bodega(Produccion.bodega_id, usuario.bodega_id)).order_by(Produccion.fecha.desc()).all()
+    """Hoja de Vida: cada sede ve solo sus producciones. Admin Inventario ve
+    las de TODAS las sedes, para verificar que el material que sale de cada
+    una sea el real (con coincide_bodega no vería ninguna: su bodega_id es
+    NULL y toda producción pertenece a una sede)."""
+    consulta = db.query(Produccion)
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+        consulta = consulta.filter(coincide_bodega(Produccion.bodega_id, usuario.bodega_id))
+    return consulta.order_by(Produccion.fecha.desc()).all()
