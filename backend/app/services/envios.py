@@ -29,6 +29,18 @@ def _decimal(valor: float | Decimal) -> Decimal:
     return Decimal(str(valor))
 
 
+def envio_pendiente_del_rollo(db: Session, rollo_id: int) -> Envio | None:
+    """El envío PENDIENTE (en camino) en el que va este rollo, si hay uno.
+    Mientras un rollo va en camino no se le puede consumir ni sacar (ver
+    consumos_rollo.py): la sede lo recibe con los metros que tenía al salir."""
+    return (
+        db.query(Envio)
+        .join(EnvioItem, EnvioItem.envio_id == Envio.id)
+        .filter(EnvioItem.rollo_id == rollo_id, Envio.estado == EstadoEnvio.PENDIENTE_CONFIRMACION)
+        .first()
+    )
+
+
 def _envio_de_mi_bodega(db: Session, envio_id: int, usuario: Usuario) -> Envio:
     envio = db.query(Envio).filter(Envio.id == envio_id).with_for_update().first()
     if envio is None or envio.bodega_destino_id != usuario.bodega_id:
@@ -44,6 +56,12 @@ def crear_envio(db: Session, datos: EnvioCrear, usuario: Usuario) -> Envio:
         raise HTTPException(status_code=403, detail="Solo Admin Inventario puede crear envíos.")
     if not datos.items:
         raise HTTPException(status_code=400, detail="El envío debe tener al menos un ítem.")
+    # El chequeo de "ya tiene un envío pendiente" de abajo no ve los ítems
+    # agregados en este mismo envío (autoflush=False): sin esto, el mismo
+    # rollo podía ir dos veces y generar dos transferencias al confirmar.
+    rollo_ids = [item.rollo_id for item in datos.items if item.rollo_id is not None]
+    if len(rollo_ids) != len(set(rollo_ids)):
+        raise HTTPException(status_code=400, detail="El mismo rollo está más de una vez en el envío.")
 
     ahora = datetime.now(timezone.utc)
     envio = Envio(
@@ -58,13 +76,9 @@ def crear_envio(db: Session, datos: EnvioCrear, usuario: Usuario) -> Envio:
             rollo = db.query(Rollo).filter(Rollo.id == item.rollo_id).with_for_update().first()
             if rollo is None or rollo.bodega_id is not None:
                 raise HTTPException(status_code=404, detail=f"Rollo {item.rollo_id} no está disponible en Admin Inventario.")
-            ya_pendiente = (
-                db.query(EnvioItem.id)
-                .join(Envio, Envio.id == EnvioItem.envio_id)
-                .filter(EnvioItem.rollo_id == rollo.id, Envio.estado == EstadoEnvio.PENDIENTE_CONFIRMACION)
-                .first()
-            )
-            if ya_pendiente is not None:
+            if rollo.metros_disponibles <= 0:
+                raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} está agotado, no se puede enviar.")
+            if envio_pendiente_del_rollo(db, rollo.id) is not None:
                 raise HTTPException(
                     status_code=409,
                     detail=f"El rollo {rollo.identificador_rollo} ya tiene un envío pendiente de confirmar.",
@@ -105,6 +119,16 @@ def confirmar_envio_recibido(db: Session, envio_id: int, usuario: Usuario) -> En
             rollo = db.query(Rollo).filter(Rollo.id == item.rollo_id).with_for_update().first()
             if rollo is None:
                 raise HTTPException(status_code=400, detail="Uno de los rollos del envío ya no existe.")
+            # Se revalida al recibir: el rollo tiene que seguir en Admin
+            # Inventario y con metros. Antes se movía sin mirar, y una sede
+            # podía "recibir" un rollo que ya había salido de la empresa.
+            if rollo.bodega_id is not None or rollo.metros_disponibles <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"El rollo {rollo.identificador_rollo} ya no está disponible en Admin Inventario "
+                    "(se movió o se agotó mientras venía en camino). Si no llegó, marca el envío como "
+                    "'No llegó'; si llegó, pide a Admin Inventario que revise ese rollo.",
+                )
             rollo.bodega_id = usuario.bodega_id
             db.add(Movimiento(
                 fecha=ahora, tipo=TipoMovimiento.TRANSFERENCIA, motivo="envio_admin_inventario",

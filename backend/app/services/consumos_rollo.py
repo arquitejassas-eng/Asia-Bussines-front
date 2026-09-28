@@ -10,6 +10,7 @@ from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.rollo import HistorialConsumoRollo, Rollo
 from app.models.usuario import Usuario
 from app.services.apartados import bloquear_rollos_codigo, validar_reserva_rollos
+from app.services.envios import envio_pendiente_del_rollo
 
 
 def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int, usuario: Usuario) -> tuple[Rollo, list[Rollo]]:
@@ -29,6 +30,13 @@ def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int, usuario: Usuario)
     if rollo is None:
         # Le cambiaron el código (ej. una carga masiva) entre la lectura y el bloqueo.
         raise HTTPException(status_code=409, detail="El rollo acaba de cambiar. Recarga e intenta de nuevo.")
+    envio = envio_pendiente_del_rollo(db, rollo.id)
+    if envio is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El rollo {rollo.identificador_rollo} va en camino en el envío #{envio.id}: "
+            "no se puede consumir ni sacar hasta que la sede responda si llegó.",
+        )
     return rollo, rollos_codigo
 
 
