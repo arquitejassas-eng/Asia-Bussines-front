@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.api.deps import coincide_bodega
+from app.db.filtros import coincide_bodega
 from app.models.producto import Producto
 
-FAMILIA_ROLLOS = "Rollos de acero"
+from app.models.rollo import FAMILIA_ROLLOS  # noqa: E402 -- se re-exporta aquí
 
 # Todo lo que identifica a un producto (qué es), a diferencia de cuánto hay
 # (stock/entrada) o de dónde salió (produccion_id, fecha_produccion: son

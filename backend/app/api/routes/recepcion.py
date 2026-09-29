@@ -12,7 +12,7 @@ from app.models.equivalencias import (
 )
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.recepcion import Recepcion
-from app.models.rollo import Rollo
+from app.models.rollo import FAMILIA_ROLLOS, Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.recepcion import (
     ConfirmarRecepcionRequest,
@@ -398,7 +398,7 @@ def confirmar(
             empresa=r.empresa,
             codigo_proveedor=r.codigo_proveedor,
             descripcion=descripcion,
-            familia="Rollos de acero",
+            familia=FAMILIA_ROLLOS,
             color_material=r.color_nombre or r.color_top or "",
             calibre=r.espesor or 0,
             peso_neto=r.net_weight,

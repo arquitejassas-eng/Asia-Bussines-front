@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from app.models.rollo import Rollo
+from app.models.rollo import FAMILIA_ROLLOS, Rollo
 from app.services import clasificacion
 from app.services.clasificacion import normalizar_texto
 from app.services.empresas import sigla_empresa_desde_nombre
@@ -230,7 +230,7 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
             nuevo = Rollo(
                 bodega_id=bodega_id, recepcion_id=None,
                 codigo_interno=codigo_interno, identificador_rollo=identificador_rollo, empresa=empresa,
-                descripcion=descripcion, familia="Rollos de acero", color_material=color_material,
+                descripcion=descripcion, familia=FAMILIA_ROLLOS, color_material=color_material,
                 calibre=calibre, peso_neto=peso_neto,
                 metros_proveedor=metros_totales, metros_calculados=metros_totales,
                 metros_disponibles=metros_disponibles, metros_consumidos=metros_consumidos,

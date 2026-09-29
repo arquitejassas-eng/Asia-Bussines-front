@@ -7,7 +7,8 @@ from secrets import token_hex
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import coincide_bodega
+from app.db.filtros import coincide_bodega
+from app.core.numeros import a_decimal
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.usuario import Usuario
@@ -15,10 +16,6 @@ from app.schemas.inventario import MovimientoCrear
 from app.services.apartados import validar_reserva_producto
 from app.services.productos import nuevo_producto_en_bodega
 from app.services.unidades_familia import validar_cantidad_entera_si_aplica
-
-
-def _decimal(valor: float | Decimal) -> Decimal:
-    return Decimal(str(valor))
 
 
 def _producto_existente(db: Session, producto_id: int, usuario: Usuario) -> Producto | None:
@@ -39,12 +36,12 @@ def _valor_tras_edicion(producto: Producto, campo: str, nombre: str, nuevo: floa
     - si lo cambió, pero alguien más también lo movió mientras tanto, se
       rechaza en vez de pisar ese cambio.
     Sin `anterior` (cliente viejo) se usa el valor enviado, como antes."""
-    actual = _decimal(getattr(producto, campo) or 0)
+    actual = a_decimal(getattr(producto, campo) or 0)
     if anterior is None:
-        return _decimal(nuevo)
-    if abs(_decimal(nuevo) - _decimal(anterior)) <= Decimal("0.005"):
+        return a_decimal(nuevo)
+    if abs(a_decimal(nuevo) - a_decimal(anterior)) <= Decimal("0.005"):
         return actual
-    if abs(actual - _decimal(anterior)) > Decimal("0.005"):
+    if abs(actual - a_decimal(anterior)) > Decimal("0.005"):
         raise HTTPException(
             status_code=409,
             detail=(
@@ -52,7 +49,7 @@ def _valor_tras_edicion(producto: Producto, campo: str, nombre: str, nuevo: floa
                 f"(cuando abriste el formulario era {float(anterior):g}). Revisa el valor y vuelve a guardar."
             ),
         )
-    return _decimal(nuevo)
+    return a_decimal(nuevo)
 
 
 def aplicar_stock_editado(
@@ -65,7 +62,7 @@ def aplicar_stock_editado(
     una entrada o salida con motivo "ajuste" -- antes cambiaba sin rastro."""
     stock_final = _valor_tras_edicion(producto, "stock", "stock", stock, stock_anterior)
     entrada_final = _valor_tras_edicion(producto, "entrada", "total de entradas", entrada, entrada_anterior)
-    stock_actual = _decimal(producto.stock or 0)
+    stock_actual = a_decimal(producto.stock or 0)
     diferencia = stock_final - stock_actual
     if abs(diferencia) > Decimal("0.005"):
         if diferencia < 0:
@@ -85,7 +82,7 @@ def aplicar_stock_editado(
 
 def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) -> Movimiento:
     """Aplica la regla completa, sin hacer commit para permitir composicion."""
-    cantidad = _decimal(datos.cantidad)
+    cantidad = a_decimal(datos.cantidad)
     if cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero.")
 

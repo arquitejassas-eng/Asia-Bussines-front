@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, requiere_rol, usuario_actual
 from app.models.bodega import Bodega
 from app.models.producto import Producto
-from app.models.rollo import Rollo
+from app.models.rollo import FAMILIA_ROLLOS, Rollo
 from app.models.solicitud import EstadoSolicitud, Solicitud
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.bodegas import BodegaCrear, BodegaResponse, SolicitudCrear, SolicitudResponse
@@ -53,7 +53,7 @@ def inventario_de_bodega(
     usuario: Usuario = Depends(usuario_actual),
 ) -> list[Producto | dict]:
     consulta = db.query(Producto).filter(
-        Producto.bodega_id == bodega_id, Producto.familia != "Rollos de acero", Producto.stock > 0
+        Producto.bodega_id == bodega_id, Producto.familia != FAMILIA_ROLLOS, Producto.stock > 0
     )
     if busqueda:
         termino = f"%{busqueda.lower()}%"
@@ -63,7 +63,7 @@ def inventario_de_bodega(
     filas_rollos = [{
         "id": -rollo.id, "bodega_id": rollo.bodega_id,
         "codigo_importacion": rollo.codigo_proveedor or "", "codigo": rollo.codigo_interno,
-        "descripcion": rollo.descripcion, "familia": "Rollos de acero", "calibre": formatear_calibre(rollo.calibre),
+        "descripcion": rollo.descripcion, "familia": FAMILIA_ROLLOS, "calibre": formatear_calibre(rollo.calibre),
         "peso_neto": rollo.peso_neto, "entrada": round(rollo.metros_disponibles + rollo.metros_consumidos, 2),
         "stock": rollo.metros_disponibles, "rollo_id": rollo.id,
         "identificador_rollo": rollo.identificador_rollo,

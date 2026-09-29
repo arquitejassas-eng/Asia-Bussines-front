@@ -3,11 +3,11 @@ from sqlalchemy import case, func, literal, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, requiere_rol
-from app.api.routes.rollos import asignar_peso_actual, filtro_empresa
+from app.services.rollos import asignar_peso_actual, filtro_empresa
 from app.models.bodega import Bodega
 from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.producto import Producto
-from app.models.rollo import Rollo
+from app.models.rollo import FAMILIA_ROLLOS, Rollo
 from app.models.usuario import RolUsuario
 from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComparativoResponse
 from app.schemas.rollos import RolloResponse
@@ -131,7 +131,7 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
             literal(None), func.max(Producto.calibre), literal(None), literal(None),
             func.max(Producto.familia),
         )
-        .filter(Producto.bodega_id.isnot(None), Producto.familia != "Rollos de acero")
+        .filter(Producto.bodega_id.isnot(None), Producto.familia != FAMILIA_ROLLOS)
         .group_by(Producto.codigo, Producto.bodega_id)
         .all()
     )

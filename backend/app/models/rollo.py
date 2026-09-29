@@ -7,6 +7,11 @@ from app.db.base import Base
 from app.services.empresas import sigla_empresa_desde_referencia
 
 
+# Familia fija de la materia prima que se controla rollo por rollo (modelo
+# Rollo); los productos por cantidad nunca la usan. Un solo lugar para el texto.
+FAMILIA_ROLLOS = "Rollos de acero"
+
+
 class EstadoRollo(str, enum.Enum):
     CERRADO = "cerrado"   # recién ingresado, nunca usado
     ABIERTO = "abierto"   # ya usado y con metros disponibles
@@ -44,7 +49,7 @@ class Rollo(Base):
     # referencia no la traía.
     empresa: Mapped[str] = mapped_column(String(10), default="", index=True)
     descripcion: Mapped[str] = mapped_column(String(255), default="")
-    familia: Mapped[str] = mapped_column(String(50), default="Rollos de acero")
+    familia: Mapped[str] = mapped_column(String(50), default=FAMILIA_ROLLOS)
     color_material: Mapped[str] = mapped_column(String(60), default="")
     calibre: Mapped[float] = mapped_column(Float, default=0)
     peso_neto: Mapped[float | None] = mapped_column(Float, nullable=True)

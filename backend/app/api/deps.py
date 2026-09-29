@@ -12,6 +12,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import decodificar_token
+from app.db.filtros import coincide_bodega  # noqa: F401 -- se re-exporta para las rutas
 from app.db.session import get_db
 from app.models.usuario import RolUsuario, Usuario
 
@@ -39,17 +40,6 @@ def usuario_actual(
     return usuario
 
 
-def coincide_bodega(columna, bodega_id: int | None):
-    """`columna == bodega_id` se rompe para Admin Inventario: en SQL
-    `columna == NULL` nunca es verdadero, así que un `.filter(Rollo.bodega_id
-    == usuario.bodega_id)` normal le devolvería siempre vacío en vez de "su"
-    material sin asignar. Usar este helper en cualquier `.filter(...)` que
-    compare una columna de bodega contra un `bodega_id` que puede ser None
-    (típicamente `usuario.bodega_id`) — para el resto de los roles (bodega_id
-    real) se comporta exactamente igual que `==`. Recibe el id directo (no el
-    `Usuario` completo) para poder usarse también en servicios que solo
-    reciben `bodega_id` (ej. `app/services/ia_herramientas.py`)."""
-    return columna.is_(None) if bodega_id is None else columna == bodega_id
 
 
 def requiere_rol(*roles_permitidos: RolUsuario):

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import coincide_bodega
+from app.db.filtros import coincide_bodega
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.rollo import HistorialConsumoRollo, Rollo
 from app.models.usuario import Usuario

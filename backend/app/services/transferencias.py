@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.numeros import a_decimal
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.rollo import Rollo
@@ -12,10 +12,6 @@ from app.models.usuario import Usuario
 from app.schemas.bodegas import SolicitudCrear
 from app.services.apartados import bloquear_rollos_codigo, validar_reserva_producto, validar_reserva_rollos
 from app.services.productos import nuevo_producto_en_bodega
-
-
-def _decimal(valor: float | Decimal) -> Decimal:
-    return Decimal(str(valor))
 
 
 def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int) -> tuple[Rollo, list[Rollo]]:
@@ -79,9 +75,9 @@ def crear_solicitud_transferencia(
         raise HTTPException(status_code=400, detail="Selecciona material de otra bodega.")
     if datos.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero.")
-    if _decimal(datos.cantidad) > producto.stock:
+    if a_decimal(datos.cantidad) > producto.stock:
         raise HTTPException(status_code=400, detail="La cantidad supera la disponibilidad de esa bodega.")
-    validar_reserva_producto(db, producto=producto, cantidad=_decimal(datos.cantidad))
+    validar_reserva_producto(db, producto=producto, cantidad=a_decimal(datos.cantidad))
     return Solicitud(
         fecha=datetime.now(timezone.utc), estado=EstadoSolicitud.PENDIENTE,
         tipo_operacion=datos.tipo_operacion, cantidad=datos.cantidad,
@@ -152,7 +148,7 @@ def aceptar_solicitud_transferencia(
                 Producto.bodega_id == solicitud.bodega_propietaria_id)
         .with_for_update().first()
     )
-    cantidad = _decimal(solicitud.cantidad)
+    cantidad = a_decimal(solicitud.cantidad)
     if producto_origen is None or producto_origen.stock < cantidad:
         raise HTTPException(status_code=400, detail="Ya no hay stock suficiente para aceptar esta solicitud.")
     validar_reserva_producto(db, producto=producto_origen, cantidad=cantidad)

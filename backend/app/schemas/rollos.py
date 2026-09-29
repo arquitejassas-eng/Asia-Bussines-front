@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.fechas import ModeloConFechasUtc
 
-from app.models.rollo import EstadoRollo
+from app.models.rollo import FAMILIA_ROLLOS, EstadoRollo
 
 
 class HistorialConsumoResponse(ModeloConFechasUtc):
@@ -109,7 +109,7 @@ class ActualizarFamiliaRollo(BaseModel):
     """Recepción registra todo bajo "Rollos de acero"; aquí la encargada de
     inventario reclasifica el rollo a la familia real (ej. "Teja Colonial")
     para que el módulo Inventario lo agrupe correctamente."""
-    familia: str = Field(min_length=1, default="Rollos de acero")
+    familia: str = Field(min_length=1, default=FAMILIA_ROLLOS)
 
 
 class ActualizarEmpresaRollo(BaseModel):

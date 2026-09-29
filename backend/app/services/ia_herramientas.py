@@ -18,9 +18,9 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
-from app.api.deps import coincide_bodega
+from app.db.filtros import coincide_bodega
 from app.models.bodega import Bodega
-from app.models.movimiento import Movimiento, TipoMovimiento
+from app.models.movimiento import Movimiento
 from app.models.produccion import Produccion
 from app.models.producto import Producto
 from app.models.rollo import Rollo

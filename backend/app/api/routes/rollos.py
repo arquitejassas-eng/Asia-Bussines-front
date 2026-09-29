@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
 from app.core.config import settings
-from app.models.equivalencias import TablaColorEquivalencia, TablaEspesorEquivalencia, TablaTipoMaterialEquivalencia
+from app.models.equivalencias import TablaColorEquivalencia, TablaTipoMaterialEquivalencia
 from app.models.movimiento import Movimiento
-from app.models.rollo import EstadoRollo, Rollo
+from app.models.rollo import FAMILIA_ROLLOS, EstadoRollo, Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.inventario import MovimientoResponse
 from app.schemas.rollos import (
@@ -17,6 +17,7 @@ from app.schemas.rollos import (
     RolloResponse, SeleccionarHojaCargaRollosRequest, SugerenciaReferenciaResponse,
 )
 from app.services import archivos_carga_rollos
+from app.services.rollos import asignar_peso_actual, filtro_empresa
 from app.services import carga_rollos as srv_carga
 from app.services import clasificacion as srv_excel
 from app.services.consumos_rollo import registrar_consumo_rollo, registrar_salida_externa_rollo
@@ -69,21 +70,6 @@ def listar_rollos(
     asignar_peso_actual(db, items)
     return PaginaRollos(items=items, total=total,
                          pagina=pagina, tamano=tamano, total_paginas=max(1, (total + tamano - 1) // tamano))
-
-
-def filtro_empresa(empresa: str) -> str:
-    """Valor a comparar con `Rollo.empresa` a partir del filtro recibido:
-    "sin_empresa" busca los rollos cuya referencia no traía empresa (los que
-    hay que corregir a mano)."""
-    return "" if empresa == "sin_empresa" else empresa.strip().upper()
-
-
-def asignar_peso_actual(db: Session, rollos: list[Rollo]) -> None:
-    """Una sola consulta a la tabla de equivalencias para toda la página,
-    en vez de una por rollo."""
-    espesores = {e.espesor: e for e in db.query(TablaEspesorEquivalencia).all()}
-    for rollo in rollos:
-        rollo.peso_actual_toneladas = srv_excel.peso_actual_toneladas(rollo.calibre, rollo.metros_disponibles, espesores)
 
 
 @router.get("/{rollo_id}/historial", response_model=list[MovimientoResponse])
@@ -264,7 +250,7 @@ def crear_rollo(
     rollo = Rollo(
         bodega_id=usuario.bodega_id, recepcion_id=None,
         codigo_interno=datos.codigo_interno.strip(), identificador_rollo=identificador_rollo,
-        codigo_proveedor=datos.codigo_proveedor, descripcion=datos.descripcion, familia="Rollos de acero",
+        codigo_proveedor=datos.codigo_proveedor, descripcion=datos.descripcion, familia=FAMILIA_ROLLOS,
         color_material=datos.color_material, calibre=datos.calibre, peso_neto=datos.peso_neto,
         metros_proveedor=metros_proveedor, metros_calculados=metros_proveedor,
         metros_disponibles=datos.metros_disponibles, metros_consumidos=datos.metros_consumidos,

@@ -11,11 +11,11 @@ crear el envío — queda "en tránsito" — y se devuelve si la sede dice "No".
 """
 
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.numeros import a_decimal
 from app.models.envio import Envio, EnvioItem, EstadoEnvio
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
@@ -24,10 +24,6 @@ from app.models.usuario import Usuario
 from app.schemas.envios import EnvioCrear
 from app.services.productos import nuevo_producto_en_bodega
 from app.services.unidades_familia import validar_cantidad_entera_si_aplica
-
-
-def _decimal(valor: float | Decimal) -> Decimal:
-    return Decimal(str(valor))
 
 
 def envio_pendiente_del_rollo(db: Session, rollo_id: int) -> Envio | None:
@@ -95,8 +91,8 @@ def crear_envio(db: Session, datos: EnvioCrear, usuario: Usuario) -> Envio:
                 .with_for_update()
                 .first()
             )
-            cantidad = _decimal(item.cantidad)
-            if producto is None or _decimal(producto.stock) < cantidad:
+            cantidad = a_decimal(item.cantidad)
+            if producto is None or a_decimal(producto.stock) < cantidad:
                 raise HTTPException(
                     status_code=400,
                     detail=f"No hay stock suficiente de '{item.producto_codigo}' en Admin Inventario.",
@@ -141,7 +137,7 @@ def confirmar_envio_recibido(db: Session, envio_id: int, usuario: Usuario) -> En
                 observaciones=f"Envío #{envio.id} confirmado recibido.",
             ))
         else:
-            cantidad = _decimal(item.cantidad or 0)
+            cantidad = a_decimal(item.cantidad or 0)
             producto_destino = (
                 db.query(Producto)
                 .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id == usuario.bodega_id)
@@ -186,7 +182,7 @@ def marcar_envio_no_llego(db: Session, envio_id: int, usuario: Usuario) -> Envio
 
     for item in envio.items:
         if item.producto_codigo is not None:
-            cantidad = _decimal(item.cantidad or 0)
+            cantidad = a_decimal(item.cantidad or 0)
             producto_admin = (
                 db.query(Producto)
                 .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id.is_(None))

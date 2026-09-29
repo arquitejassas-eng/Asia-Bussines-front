@@ -8,6 +8,7 @@ from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
 from app.core.config import settings
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
+from app.models.rollo import FAMILIA_ROLLOS
 from app.models.unidad_familia import TablaUnidadFamilia
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.inventario import (
@@ -42,7 +43,7 @@ def listar_productos(
     # Los rollos (materia prima) ya no aparecen aquí como filas individuales:
     # su detalle vive en /rollos ("Rollos almacenados"). Este listado es solo
     # el catálogo de `Producto`.
-    consulta = db.query(Producto).filter(coincide_bodega(Producto.bodega_id, usuario.bodega_id), Producto.familia != "Rollos de acero")
+    consulta = db.query(Producto).filter(coincide_bodega(Producto.bodega_id, usuario.bodega_id), Producto.familia != FAMILIA_ROLLOS)
     if busqueda:
         termino = f"%{busqueda.lower()}%"
         consulta = consulta.filter(Producto.codigo.ilike(termino) | Producto.codigo_importacion.ilike(termino) | Producto.descripcion.ilike(termino))
