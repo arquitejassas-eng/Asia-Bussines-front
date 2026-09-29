@@ -494,6 +494,22 @@ def cancelar_apartado(db: Session, apartado_id: int, usuario: Usuario) -> Aparta
     return apartado
 
 
+def eliminar_apartado_cancelado(db: Session, apartado_id: int, usuario: Usuario) -> None:
+    """Borra una cotización cancelada (ej. quedó mal y se creó de nuevo).
+    Solo canceladas: las activas se cancelan primero. Nunca una con
+    producción registrada, para no perder el registro de lo producido."""
+    apartado_de_mi_bodega(db, apartado_id, usuario)
+    apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
+    if apartado.estado != EstadoApartado.CANCELADO:
+        raise HTTPException(status_code=400, detail="Solo se pueden eliminar cotizaciones canceladas. Cancélala primero.")
+    if any(item.producciones for item in apartado.items):
+        raise HTTPException(
+            status_code=400,
+            detail="Esta cotización tiene producción registrada: no se puede eliminar para no perder ese registro.",
+        )
+    db.delete(apartado)
+
+
 def enviar_a_produccion(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
     apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
     if apartado.estado != EstadoApartado.APARTADO:

@@ -326,6 +326,16 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
   }
 
+  async function eliminarApartado(id: number) {
+    setErrorAccionApartado("");
+    try {
+      await api.delete(`/apartados/${id}`);
+      await cargarApartados();
+    } catch (err) {
+      setErrorAccionApartado(err instanceof ErrorApi ? err.message : "No se pudo eliminar la cotización.");
+    }
+  }
+
   async function enviarApartadoAProduccion(id: number) {
     setErrorAccionApartado("");
     try {
@@ -368,7 +378,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     disponibilidadItems, consultarDisponibilidadItem,
     resultadosBusquedaProducto, buscarProductoParaItem, seleccionarProductoParaItem,
 
-    errorAccionApartado, cancelarApartado, enviarApartadoAProduccion,
+    errorAccionApartado, cancelarApartado, eliminarApartado, enviarApartadoAProduccion,
     marcarApartadoProduccionTerminada, marcarApartadoEntregado,
   };
 }

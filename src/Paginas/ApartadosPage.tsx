@@ -456,6 +456,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                   ejecutar: () => a.cancelarApartado(ap.id),
                                 })}>Cancelar</button>
                               )}
+                              {a.puedeCancelarApartados && ap.estado === "cancelado" && !ap.items.some((it) => it.tieneProduccionRegistrada) && (
+                                <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
+                                  titulo: `¿Eliminar la cotización cancelada ${ap.numeroCotizacion}?`,
+                                  mensaje: "Se borra de la lista para siempre. No afecta el inventario: su material ya quedó libre al cancelarla.",
+                                  textoConfirmar: "Sí, eliminar",
+                                  ejecutar: () => a.eliminarApartado(ap.id),
+                                })}>Eliminar</button>
+                              )}
                               {tieneProduccionPendiente && (
                                 <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>Iniciar Producción</button>
                               )}

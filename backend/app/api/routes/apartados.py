@@ -115,6 +115,13 @@ def obtener_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: U
     return _con_faltantes(db, [srv.apartado_de_mi_bodega(db, apartado_id, usuario)])[0]
 
 
+@router.delete("/{apartado_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def eliminar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> None:
+    srv.eliminar_apartado_cancelado(db, apartado_id, usuario)
+    db.commit()
+
+
 @router.patch("/{apartado_id}/cancelar", response_model=ApartadoResponse,
               dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def cancelar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
