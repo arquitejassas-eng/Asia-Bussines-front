@@ -51,6 +51,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     });
   }
   const disponibilidadItems = a.disponibilidadItems as Record<number, ItemDisponibilidad>;
+  const lineaSinMaterial = a.formulario.items.some((item, indice) => {
+    const datos = disponibilidadItems[indice]?.datos;
+    if (!datos) return false;
+    if (item.modalidad === "por_stock") return Number(item.cantidad) > (datos.cantidadDisponible ?? 0);
+    return datos.cantidadRollos === 0 || Number(item.cantidad) * Number(item.medida) > (datos.metrosDisponibles ?? 0);
+  });
+  const ofrecerMaterialEnCamino = lineaSinMaterial || a.formulario.materialEnCamino
+    || a.errorFormularioApartado.includes("viene en camino");
+
   const navigate = useNavigate();
 
   const notificaciones = contarNotificacionesBarraLateral(almacen, sesion);
@@ -102,10 +111,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           {!a.mostrarFormularioApartado && cotizacionesAprobadas.map((ap) => (
             <div key={ap.id} className="inventario-exito" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
               <span>
-                ✅ Cotización {ap.numeroCotizacion} aprobada{ap.cliente ? ` — ${ap.cliente}` : ""}
+                {ap.faltantes.length ? "⏳" : "✅"} Cotización {ap.numeroCotizacion} aprobada{ap.cliente ? ` — ${ap.cliente}` : ""}
                 <span style={{ fontWeight: 400 }}> · {formatearFechaColombia(ap.fechaCreacion)}</span>
+                {ap.faltantes.length > 0 && (
+                  <span style={{ display: "block", fontWeight: 400 }}>
+                    Esperando material: {ap.faltantes.join("; ")}. Podrás enviarla cuando le des ingreso.
+                  </span>
+                )}
               </span>
-              <button className="inventario-boton" onClick={() => confirmarEnvioAProduccion(ap)}>
+              <button className="inventario-boton" disabled={ap.faltantes.length > 0} onClick={() => confirmarEnvioAProduccion(ap)}>
                 Enviar a producción
               </button>
             </div>
@@ -309,6 +323,21 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 />
               </div>
 
+              {ofrecerMaterialEnCamino && (
+                <label style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", margin: "0.75rem 0" }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: "auto", marginTop: "0.2rem" }}
+                    checked={a.formulario.materialEnCamino}
+                    onChange={(e) => a.marcarMaterialEnCamino(e.target.checked)}
+                  />
+                  <span>
+                    <strong>El material viene en camino.</strong> En la bodega no alcanza, pero ya está comprado.
+                    El apartado queda "esperando material" y la bodega podrá enviarlo a producción cuando le dé ingreso.
+                  </span>
+                </label>
+              )}
+
               {a.errorFormularioApartado && <p className="inventario-error">{a.errorFormularioApartado}</p>}
 
               <div className="inventario-form-botones">
@@ -383,6 +412,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                   Stock ({itemsStock.length}): {ap.stockSeparadoConfirmado ? "separado ✓" : "pendiente de separar"}
                                 </div>
                               )}
+                              {ap.faltantes.length > 0 && (
+                                <div className="inventario-error" style={{ margin: "0.15rem 0 0" }}>
+                                  ⏳ Esperando material: {ap.faltantes.join("; ")}
+                                </div>
+                              )}
                               {itemsRollo.length > 0 && (
                                 <div className="inventario-carga-ayuda" style={{ margin: "0.15rem 0 0" }}>
                                   Rollo: {itemsRollo.length - rolloPendientes} de {itemsRollo.length} producido{itemsRollo.length === 1 ? "" : "s"}
@@ -394,7 +428,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             <td>{formatearFechaColombia(ap.fechaCreacion)}</td>
                             <td className="inventario-acciones">
                               {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
-                                <button onClick={() => confirmarEnvioAProduccion(ap)}>Enviar a producción</button>
+                                <button
+                                  disabled={ap.faltantes.length > 0}
+                                  title={ap.faltantes.length ? "Esperando material: se habilita cuando le des ingreso" : undefined}
+                                  onClick={() => confirmarEnvioAProduccion(ap)}
+                                >Enviar a producción</button>
                               )}
                               {a.puedeCancelarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
                                 <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({

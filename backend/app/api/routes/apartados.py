@@ -15,6 +15,13 @@ from app.services import apartados as srv
 router = APIRouter(prefix="/apartados", tags=["Apartados"])
 
 
+def _con_faltantes(db: Session, apartados: list[Apartado]) -> list[Apartado]:
+    """Anota en cada apartado lo que le falta por llegar (material en camino)."""
+    for apartado in apartados:
+        apartado.faltantes = srv.faltantes_apartado(db, apartado)
+    return apartados
+
+
 @router.get("/disponibilidad", response_model=DisponibilidadCodigoResponse)
 def consultar_disponibilidad(
     codigo_interno: str = Query(..., min_length=1), bodega_id: int | None = None,
@@ -73,7 +80,7 @@ def listar_reservas_por_codigo(
 def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
     apartado = srv.crear_apartado(db, datos, usuario)
     db.commit(); db.refresh(apartado)
-    return apartado
+    return _con_faltantes(db, [apartado])[0]
 
 
 @router.get("", response_model=list[ApartadoResponse])
@@ -100,12 +107,12 @@ def listar_apartados(
     if estado: consulta = consulta.filter(Apartado.estado == estado)
     if estados: consulta = consulta.filter(Apartado.estado.in_(estados))
     if numero_cotizacion: consulta = consulta.filter(Apartado.numero_cotizacion.ilike(f"%{numero_cotizacion}%"))
-    return consulta.order_by(Apartado.fecha_creacion.desc()).all()
+    return _con_faltantes(db, consulta.order_by(Apartado.fecha_creacion.desc()).all())
 
 
 @router.get("/{apartado_id}", response_model=ApartadoResponse)
 def obtener_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
-    return srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+    return _con_faltantes(db, [srv.apartado_de_mi_bodega(db, apartado_id, usuario)])[0]
 
 
 @router.patch("/{apartado_id}/cancelar", response_model=ApartadoResponse,

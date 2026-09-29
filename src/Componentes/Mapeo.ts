@@ -102,6 +102,8 @@ export function apartadoDesdeApi(a: RegistroApi) {
     fechaEntregado: a.fecha_entregado == null ? null : texto(a.fecha_entregado), observaciones: texto(a.observaciones),
     stockSeparadoConfirmado: Boolean(a.stock_separado_confirmado), stockSeparadoPor: texto(a.stock_separado_por),
     stockSeparadoEn: a.stock_separado_en == null ? null : texto(a.stock_separado_en),
+    // Lo que todavía no llega a la bodega (material en camino).
+    faltantes: Array.isArray(a.faltantes) ? a.faltantes.map(texto) : [],
     items: items.map(apartadoItemDesdeApi) };
 }
 

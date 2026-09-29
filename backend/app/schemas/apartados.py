@@ -38,6 +38,10 @@ class ApartadoCrear(BaseModel):
     # Bodega de donde sale el material. La elige Admin Inventario (quien crea
     # los apartados); para cualquier otro rol se ignora y se usa la suya.
     bodega_id: int | None = None
+    # Permite apartar más de lo que hay: material ya comprado que todavía no
+    # llega. El apartado queda "esperando material" y no se puede enviar a
+    # producción hasta que se le dé ingreso (ver faltantes_apartado).
+    material_en_camino: bool = False
     numero_cotizacion: str = Field(min_length=1, max_length=32)
     cliente: str = ""
     observaciones: str = ""
@@ -113,6 +117,8 @@ class ApartadoResponse(ModeloConFechasUtc):
     stock_separado_por: str
     stock_separado_en: datetime | None
     items: list[ApartadoItemResponse] = []
+    # Lo que todavía no ha llegado a la bodega (ej. "faltan 200 m de LA50170,50").
+    faltantes: list[str] = []
 
     @field_serializer("fecha_creacion", "fecha_enviado_a_produccion", "fecha_cancelado", "fecha_entregado", "stock_separado_en", when_used="json")
     def _serializar_fechas_opcionales(self, valor: datetime | None) -> str | None:

@@ -124,9 +124,73 @@ def _cotizaciones_que_reservan(db: Session, *, bodega_id: int | None, filtro) ->
     return f" (apartados: {texto}{', ...' if len(nombres) > 5 else ''})"
 
 
+def _items_activos_en_orden(db: Session, *, bodega_id: int | None, filtro) -> list[ApartadoItem]:
+    return (
+        db.query(ApartadoItem)
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), filtro)
+        .order_by(Apartado.fecha_creacion, Apartado.id, ApartadoItem.id)
+        .all()
+    )
+
+
+def _repartir_en_orden(items: list[ApartadoItem], pendiente, fisico: float) -> dict[int, float]:
+    """Reparte lo físico entre las reservas por orden de creación: la
+    cotización más antigua se cubre primero. Con material "en camino" lo
+    reservado puede superar lo físico, y lo que falta le toca siempre a las
+    más nuevas -- nunca bloquea a una anterior que sí tenía su material."""
+    restante = max(float(fisico), 0.0)
+    cubierto: dict[int, float] = {}
+    for item in items:
+        necesita = max(float(pendiente(item)), 0.0)
+        cubierto[item.id] = round(min(necesita, restante), 2)
+        restante -= cubierto[item.id]
+    return cubierto
+
+
+def cobertura_rollo(db: Session, *, bodega_id: int | None, codigo_interno: str, fisico: float | None = None) -> dict[int, float]:
+    """Metros realmente cubiertos de cada ítem POR_ROLLO activo del código."""
+    if fisico is None:
+        rollos = db.query(Rollo).filter(Rollo.bodega_id == bodega_id, Rollo.codigo_interno == codigo_interno)
+        fisico = sum(r.metros_disponibles for r in rollos)
+    items = _items_activos_en_orden(db, bodega_id=bodega_id, filtro=ApartadoItem.codigo_interno == codigo_interno)
+    return _repartir_en_orden(items, lambda it: (it.metros_requeridos or 0) - (it.metros_consumidos or 0), fisico)
+
+
+def cobertura_producto(db: Session, *, producto: Producto) -> dict[int, float]:
+    """Unidades realmente cubiertas de cada ítem POR_STOCK activo del producto."""
+    items = _items_activos_en_orden(db, bodega_id=producto.bodega_id, filtro=ApartadoItem.producto_id == producto.id)
+    return _repartir_en_orden(items, lambda it: 0 if it.stock_descontado else it.cantidad, float(producto.stock))
+
+
+def faltantes_apartado(db: Session, apartado: Apartado) -> list[str]:
+    """Lo que todavía no está físicamente en la bodega para este apartado
+    (material comprado que viene en camino). Vacío = todo su material ya está."""
+    if apartado.estado not in ESTADOS_RESERVA_ACTIVA:
+        return []
+    faltantes: list[str] = []
+    coberturas: dict[str, dict[int, float]] = {}
+    for item in apartado.items:
+        if item.modalidad == ModalidadApartado.POR_STOCK:
+            producto = db.get(Producto, item.producto_id)
+            if producto is None or item.stock_descontado:
+                continue
+            falta = round(item.cantidad - cobertura_producto(db, producto=producto).get(item.id, 0), 2)
+            if falta > 0.005:
+                faltantes.append(f"faltan {falta:g} de {producto.codigo}")
+        else:
+            if item.codigo_interno not in coberturas:
+                coberturas[item.codigo_interno] = cobertura_rollo(db, bodega_id=apartado.bodega_id, codigo_interno=item.codigo_interno)
+            pendiente = (item.metros_requeridos or 0) - (item.metros_consumidos or 0)
+            falta = round(pendiente - coberturas[item.codigo_interno].get(item.id, 0), 2)
+            if falta > 0.005:
+                faltantes.append(f"faltan {falta:g} m de {item.codigo_interno}")
+    return faltantes
+
+
 def validar_reserva_rollos(
     db: Session, *, bodega_id: int | None, codigo_interno: str, metros_salen: float,
-    rollos_codigo: list[Rollo], metros_reserva_propia: float = 0.0,
+    rollos_codigo: list[Rollo], metros_reserva_propia: float = 0.0, apartado_item_id: int | None = None,
 ) -> None:
     """Impide que salga material de un código que ya está apartado.
 
@@ -140,7 +204,14 @@ def validar_reserva_rollos(
     para que nadie cambie los números mientras se valida."""
     fisico = round(sum(r.metros_disponibles for r in rollos_codigo), 2)
     reservado = metros_reservados_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno)
-    libre = round(fisico - reservado, 2)
+    # Con material "en camino" lo reservado puede superar lo físico: lo libre
+    # nunca baja de 0 y la reserva propia solo cuenta lo que de verdad está
+    # cubierto (por orden de creación), así una cotización anterior produce
+    # aunque una más nueva esté esperando material.
+    libre = round(max(fisico - reservado, 0), 2)
+    if apartado_item_id is not None:
+        cubierto = cobertura_rollo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, fisico=fisico).get(apartado_item_id, 0)
+        metros_reserva_propia = min(metros_reserva_propia, cubierto)
     neto = round(metros_salen - metros_reserva_propia, 2)
     if neto > libre + 0.005:
         cotizaciones = _cotizaciones_que_reservan(db, bodega_id=bodega_id, filtro=ApartadoItem.codigo_interno == codigo_interno)
@@ -149,7 +220,7 @@ def validar_reserva_rollos(
             detail=(
                 f"No hay suficiente material libre del código {codigo_interno}: hay {fisico} m en la bodega, "
                 f"pero {reservado} m están apartados para cotizaciones{cotizaciones}. "
-                f"Libres: {max(libre, 0)} m; esta operación necesita {neto} m. "
+                f"Libres: {libre} m; esta operación necesita {neto} m. "
                 "Para usar material apartado, regístralo desde la producción de ese apartado o cancela el apartado."
             ),
         )
@@ -290,12 +361,13 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
 
     for codigo_interno, metros_solicitados in solicitado_por_codigo.items():
         resumen = disponibilidad_por_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, bloquear=True)
-        if metros_solicitados > resumen["metros_disponibles"]:
+        if metros_solicitados > resumen["metros_disponibles"] and not datos.material_en_camino:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"El código '{codigo_interno}' no tiene material suficiente: "
-                    f"disponibles {resumen['metros_disponibles']} m, solicitados {metros_solicitados} m."
+                    f"disponibles {max(resumen['metros_disponibles'], 0)} m, solicitados {metros_solicitados} m. "
+                    "Si ese material ya viene en camino, marca 'El material viene en camino'."
                 ),
             )
 
@@ -307,12 +379,13 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
 
     for producto_id, cantidad_solicitada in solicitado_por_producto.items():
         resumen = disponibilidad_producto(db, bodega_id=bodega_id, producto_id=producto_id, bloquear=True)
-        if cantidad_solicitada > resumen["cantidad_disponible"]:
+        if cantidad_solicitada > resumen["cantidad_disponible"] and not datos.material_en_camino:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"El producto '{resumen['codigo']}' no tiene stock suficiente: "
-                    f"disponibles {resumen['cantidad_disponible']}, solicitados {cantidad_solicitada}."
+                    f"disponibles {max(resumen['cantidad_disponible'], 0)}, solicitados {cantidad_solicitada}. "
+                    "Si ese material ya viene en camino, marca 'El material viene en camino'."
                 ),
             )
 
@@ -370,6 +443,12 @@ def enviar_a_produccion(db: Session, apartado_id: int, usuario: Usuario) -> Apar
     apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
     if apartado.estado != EstadoApartado.APARTADO:
         raise HTTPException(status_code=400, detail="Este apartado ya fue enviado a producción o no está activo.")
+    faltantes = faltantes_apartado(db, apartado)
+    if faltantes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Esperando material: {'; '.join(faltantes)}. Se podrá enviar a producción cuando le des ingreso a ese material.",
+        )
     apartado.estado = EstadoApartado.ENVIADO_A_PRODUCCION
     apartado.enviado_a_produccion_por = usuario.correo
     apartado.fecha_enviado_a_produccion = datetime.now(timezone.utc)

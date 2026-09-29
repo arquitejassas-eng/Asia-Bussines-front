@@ -366,6 +366,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     validar_reserva_rollos(
         db, bodega_id=usuario.bodega_id, codigo_interno=codigo, metros_salen=total,
         metros_reserva_propia=aplicado_al_apartado, rollos_codigo=rollos_codigo,
+        apartado_item_id=apartado_item.id if apartado_item else None,
     )
 
     sello = ahora.strftime("%Y%m%d%H%M%S"); codigo_unico = f"PROD-{sello}-{token_hex(3).upper()}"

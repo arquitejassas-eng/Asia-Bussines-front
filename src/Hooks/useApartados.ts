@@ -13,7 +13,7 @@ const ITEM_VACIO = {
   productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
   descripcion: "", cantidad: "",
 };
-const FORMULARIO_VACIO = { bodegaId: "", numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
+const FORMULARIO_VACIO = { bodegaId: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
 
 type ItemFormulario = {
   modalidad: string;
@@ -22,7 +22,7 @@ type ItemFormulario = {
   descripcion: string; cantidad: string | number;
 };
 type FormularioApartado = {
-  bodegaId: string; numeroCotizacion: string; cliente: string; observaciones: string; items: ItemFormulario[];
+  bodegaId: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string; items: ItemFormulario[];
 };
 type ApartadoItem = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string; cantidad: number;
@@ -35,7 +35,7 @@ type Apartado = {
   fechaCreacion: string; estado: string; enviadoAProduccionPor: string; fechaEnviadoAProduccion: string | null;
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;
-  items: ApartadoItem[];
+  faltantes: string[]; items: ApartadoItem[];
 };
 
 /** Quita la posición `indice` de un objeto indexado por posición y corre
@@ -119,6 +119,10 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     setErrorFormularioApartado("");
     setDisponibilidadItems({});
     setResultadosBusquedaProducto({});
+  }
+
+  function marcarMaterialEnCamino(valor: boolean) {
+    setFormulario((actual) => ({ ...actual, materialEnCamino: valor }));
   }
 
   function actualizarCampoApartado(campo: keyof FormularioApartado, valor: string) {
@@ -291,6 +295,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     try {
       await api.post("/apartados", {
         bodega_id: Number(formulario.bodegaId),
+        material_en_camino: formulario.materialEnCamino,
         numero_cotizacion: formulario.numeroCotizacion.trim(),
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
@@ -357,7 +362,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     filtroEstado, setFiltroEstado,
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
-    actualizarCampoApartado, cambiarBodegaApartado, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
+    actualizarCampoApartado, cambiarBodegaApartado, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
     cambiarModalidadItem,
     guardandoApartado, errorFormularioApartado, crearApartado,
     disponibilidadItems, consultarDisponibilidadItem,
