@@ -13,6 +13,14 @@ class FilaComparativoResponse(BaseModel):
     familia: str = ""
     por_bodega: dict[int, float]
     total: float
+    # Lo apartado por cotizaciones activas (aún sin producir/entregar) y lo
+    # libre = físico - apartado. Puede quedar negativo si se apartó material
+    # que viene en camino. Vacío cuando se filtra por empresa: los apartados
+    # no son de una empresa.
+    reservado_por_bodega: dict[int, float] = {}
+    reservado_total: float = 0.0
+    libre_por_bodega: dict[int, float] = {}
+    libre_total: float = 0.0
     # Solo para rollos (peso ACTUAL en toneladas -- según metros disponibles
     # hoy, no el peso neto de ingreso -- y cantidad de rollos); en productos
     # quedan vacíos, un producto no se cuenta por unidad física.

@@ -4,13 +4,17 @@ import { envioDesdeApi, rolloDesdeApi } from "./Mapeo";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
-type RolloResumen = {
+type Apartado = {
+  reservadoPorBodega: Record<string, number>; reservadoTotal: number;
+  librePorBodega: Record<string, number>; libreTotal: number;
+};
+type RolloResumen = Apartado & {
   codigo: string; descripcion: string; colorMaterial: string; calibre: string;
   porBodega: Record<string, number>; total: number;
   pesoActualPorBodega: Record<string, number>; pesoActualTotal: number; rollosSinPesoActual: number;
   cantidadPorBodega: Record<string, number>; cantidadTotal: number;
 };
-type ProductoResumen = {
+type ProductoResumen = Apartado & {
   codigo: string; descripcion: string; calibre: string; familia: string;
   porBodega: Record<string, number>; total: number;
 };
@@ -82,6 +86,10 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
       }>(`/admin-inventario/comparativo${parametroEmpresa ? `?${parametroEmpresa}` : ""}`);
       if (!datos) throw new Error("Respuesta vacía del servidor.");
       if (consulta !== consultaComparativo.current) return;
+      const apartado = (f: Record<string, any>) => ({
+        reservadoPorBodega: f.reservado_por_bodega || {}, reservadoTotal: f.reservado_total || 0,
+        librePorBodega: f.libre_por_bodega || {}, libreTotal: f.libre_total ?? f.total,
+      });
       setComparativo({
         bodegas: datos.bodegas || [],
         rollos: (datos.rollos || []).map((f) => ({
@@ -90,10 +98,12 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
           pesoActualPorBodega: f.peso_actual_por_bodega || {}, pesoActualTotal: f.peso_actual_total || 0,
           rollosSinPesoActual: f.rollos_sin_peso_actual || 0,
           cantidadPorBodega: f.cantidad_por_bodega || {}, cantidadTotal: f.cantidad_total || 0,
+          ...apartado(f),
         })),
         productos: (datos.productos || []).map((f) => ({
           codigo: f.codigo, descripcion: f.descripcion, calibre: f.calibre, familia: f.familia || "",
           porBodega: f.por_bodega, total: f.total,
+          ...apartado(f),
         })),
         pesoActualTotalPorBodega: datos.peso_actual_total_por_bodega || {},
         pesoActualTotalGeneral: datos.peso_actual_total_general || 0,

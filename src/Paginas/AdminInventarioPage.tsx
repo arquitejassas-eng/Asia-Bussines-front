@@ -19,6 +19,20 @@ const ETIQUETAS_ESTADO_ENVIO: Record<string, string> = {
   no_llego: "No llegó",
 };
 
+/** Debajo del físico: cuánto está apartado y cuánto queda libre para vender
+ * (solo si hay algo apartado). En rojo si lo apartado supera lo físico
+ * (material apartado que viene en camino). */
+function CeldaApartado({ reservado, libre, unidad }: { reservado?: number; libre?: number; unidad: string }) {
+  if (!reservado) return null;
+  return (
+    <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>
+      Apartado: {reservado}{unidad}
+      <br />
+      <strong style={{ color: (libre ?? 0) < 0 ? "#b3261e" : undefined }}>Libre: {libre}{unidad}</strong>
+    </span>
+  );
+}
+
 function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const c = useControladorAdminInventario(sesion, almacen);
   const bodegas = c.comparativo.bodegas;
@@ -37,8 +51,12 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
       for (const b of bodegas) {
         fila[`${b.nombre} (m)`] = f.porBodega[b.id] ?? 0;
         fila[`${b.nombre} (rollos)`] = f.cantidadPorBodega[b.id] ?? 0;
+        fila[`${b.nombre} apartado (m)`] = f.reservadoPorBodega[b.id] ?? 0;
+        fila[`${b.nombre} libre (m)`] = f.librePorBodega[b.id] ?? (f.porBodega[b.id] ?? 0);
       }
       fila["Total empresa (m)"] = f.total;
+      fila["Apartado (m)"] = f.reservadoTotal;
+      fila["Libre para vender (m)"] = f.libreTotal;
       fila["Total rollos"] = f.cantidadTotal;
       fila["Peso actual (t)"] = f.pesoActualTotal;
       fila["Rollos sin peso actual"] = f.rollosSinPesoActual;
@@ -53,8 +71,11 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
       const fila: Record<string, string | number> = { Código: f.codigo, Descripción: f.descripcion, Calibre: f.calibre };
       for (const b of bodegas) {
         fila[b.nombre] = f.porBodega[b.id] ?? 0;
+        fila[`${b.nombre} apartado`] = f.reservadoPorBodega[b.id] ?? 0;
       }
       fila["Total empresa"] = f.total;
+      fila["Apartado"] = f.reservadoTotal;
+      fila["Libre para vender"] = f.libreTotal;
       return fila;
     });
     exportarArregloAExcel(filas, "Resumen_Productos_Por_Codigo.xlsx", "Productos por código");
@@ -326,6 +347,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                         <span className="rollos-texto-ayuda" style={{ margin: 0 }}>
                                           {cant} rollo{cant === 1 ? "" : "s"}
                                         </span>
+                                        <CeldaApartado reservado={f.reservadoPorBodega[b.id]} libre={f.librePorBodega[b.id]} unidad=" m" />
                                       </td>
                                     );
                                   })}
@@ -335,6 +357,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                     <span className="rollos-texto-ayuda" style={{ margin: 0 }}>
                                       {f.cantidadTotal} rollo{f.cantidadTotal === 1 ? "" : "s"}
                                     </span>
+                                    <CeldaApartado reservado={f.reservadoTotal} libre={f.libreTotal} unidad=" m" />
                                   </td>
                                   <td>
                                     {f.pesoActualTotal} t
@@ -419,7 +442,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   <Paginacion paginacion={c.paginacionRollos} alCambiarPagina={c.setPaginaRollos} etiqueta="códigos" />
                   <p className="inventario-carga-ayuda" style={{ marginTop: "0.5rem" }}>
                     En cada sede se muestran los metros disponibles y, debajo, cuántos rollos de esa
-                    clasificación hay ahí. El peso es el peso ACTUAL de esos rollos (según lo que les
+                    clasificación hay ahí. Si hay cotizaciones apartadas, se ve cuánto está apartado y
+                    cuánto queda <strong>libre para vender</strong>.{c.empresaResumen && " (Con el filtro de empresa no se descuenta lo apartado: los apartados no son de una empresa.)"} El peso es el peso ACTUAL de esos rollos (según lo que les
                     queda hoy, no el peso con el que llegaron) — dale clic a ▼ para ver cada rollo
                     individual con su propio peso, bodega y referencia.
                   </p>
@@ -478,8 +502,16 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                               <td>{f.descripcion || "—"}</td>
                               <td>{f.calibre || "—"}</td>
                               <td>{almacen?.unidadPorFamilia?.[f.familia] || "—"}</td>
-                              {bodegas.map((b) => <td key={b.id}>{f.porBodega[b.id] ?? 0}</td>)}
-                              <td><strong>{f.total}</strong></td>
+                              {bodegas.map((b) => (
+                                <td key={b.id}>
+                                  {f.porBodega[b.id] ?? 0}
+                                  <CeldaApartado reservado={f.reservadoPorBodega[b.id]} libre={f.librePorBodega[b.id]} unidad="" />
+                                </td>
+                              ))}
+                              <td>
+                                <strong>{f.total}</strong>
+                                <CeldaApartado reservado={f.reservadoTotal} libre={f.libreTotal} unidad="" />
+                              </td>
                             </tr>
                           ))
                         )}

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, requiere_rol
 from app.api.routes.rollos import asignar_peso_actual, filtro_empresa
+from app.models.apartado import Apartado, ApartadoItem, ModalidadApartado
 from app.models.bodega import Bodega
 from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.producto import Producto
@@ -11,6 +12,7 @@ from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario
 from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComparativoResponse
 from app.schemas.rollos import RolloResponse
+from app.services.apartados import ESTADOS_RESERVA_ACTIVA
 from app.services.clasificacion import formatear_calibre
 
 # Todo este router es de solo lectura, por eso VENDEDOR también entra: es su
@@ -20,6 +22,44 @@ router = APIRouter(
     prefix="/admin-inventario", tags=["Admin Inventario"],
     dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.VENDEDOR))],
 )
+
+
+def _agregar_apartados(filas: list[FilaComparativoResponse], reservas: dict[tuple[str, int], float]) -> None:
+    """Descuenta lo apartado de cada código en cada sede: la tabla muestra
+    lo físico, lo apartado y lo que de verdad queda libre para vender."""
+    for fila in filas:
+        for bodega_id, fisico in fila.por_bodega.items():
+            reservado = round(reservas.get((fila.codigo, bodega_id), 0), 2)
+            if reservado:
+                fila.reservado_por_bodega[bodega_id] = reservado
+            fila.libre_por_bodega[bodega_id] = round(fisico - reservado, 2)
+        fila.reservado_total = round(sum(fila.reservado_por_bodega.values()), 2)
+        fila.libre_total = round(fila.total - fila.reservado_total, 2)
+
+
+def _reservas_rollos(db: Session) -> dict[tuple[str, int], float]:
+    filas = (
+        db.query(ApartadoItem.codigo_interno, Apartado.bodega_id,
+                 func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.modalidad == ModalidadApartado.POR_ROLLO)
+        .group_by(ApartadoItem.codigo_interno, Apartado.bodega_id)
+        .all()
+    )
+    return {(codigo, bodega_id): max(float(total or 0), 0) for codigo, bodega_id, total in filas}
+
+
+def _reservas_productos(db: Session) -> dict[tuple[str, int], float]:
+    filas = (
+        db.query(Producto.codigo, Apartado.bodega_id, func.sum(ApartadoItem.cantidad))
+        .join(ApartadoItem, ApartadoItem.producto_id == Producto.id)
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
+                ApartadoItem.stock_descontado.is_(False))
+        .group_by(Producto.codigo, Apartado.bodega_id)
+        .all()
+    )
+    return {(codigo, bodega_id): float(total or 0) for codigo, bodega_id, total in filas}
 
 
 def _pivotear(filas, *, con_color: bool, con_peso: bool = False, con_familia: bool = False) -> list[FilaComparativoResponse]:
@@ -137,6 +177,10 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
     )
 
     rollos_pivotados = _pivotear(filas_rollos, con_color=True, con_peso=True)
+    productos_pivotados = _pivotear(filas_productos, con_color=False, con_familia=True)
+    if not empresa:
+        _agregar_apartados(rollos_pivotados, _reservas_rollos(db))
+    _agregar_apartados(productos_pivotados, _reservas_productos(db))
     peso_actual_total_por_bodega: dict[int, float] = {}
     for fila in rollos_pivotados:
         for bodega_id, peso in fila.peso_actual_por_bodega.items():
@@ -145,7 +189,7 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
     return {
         "bodegas": bodegas,
         "rollos": rollos_pivotados,
-        "productos": _pivotear(filas_productos, con_color=False, con_familia=True),
+        "productos": productos_pivotados,
         "peso_actual_total_por_bodega": peso_actual_total_por_bodega,
         "peso_actual_total_general": round(sum(peso_actual_total_por_bodega.values()), 2),
         "rollos_sin_peso_actual_total": sum(fila.rollos_sin_peso_actual for fila in rollos_pivotados),
