@@ -8,14 +8,21 @@ después lo reparte. Para apartar en una bodega cuenta:
     + lo que Admin Inventario ya recibió y no ha repartido (rollos sin bodega)
     - lo que las bodegas ya están esperando de esa bolsa (sus faltantes).
 
-Nunca crea rollos ni movimientos; eso lo hace Recepción cuando el material llega.
+Mientras viene no crea rollos ni movimientos: al marcar cada mula como llegada,
+sus rollos entran al inventario de Admin Inventario (registrar_llegada).
 """
+
+from datetime import datetime, timezone
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.material_en_camino import Cargamento, CargamentoRollo
+from app.models.movimiento import Movimiento, TipoMovimiento
+from app.models.recepcion import Recepcion
 from app.models.rollo import Rollo
+from app.models.usuario import Usuario
+from app.services.productos import FAMILIA_ROLLOS
 
 EN_CAMINO = "en_camino"
 CERRADO = "cerrado"
@@ -40,6 +47,47 @@ def metros_por_repartir_codigo(db: Session, *, codigo_interno: str) -> float:
         .scalar()
     )
     return round(float(total or 0), 2)
+
+
+def registrar_llegada(db: Session, cargamento: Cargamento, rollos: list[CargamentoRollo], usuario: Usuario) -> int:
+    """Llegó una mula: sus rollos entran al inventario de Admin Inventario
+    (sin bodega, "por repartir"), igual que si se recibieran en Recepción, y
+    quedan listos para enviarlos a las bodegas. Si alguno ya se había
+    recibido por Recepción (misma referencia), no se duplica. Devuelve
+    cuántos rollos nuevos entraron."""
+    ahora = datetime.now(timezone.utc)
+    referencias = [r.identificador_rollo for r in rollos if r.identificador_rollo]
+    ya_recibidos = {ref for (ref,) in db.query(Rollo.identificador_rollo).filter(Rollo.identificador_rollo.in_(referencias))} if referencias else set()
+    nuevos = [r for r in rollos if r.identificador_rollo not in ya_recibidos]
+    recepcion = None
+    if nuevos:
+        recepcion = Recepcion(
+            fecha=ahora, bodega_id=None, encargado=usuario.correo, proveedor=cargamento.proveedor,
+            archivo_origen=f"{cargamento.archivo_origen} (llegada de material en camino)", estado="registrada_en_inventario",
+        )
+        db.add(recepcion)
+        db.flush()
+    for r in nuevos:
+        rollo = Rollo(
+            bodega_id=None, recepcion_id=recepcion.id, codigo_interno=r.codigo_interno,
+            identificador_rollo=r.identificador_rollo, empresa=r.empresa, codigo_proveedor=r.codigo_proveedor,
+            descripcion=r.descripcion, familia=FAMILIA_ROLLOS, color_material=r.color_material, calibre=r.calibre,
+            peso_neto=r.peso_neto, metros_proveedor=r.metros_proveedor, metros_calculados=r.metros_calculados,
+            metros_disponibles=r.metros, metros_consumidos=0, fecha_ingreso=ahora, estado="cerrado",
+            proveedor=r.proveedor, lote=r.lote,
+        )
+        db.add(rollo)
+        db.flush()
+        db.add(Movimiento(
+            fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo="recepcion_proveedor",
+            producto_codigo=r.codigo_interno, producto_descripcion=f"{r.descripcion} (rollo {r.identificador_rollo})",
+            rollo_id=rollo.id, identificador_rollo=rollo.identificador_rollo, bodega_origen_id=None, bodega_destino_id=None,
+            cantidad=r.metros, usuario=usuario.correo,
+            observaciones=f'Llegada del material en camino "{cargamento.archivo_origen}" — proveedor: {cargamento.proveedor or "no especificado"}.',
+        ))
+    for r in rollos:
+        r.llego, r.llego_por, r.fecha_llegada = True, usuario.correo, ahora
+    return len(nuevos)
 
 
 def resumen_cargamento(db: Session, cargamento: Cargamento) -> dict:

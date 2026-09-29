@@ -11,7 +11,9 @@ class Cargamento(Base):
     Inventario, que después lo reparte. No es inventario -- nunca crea rollos
     ni movimientos --, solo dice cuánto viene de cada código para poder
     apartarlo desde cualquier bodega (ver apartados.disponibilidad_por_codigo).
-    Llega por partes (varias mulas): cada rollo se marca a mano al llegar."""
+    Llega por partes (varias mulas): cada rollo se marca a mano al llegar y
+    en ese momento entra al inventario de Admin Inventario (sin bodega), listo
+    para enviarlo a las bodegas (ver material_en_camino.registrar_llegada)."""
 
     __tablename__ = "cargamentos_en_camino"
 
@@ -31,7 +33,8 @@ class Cargamento(Base):
 
 
 class CargamentoRollo(Base):
-    """Un rollo del checklist, ya clasificado igual que en Recepción."""
+    """Un rollo del checklist, ya clasificado igual que en Recepción: guarda
+    todo lo necesario para crear el Rollo cuando llegue."""
 
     __tablename__ = "cargamento_rollos"
 
@@ -44,8 +47,14 @@ class CargamentoRollo(Base):
     calibre: Mapped[float] = mapped_column(Float, default=0)
     peso_neto: Mapped[float | None] = mapped_column(Float, nullable=True)
     metros: Mapped[float] = mapped_column(Float, default=0)
-    # Se marca a mano cuando llega en una mula; desde ahí deja de contar como
-    # "en camino" (su material pasa a Admin Inventario por repartir).
+    color_material: Mapped[str] = mapped_column(String(60), default="")
+    codigo_proveedor: Mapped[str] = mapped_column(String(60), default="")
+    proveedor: Mapped[str] = mapped_column(String(150), default="")
+    lote: Mapped[str] = mapped_column(String(60), default="")
+    metros_proveedor: Mapped[float] = mapped_column(Float, default=0)
+    metros_calculados: Mapped[float] = mapped_column(Float, default=0)
+    # Se marca a mano cuando llega en una mula: ahí se crea su Rollo en Admin
+    # Inventario y deja de contar como "en camino" (pasa a "por repartir").
     llego: Mapped[bool] = mapped_column(Boolean, default=False)
     llego_por: Mapped[str] = mapped_column(String(150), default="")
     fecha_llegada: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)

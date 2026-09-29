@@ -497,6 +497,9 @@ def guardar_en_camino(
         db.add(CargamentoRollo(
             cargamento_id=cargamento.id, identificador_rollo=r.rollo.strip(), codigo_interno=codigo_interno,
             empresa=r.empresa, descripcion=descripcion, calibre=r.espesor or 0, peso_neto=r.net_weight, metros=metros,
+            color_material=r.color_nombre or r.color_top or "", codigo_proveedor=r.codigo_proveedor or "",
+            proveedor=r.proveedor or "", lote=r.lote or "", metros_proveedor=r.coil_meters or 0,
+            metros_calculados=r.metros_calculados or 0,
         ))
     db.commit()
     db.refresh(cargamento)

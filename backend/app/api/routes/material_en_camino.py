@@ -43,17 +43,15 @@ def marcar_llegada(
     cargamento_id: int, datos: MarcarLlegadaRequest,
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> dict:
-    """Marca los rollos que trajo una mula. Dejan de contar "en camino" (pasan
-    a Admin Inventario por repartir). Si ya llegó todo, el checklist se cierra solo."""
+    """Marca los rollos que trajo una mula: entran al inventario de Admin
+    Inventario (por repartir) y dejan de contar "en camino". Si ya llegó todo,
+    el checklist se cierra solo."""
     cargamento = _cargamento_abierto(db, cargamento_id)
     por_id = {r.id: r for r in cargamento.rollos}
     if any(i not in por_id for i in datos.rollo_ids):
         raise HTTPException(status_code=400, detail="Algunos rollos no pertenecen a este checklist.")
-    ahora = datetime.now(timezone.utc)
-    for rollo_id in set(datos.rollo_ids):
-        rollo = por_id[rollo_id]
-        if not rollo.llego:
-            rollo.llego, rollo.llego_por, rollo.fecha_llegada = True, usuario.correo, ahora
+    pendientes = [por_id[i] for i in dict.fromkeys(datos.rollo_ids) if not por_id[i].llego]
+    srv.registrar_llegada(db, cargamento, pendientes, usuario)
     if all(r.llego for r in cargamento.rollos):
         _cerrar(cargamento, usuario)
     db.commit(); db.refresh(cargamento)
