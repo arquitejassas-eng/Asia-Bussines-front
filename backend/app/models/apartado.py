@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -35,7 +35,10 @@ class Apartado(Base):
 
     __tablename__ = "apartados"
     __table_args__ = (
-        UniqueConstraint("bodega_id", "numero_cotizacion", name="uq_apartados_bodega_cotizacion"),
+        # Una cotización activa por bodega; si se cancela, su número se puede
+        # volver a usar (ej. se canceló porque quedó mal y se crea de nuevo).
+        Index("uq_apartados_bodega_cotizacion_activa", "bodega_id", "numero_cotizacion", unique=True,
+              postgresql_where=text("estado <> 'CANCELADO'"), sqlite_where=text("estado <> 'CANCELADO'")),
         Index("ix_apartados_bodega_estado", "bodega_id", "estado"),
     )
 

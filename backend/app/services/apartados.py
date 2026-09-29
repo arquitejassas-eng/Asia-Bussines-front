@@ -376,7 +376,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
 
     ya_existe = (
         db.query(Apartado.id)
-        .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == datos.numero_cotizacion)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == datos.numero_cotizacion,
+                Apartado.estado != EstadoApartado.CANCELADO)
         .first()
     )
     if ya_existe:
