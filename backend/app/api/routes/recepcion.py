@@ -29,9 +29,9 @@ from app.schemas.recepcion import (
     TablasEquivalenciaResponse,
     VerificacionRecepcionResponse,
 )
+from app.services import carga_excel
 from app.services import clasificacion as srv
 from app.services import archivos_recepcion
-from app.core.config import settings
 
 router = APIRouter(prefix="/recepcion", tags=["Recepción y Verificación"])
 
@@ -83,30 +83,13 @@ async def previsualizar_archivo(
     """Paso 1-2: lee el Excel, detecta encabezados, sugiere el mapeo de
     columnas, e importa automáticamente las hojas de equivalencias que
     traiga el archivo (si las trae)."""
-    nombre_archivo = archivo.filename or ""
-    if not nombre_archivo.lower().endswith((".xlsx", ".xls")):
-        raise HTTPException(status_code=415, detail="Solo se aceptan archivos Excel (.xlsx o .xls).")
-
-    # Se lee como máximo un byte por encima del límite para rechazar archivos
-    # grandes sin cargar por completo una entrada no confiable en memoria.
-    contenido = await archivo.read(settings.MAX_ARCHIVO_RECEPCION_BYTES + 1)
-    if len(contenido) > settings.MAX_ARCHIVO_RECEPCION_BYTES:
-        limite_mb = settings.MAX_ARCHIVO_RECEPCION_BYTES // (1024 * 1024)
-        raise HTTPException(status_code=413, detail=f"El archivo supera el límite de {limite_mb} MB.")
-    if not contenido:
-        raise HTTPException(status_code=400, detail="El archivo está vacío.")
-    try:
-        hojas = srv.leer_hojas_excel(contenido)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail="No se pudo leer el archivo Excel.") from exc
+    hojas = await carga_excel.leer_excel_subido(archivo)
 
     nombres_hojas = list(hojas.keys())
     hoja_espesor, hoja_color = srv.detectar_hojas_equivalencias(nombres_hojas)
     hoja_principal = srv.elegir_hoja_principal(hojas, excluir=(hoja_espesor, hoja_color))
 
-    df = hojas[hoja_principal]
-    encabezados = [str(c) for c in df.columns]
-    mapeo_sugerido = srv.auto_detectar_mapeo(encabezados)
+    vista = carga_excel.vista_previa(archivo.filename, hojas, hoja_principal, srv.auto_detectar_mapeo)
 
     importadas_espesor = importadas_color = 0
     nota = ""
@@ -169,28 +152,12 @@ async def previsualizar_archivo(
             partes.append(f"{importadas_color} de color")
         nota = f"Se importaron equivalencias del archivo: {' y '.join(partes)}."
 
-    try:
-        archivos_recepcion.guardar(usuario.id, {
-            "nombre_archivo": archivo.filename,
-            "hojas": hojas,
-            "hoja_principal": hoja_principal,
-        })
-
-        return PrevisualizacionRecepcionResponse(
-            nombre_archivo=archivo.filename or "archivo.xlsx",
-            hoja_actual=hoja_principal,
-            hojas_disponibles=nombres_hojas,
-            encabezados=encabezados,
-            mapeo_sugerido=mapeo_sugerido,
-            filas_totales=len(df),
-            nota_importacion_equivalencias=nota,
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=400,
-            detail=f"No se pudo generar la vista previa de la hoja '{hoja_principal}'. "
-            "Puede que esa hoja no tenga una fila de encabezados válida -- elige otra hoja del selector e intenta de nuevo.",
-        ) from exc
+    archivos_recepcion.guardar(usuario.id, {
+        "nombre_archivo": archivo.filename,
+        "hojas": hojas,
+        "hoja_principal": hoja_principal,
+    })
+    return PrevisualizacionRecepcionResponse(**vista, nota_importacion_equivalencias=nota)
 
 
 @router.post("/hoja", response_model=PrevisualizacionRecepcionResponse,
@@ -199,32 +166,9 @@ def cambiar_hoja_recepcion(
     datos: SeleccionarHojaRecepcionRequest, usuario: Usuario = Depends(usuario_actual),
 ) -> PrevisualizacionRecepcionResponse:
     """Cambia qué hoja del Excel ya subido se usa, sin tener que volver a subirlo."""
-    en_proceso = archivos_recepcion.obtener(usuario.id)
-    if not en_proceso:
-        raise HTTPException(status_code=400, detail="Primero sube un archivo con /recepcion/previsualizar.")
-    if datos.hoja not in en_proceso["hojas"]:
-        raise HTTPException(status_code=400, detail=f"La hoja '{datos.hoja}' no existe en el archivo.")
-
-    en_proceso["hoja_principal"] = datos.hoja
-    archivos_recepcion.guardar(usuario.id, en_proceso)
-
-    try:
-        df = en_proceso["hojas"][datos.hoja]
-        encabezados = [str(c) for c in df.columns]
-        return PrevisualizacionRecepcionResponse(
-            nombre_archivo=en_proceso["nombre_archivo"] or "archivo.xlsx",
-            hoja_actual=datos.hoja,
-            hojas_disponibles=list(en_proceso["hojas"].keys()),
-            encabezados=encabezados,
-            mapeo_sugerido=srv.auto_detectar_mapeo(encabezados),
-            filas_totales=len(df),
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=400,
-            detail=f"No se pudo generar la vista previa de la hoja '{datos.hoja}'. "
-            "Puede que esa hoja no tenga una fila de encabezados válida -- elige otra hoja del selector e intenta de nuevo.",
-        ) from exc
+    return PrevisualizacionRecepcionResponse(**carga_excel.cambiar_hoja(
+        archivos_recepcion, usuario.id, datos.hoja, "/recepcion/previsualizar", srv.auto_detectar_mapeo,
+    ))
 
 
 @router.post("/verificar", response_model=VerificacionRecepcionResponse,

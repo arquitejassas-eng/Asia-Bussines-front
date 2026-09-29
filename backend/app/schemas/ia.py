@@ -24,30 +24,6 @@ class AlertaIaResponse(BaseModel):
     fecha: str
 
 
-class MetricasReporte(BaseModel):
-    entradas: int = 0
-    salidas: int = 0
-    traslados: int = 0
-    transferencias: int = 0
-    productos_criticos: int = 0
-
-
-class ReporteIaResponse(BaseModel):
-    id: int
-    fecha: str
-    fecha_desde: str = ""
-    fecha_hasta: str = ""
-    resumen: str = ""
-    hallazgos: list[str] = Field(default_factory=list)
-    recomendaciones: list[str] = Field(default_factory=list)
-    metricas: MetricasReporte = Field(default_factory=MetricasReporte)
-
-
-class GenerarReporteRequest(BaseModel):
-    fecha_desde: Optional[str] = None
-    fecha_hasta: Optional[str] = None
-
-
 class PrediccionStockResponse(BaseModel):
     producto_id: int
     producto_codigo: str

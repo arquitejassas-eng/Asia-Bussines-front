@@ -5,13 +5,6 @@ from pydantic import BaseModel, ConfigDict
 from app.schemas.fechas import ModeloConFechasUtc
 
 
-class MapeoColumnas(BaseModel):
-    """Relación campo_interno -> nombre de columna del Excel, ej.
-    {"rollo": "N Rollo", "espesor": "Thickness", ...}."""
-
-    mapeo: dict[str, str]
-
-
 class PrevisualizacionRollo(BaseModel):
     fila: int
     rollo: str

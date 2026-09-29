@@ -166,15 +166,3 @@ class ResultadoCargaRollosResponse(BaseModel):
     detalle_omitidas: list[FilaCargaRolloOmitida]
     # Lo que el Excel trae distinto en rollos existentes y NO se aplicó.
     diferencias: list[DiferenciaCargaRollo] = []
-
-
-class FiltrosRollos(BaseModel):
-    codigo_interno: str | None = None
-    codigo_proveedor: str | None = None
-    descripcion: str | None = None
-    familia: str | None = None
-    color_material: str | None = None
-    calibre: str | None = None
-    estado: EstadoRollo | None = None
-    fecha_desde: datetime | None = None
-    fecha_hasta: datetime | None = None

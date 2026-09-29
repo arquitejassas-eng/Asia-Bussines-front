@@ -13,6 +13,7 @@ import pandas as pd
 
 from app.models.rollo import FAMILIA_ROLLOS, Rollo
 from app.services import clasificacion
+from app.services.carga_excel import valor_celda
 from app.services.clasificacion import normalizar_texto
 from app.services.empresas import sigla_empresa_desde_nombre
 
@@ -74,16 +75,6 @@ def auto_detectar_mapeo(encabezados: list[str]) -> dict[str, str]:
 
 def campos_requeridos_faltantes(mapeo: dict[str, str]) -> list[str]:
     return clasificacion.campos_requeridos_faltantes(mapeo, CAMPOS_REQUERIDOS)
-
-
-def _texto(fila: pd.Series, mapeo: dict[str, str], campo: str) -> str:
-    columna = mapeo.get(campo)
-    if not columna or columna not in fila.index:
-        return ""
-    valor = fila[columna]
-    if pd.isna(valor):
-        return ""
-    return str(valor).strip()
 
 
 def _parsear_numero(texto: str) -> float | None:
@@ -155,8 +146,8 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
     vistas_en_archivo: set[str] = set()
     for indice, fila in df.iterrows():
         numero_fila = indice + 2  # +1 índice 0-based, +1 fila de encabezado.
-        codigo_interno = _texto(fila, mapeo, "codigo_interno")
-        identificador_rollo = _texto(fila, mapeo, "identificador_rollo")
+        codigo_interno = valor_celda(fila, mapeo, "codigo_interno")
+        identificador_rollo = valor_celda(fila, mapeo, "identificador_rollo")
 
         if not codigo_interno or not identificador_rollo:
             resultado.omitidas.append(FilaOmitida(numero_fila, identificador_rollo, "Falta código interno o referencia del rollo."))
@@ -166,12 +157,12 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
             continue
         vistas_en_archivo.add(identificador_rollo)
 
-        estado_origen = normalizar_texto(_texto(fila, mapeo, "estado_origen"))
+        estado_origen = normalizar_texto(valor_celda(fila, mapeo, "estado_origen"))
         if mapeo.get("estado_origen") and estado_origen and estado_origen not in ESTADOS_VIGENTES:
             resultado.omitidas.append(FilaOmitida(numero_fila, identificador_rollo, f"Estado '{estado_origen}' no vigente (no se carga)."))
             continue
 
-        metros_disponibles = _parsear_numero(_texto(fila, mapeo, "metros_disponibles"))
+        metros_disponibles = _parsear_numero(valor_celda(fila, mapeo, "metros_disponibles"))
         if metros_disponibles is None:
             resultado.omitidas.append(FilaOmitida(numero_fila, identificador_rollo, "Metros disponibles inválidos."))
             continue
@@ -179,12 +170,12 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
             resultado.omitidas.append(FilaOmitida(numero_fila, identificador_rollo, "Sin metros disponibles (agotado)."))
             continue
 
-        metros_consumidos = _parsear_numero(_texto(fila, mapeo, "metros_consumidos")) or 0.0
-        metros_totales = _parsear_numero(_texto(fila, mapeo, "metros_totales"))
+        metros_consumidos = _parsear_numero(valor_celda(fila, mapeo, "metros_consumidos")) or 0.0
+        metros_totales = _parsear_numero(valor_celda(fila, mapeo, "metros_totales"))
         if metros_totales is None:
             metros_totales = round(metros_disponibles + metros_consumidos, 2)
 
-        calibre_texto = _texto(fila, mapeo, "calibre")
+        calibre_texto = valor_celda(fila, mapeo, "calibre")
         calibre = _parsear_numero(calibre_texto) or 0.0
         if calibre >= CALIBRE_MAXIMO:
             resultado.omitidas.append(FilaOmitida(
@@ -192,14 +183,14 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
                 f"Calibre '{calibre_texto}' no válido (se leyó {calibre:g}; debe ser menor a 1 mm, ej. 0,29). Corrige la celda.",
             ))
             continue
-        peso_neto = _parsear_numero(_texto(fila, mapeo, "peso_neto"))
+        peso_neto = _parsear_numero(valor_celda(fila, mapeo, "peso_neto"))
         # "" (columna sin mapear, vacía o con una empresa desconocida) deja
         # que el rollo nuevo la deduzca de su referencia al guardarse.
-        empresa = sigla_empresa_desde_nombre(_texto(fila, mapeo, "empresa"))
-        descripcion = _texto(fila, mapeo, "descripcion")
-        color_material = _texto(fila, mapeo, "color_material") or _extraer_color_de_texto(descripcion)
-        proveedor = _texto(fila, mapeo, "proveedor")
-        lote = _texto(fila, mapeo, "lote")
+        empresa = sigla_empresa_desde_nombre(valor_celda(fila, mapeo, "empresa"))
+        descripcion = valor_celda(fila, mapeo, "descripcion")
+        color_material = valor_celda(fila, mapeo, "color_material") or _extraer_color_de_texto(descripcion)
+        proveedor = valor_celda(fila, mapeo, "proveedor")
+        lote = valor_celda(fila, mapeo, "lote")
 
         existente = existentes.get(identificador_rollo)
         if existente:

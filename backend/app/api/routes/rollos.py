@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
-from app.core.config import settings
 from app.models.equivalencias import TablaColorEquivalencia, TablaTipoMaterialEquivalencia
 from app.models.movimiento import Movimiento
 from app.models.rollo import FAMILIA_ROLLOS, EstadoRollo, Rollo
@@ -16,6 +15,7 @@ from app.schemas.rollos import (
     SalidaExternaRolloCrear,
     RolloResponse, SeleccionarHojaCargaRollosRequest, SugerenciaReferenciaResponse,
 )
+from app.services import carga_excel
 from app.services import archivos_carga_rollos
 from app.services.rollos import asignar_peso_actual, filtro_empresa
 from app.services import carga_rollos as srv_carga
@@ -351,47 +351,13 @@ async def previsualizar_carga_rollos(
     archivo: UploadFile, usuario: Usuario = Depends(usuario_actual),
 ) -> PrevisualizacionCargaRollosResponse:
     """Paso 1: lee el Excel de rollos existentes, detecta encabezados y sugiere un mapeo."""
-    nombre_archivo = archivo.filename or ""
-    if not nombre_archivo.lower().endswith((".xlsx", ".xls")):
-        raise HTTPException(status_code=415, detail="Solo se aceptan archivos Excel (.xlsx o .xls).")
-
-    contenido = await archivo.read(settings.MAX_ARCHIVO_RECEPCION_BYTES + 1)
-    if len(contenido) > settings.MAX_ARCHIVO_RECEPCION_BYTES:
-        limite_mb = settings.MAX_ARCHIVO_RECEPCION_BYTES // (1024 * 1024)
-        raise HTTPException(status_code=413, detail=f"El archivo supera el límite de {limite_mb} MB.")
-    if not contenido:
-        raise HTTPException(status_code=400, detail="El archivo está vacío.")
-    try:
-        hojas = srv_excel.leer_hojas_excel(contenido)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail="No se pudo leer el archivo Excel.") from exc
-
+    hojas = await carga_excel.leer_excel_subido(archivo)
     hoja_principal = srv_excel.elegir_hoja_principal(hojas)
-    try:
-        df = hojas[hoja_principal]
-        encabezados = [str(c) for c in df.columns]
-        mapeo_sugerido = srv_carga.auto_detectar_mapeo(encabezados)
-
-        archivos_carga_rollos.guardar(usuario.id, {
-            "nombre_archivo": archivo.filename,
-            "hoja_principal": hoja_principal,
-            "hojas": hojas,
-        })
-
-        return PrevisualizacionCargaRollosResponse(
-            nombre_archivo=archivo.filename or "archivo.xlsx",
-            hoja_actual=hoja_principal,
-            hojas_disponibles=list(hojas.keys()),
-            encabezados=encabezados,
-            mapeo_sugerido=mapeo_sugerido,
-            filas_totales=len(df),
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=400,
-            detail=f"No se pudo generar la vista previa de la hoja '{hoja_principal}'. "
-            "Puede que esa hoja no tenga una fila de encabezados válida -- elige otra hoja del selector e intenta de nuevo.",
-        ) from exc
+    vista = carga_excel.vista_previa(archivo.filename, hojas, hoja_principal, srv_carga.auto_detectar_mapeo)
+    archivos_carga_rollos.guardar(usuario.id, {
+        "nombre_archivo": archivo.filename, "hoja_principal": hoja_principal, "hojas": hojas,
+    })
+    return PrevisualizacionCargaRollosResponse(**vista)
 
 
 @router.post("/carga/hoja", response_model=PrevisualizacionCargaRollosResponse,
@@ -400,32 +366,9 @@ def cambiar_hoja_carga_rollos(
     datos: SeleccionarHojaCargaRollosRequest, usuario: Usuario = Depends(usuario_actual),
 ) -> PrevisualizacionCargaRollosResponse:
     """Cambia qué hoja del Excel ya subido se usa, sin tener que volver a subirlo."""
-    en_proceso = archivos_carga_rollos.obtener(usuario.id)
-    if not en_proceso:
-        raise HTTPException(status_code=400, detail="Primero sube un archivo con /rollos/carga/previsualizar.")
-    if datos.hoja not in en_proceso["hojas"]:
-        raise HTTPException(status_code=400, detail=f"La hoja '{datos.hoja}' no existe en el archivo.")
-
-    en_proceso["hoja_principal"] = datos.hoja
-    archivos_carga_rollos.guardar(usuario.id, en_proceso)
-
-    try:
-        df = en_proceso["hojas"][datos.hoja]
-        encabezados = [str(c) for c in df.columns]
-        return PrevisualizacionCargaRollosResponse(
-            nombre_archivo=en_proceso["nombre_archivo"] or "archivo.xlsx",
-            hoja_actual=datos.hoja,
-            hojas_disponibles=list(en_proceso["hojas"].keys()),
-            encabezados=encabezados,
-            mapeo_sugerido=srv_carga.auto_detectar_mapeo(encabezados),
-            filas_totales=len(df),
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=400,
-            detail=f"No se pudo generar la vista previa de la hoja '{datos.hoja}'. "
-            "Puede que esa hoja no tenga una fila de encabezados válida -- elige otra hoja del selector e intenta de nuevo.",
-        ) from exc
+    return PrevisualizacionCargaRollosResponse(**carga_excel.cambiar_hoja(
+        archivos_carga_rollos, usuario.id, datos.hoja, "/rollos/carga/previsualizar", srv_carga.auto_detectar_mapeo,
+    ))
 
 
 @router.post("/carga/confirmar", response_model=ResultadoCargaRollosResponse,

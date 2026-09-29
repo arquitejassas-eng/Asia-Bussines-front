@@ -110,11 +110,6 @@ class PaginaMovimientos(BaseModel):
     resumen: ResumenMovimientos = ResumenMovimientos()
 
 
-class FiltrosHistorial(BaseModel):
-    codigo_producto: str | None = None
-    fecha_desde: datetime | None = None
-    fecha_hasta: datetime | None = None
-
 class PrevisualizacionCargaProductosResponse(BaseModel):
     nombre_archivo: str
     hoja_actual: str

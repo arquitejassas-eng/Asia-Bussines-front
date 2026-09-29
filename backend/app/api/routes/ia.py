@@ -4,18 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
-from app.models.movimiento import Movimiento
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.ia import (
     AlertaIaResponse,
     ChatEntrada,
     ChatRespuesta,
-    GenerarReporteRequest,
-    MetricasReporte,
     PrediccionNegocioResponse,
     PrediccionStockResponse,
-    ReporteIaResponse,
 )
 from app.services import ia_groq
 from app.services import ia_predicciones as srv_pred
@@ -112,72 +108,6 @@ def listar_alertas(
             )
 
     return alertas
-
-
-@router.get("/reportes", response_model=list[ReporteIaResponse])
-def listar_reportes_historial(
-    db: Session = Depends(get_db),
-    usuario: Usuario = Depends(usuario_actual),
-) -> list[ReporteIaResponse]:
-    total_movimientos = db.query(Movimiento).count()
-    entradas = db.query(Movimiento).filter(Movimiento.tipo == "entrada").count()
-    salidas = db.query(Movimiento).filter(Movimiento.tipo == "salida").count()
-    traslados = db.query(Movimiento).filter(Movimiento.tipo == "traslado").count()
-    transferencias = db.query(Movimiento).filter(Movimiento.tipo == "transferencia").count()
-    ids_criticos = {p.id for p in srv_productos.productos_agotados(db, usuario.bodega_id)}
-    ids_criticos |= {p.id for p in srv_productos.productos_bajo_minimo(db, usuario.bodega_id)}
-    criticos = len(ids_criticos)
-    tendencia = srv_pred.tendencia_negocio(db, usuario.bodega_id)
-
-    fecha_hoy = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    hallazgos = [
-        f"Se han efectuado {entradas} compras/entradas y {salidas} salidas registradas.",
-        f"Transferencias entre bodegas procesadas: {transferencias}.",
-        f"Productos en nivel crítico de inventario: {criticos}.",
-    ]
-    if tendencia["producto_mayor_rotacion"]:
-        p = tendencia["producto_mayor_rotacion"]
-        hallazgos.append(f"El producto con mayor rotación este mes fue {p['codigo']} ({p['descripcion']}), con {p['cantidad']:g} unidades de salida.")
-
-    recomendaciones = []
-    if criticos > 0:
-        recomendaciones.append(f"Hay {criticos} producto(s) en nivel crítico — revisa el stock de seguridad antes del próximo pico de producción.")
-    if tendencia["tendencia"] == "creciente":
-        recomendaciones.append("Las salidas vienen en aumento respecto al mes anterior — considera adelantar la recepción de rollos.")
-    elif tendencia["tendencia"] == "decreciente":
-        recomendaciones.append("Las salidas bajaron respecto al mes anterior — es buen momento para consolidar pedidos y optimizar fletes.")
-    if not recomendaciones:
-        recomendaciones.append("No se detectan alertas críticas por ahora; mantén el ritmo de reabastecimiento actual.")
-
-    return [
-        ReporteIaResponse(
-            id=1,
-            fecha=datetime.now(timezone.utc).isoformat(),
-            fecha_desde=fecha_hoy,
-            fecha_hasta=fecha_hoy,
-            resumen=f"Reporte automático consolidado de bodega. Se registran {total_movimientos} movimientos globales.",
-            hallazgos=hallazgos,
-            recomendaciones=recomendaciones,
-            metricas=MetricasReporte(
-                entradas=entradas,
-                salidas=salidas,
-                traslados=traslados,
-                transferencias=transferencias,
-                productos_criticos=criticos,
-            ),
-        )
-    ]
-
-
-@router.post("/reportes/generar", response_model=ReporteIaResponse,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
-def generar_reporte_ia(
-    datos: GenerarReporteRequest,
-    db: Session = Depends(get_db),
-    usuario: Usuario = Depends(usuario_actual),
-) -> ReporteIaResponse:
-    return listar_reportes_historial(db=db, usuario=usuario)[0]
 
 
 @router.get("/predicciones/stock", response_model=list[PrediccionStockResponse])

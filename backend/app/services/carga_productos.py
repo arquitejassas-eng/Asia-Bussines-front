@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.models.producto import Producto
 from app.services import clasificacion
+from app.services.carga_excel import valor_celda
 from app.services.clasificacion import normalizar_texto
 
 CAMPOS_REQUERIDOS = ["codigo", "descripcion", "stock"]
@@ -42,16 +43,6 @@ def auto_detectar_mapeo(encabezados: list[str]) -> dict[str, str]:
 
 def campos_requeridos_faltantes(mapeo: dict[str, str]) -> list[str]:
     return clasificacion.campos_requeridos_faltantes(mapeo, CAMPOS_REQUERIDOS)
-
-
-def _valor(fila: pd.Series, mapeo: dict[str, str], campo: str) -> str:
-    columna = mapeo.get(campo)
-    if not columna or columna not in fila.index:
-        return ""
-    valor = fila[columna]
-    if pd.isna(valor):
-        return ""
-    return str(valor).strip()
 
 
 @dataclass
@@ -83,9 +74,9 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
 
     for indice, fila in df.iterrows():
         numero_fila = indice + 2  # +1 por índice 0-based, +1 por la fila de encabezado.
-        codigo = _valor(fila, mapeo, "codigo")
-        descripcion = _valor(fila, mapeo, "descripcion")
-        stock_texto = _valor(fila, mapeo, "stock")
+        codigo = valor_celda(fila, mapeo, "codigo")
+        descripcion = valor_celda(fila, mapeo, "descripcion")
+        stock_texto = valor_celda(fila, mapeo, "stock")
 
         if not codigo or not descripcion:
             resultado.omitidas.append(FilaOmitida(numero_fila, codigo, "Falta código o descripción."))
@@ -97,7 +88,7 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
             resultado.omitidas.append(FilaOmitida(numero_fila, codigo, "Cantidad/stock inválido."))
             continue
 
-        entrada_texto = _valor(fila, mapeo, "entrada")
+        entrada_texto = valor_celda(fila, mapeo, "entrada")
         entrada = stock
         if entrada_texto:
             try:
@@ -106,16 +97,16 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
                 resultado.omitidas.append(FilaOmitida(numero_fila, codigo, "Entrada inválida."))
                 continue
 
-        familia = _valor(fila, mapeo, "familia")
+        familia = valor_celda(fila, mapeo, "familia")
         if normalizar_texto(familia) == FAMILIA_ROLLOS_RESERVADA:
             resultado.omitidas.append(
                 FilaOmitida(numero_fila, codigo, "Los rollos de acero se cargan desde Recepción y Verificación, no desde aquí.")
             )
             continue
 
-        referencia = _valor(fila, mapeo, "referencia")
-        calibre = _valor(fila, mapeo, "calibre")
-        codigo_importacion = _valor(fila, mapeo, "codigo_importacion")
+        referencia = valor_celda(fila, mapeo, "referencia")
+        calibre = valor_celda(fila, mapeo, "calibre")
+        codigo_importacion = valor_celda(fila, mapeo, "codigo_importacion")
 
         existente = existentes.get(codigo)
         if existente:
