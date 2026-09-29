@@ -4,6 +4,7 @@ import { FAMILIA_PORCELANATO, FAMILIA_TEJA, normalizarFamilia } from "../Hooks/u
 import PanelAdminUnidadesFamilia from "./PanelAdminUnidadesFamilia";
 import ModalConfirmacion from "./ModalConfirmacion";
 import { anchoPorSeccion } from "../Utils/produccion";
+import { redondear } from "../Utils/numeros";
 import { esSegundaPorCodigo, longitudDesdeCodigo, calibrePantalla } from "../Utils/teja";
 
 // Pestaña "Productos" de Inventario: buscador, formulario de alta/edición y
@@ -231,9 +232,9 @@ function PanelProductosInventario({
             // no arriesgar que dos tarjetas distintas colisionen en el
             // mismo estado de expandido/colapsado.
             const expandido = gruposFamiliaExpandidos[grupo.clave] ?? gruposPorFamilia.length === 1;
-            const totalStock = Math.round(
-              grupo.productos.reduce((suma, p) => suma + (Number(p.stock) || 0), 0) * 100
-            ) / 100;
+            const totalStock = redondear(
+              grupo.productos.reduce((suma, p) => suma + (Number(p.stock) || 0), 0)
+            );
             const unidad = almacen?.unidadPorFamilia?.[grupo.familia] || "";
             const esConversion = grupo.tipoGrupo === "conversion";
             const esReferencia = grupo.tipoGrupo === "referencia";
@@ -242,7 +243,7 @@ function PanelProductosInventario({
             // cualquier otra familia quedan casi siempre vacíos y no
             // deben ocupar espacio en la tarjeta.
             const esTeja = normalizarFamilia(grupo.familia) === FAMILIA_TEJA;
-            const m2Equivalentes = esConversion ? Math.round(totalStock * grupo.longitud * 100) / 100 : null;
+            const m2Equivalentes = esConversion ? redondear(totalStock * grupo.longitud) : null;
             return (
               <section key={grupo.clave} className="inventario-tarjeta">
                 <button
@@ -343,7 +344,7 @@ function PanelProductosInventario({
                             <td>{p.stock}</td>
                             <td>
                               {esConversion
-                                ? (p.metrosPorUnidad != null ? Math.round(Number(p.stock) * p.metrosPorUnidad * 100) / 100 : "—")
+                                ? (p.metrosPorUnidad != null ? redondear(Number(p.stock) * p.metrosPorUnidad) : "—")
                                 : (almacen?.unidadPorFamilia?.[p.familia] || "—")}
                             </td>
                             <td className="inventario-acciones">

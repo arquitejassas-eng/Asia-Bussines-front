@@ -2,7 +2,7 @@ import { useControladorInicio } from "../Componentes/Inicio";
 import EscenaTecho from "../Componentes/EscenaTecho";
 import "../Style/Inicio.css";
 
-type Sesion = { correo: string; bodegaId: number; bodegaNombre: string; rol: string };
+import type { Sesion } from "../types/dominio";
 
 function InicioPage({ onLogin, aviso = "" }: { onLogin: (sesion: Sesion) => void; aviso?: string }) {
   const {

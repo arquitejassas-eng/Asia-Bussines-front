@@ -4,6 +4,7 @@ import { formatearFechaColombia } from "../Utils/fechas";
 import { claseColorMaterial } from "../Utils/colorRollo";
 import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
 import { formatearCalibre } from "../Utils/calibre";
+import { redondear } from "../Utils/numeros";
 
 // "Arquitejas 3 · Asia Business 2" para la cabecera de cada grupo: el mismo
 // código de clasificación puede tener rollos de las dos empresas.
@@ -49,11 +50,11 @@ function PanelAgrupacionRollos({
       {gruposPorCodigo.map((grupo) => {
         const expandido = !!gruposExpandidos[grupo.codigoInterno];
         const colorClase = claseColorMaterial(grupo.colorMaterial);
-        const totalMetrosFisicos = Math.round(
-          grupo.rollos.reduce((suma, rollo) => suma + (Number(rollo.metrosDisponibles) || 0), 0) * 100
-        ) / 100;
+        const totalMetrosFisicos = redondear(
+          grupo.rollos.reduce((suma, rollo) => suma + (Number(rollo.metrosDisponibles) || 0), 0)
+        );
         const metrosReservados = Number(grupo.metrosReservados) || 0;
-        const totalMetrosDisponibles = Math.round((totalMetrosFisicos - metrosReservados) * 100) / 100;
+        const totalMetrosDisponibles = redondear(totalMetrosFisicos - metrosReservados);
         return (
           <section key={grupo.codigoInterno} className={`rollos-tarjeta rollos-grupo rollos-color-${colorClase}`}>
             <button

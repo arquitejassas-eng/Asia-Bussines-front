@@ -1,3 +1,4 @@
+import { redondear } from "./numeros";
 /** Regla física de los productos "seccionados": el ancho del rollo se
  * divide siempre en N partes iguales según el tipo, así que cada corte
  * produce SIEMPRE esas N unidades. Un solo lugar (reutilizado por el
@@ -42,7 +43,7 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
 export function anchoPorSeccion(anchoRollo: number | null | undefined, tipoProducto: string) {
   const secciones = SECCIONES_POR_TIPO_PRODUCTO[tipoProducto];
   if (anchoRollo == null || !secciones) return null;
-  return Math.round((anchoRollo / secciones) * 10000) / 10000;
+  return redondear(anchoRollo / secciones, 4);
 }
 
 type ProductoStockItem = {
@@ -72,7 +73,7 @@ export function filasStockAdicional(prod: ProduccionParaStock) {
     let observaciones = item.calidad === "segunda" ? "Segunda" : "Primera";
     if (item.calidad === "segunda" && item.motivoSegunda) observaciones += `: ${item.motivoSegunda}`;
     const metrosConsumidos = item.metrosPorUnidad != null
-      ? Math.round(item.stock * item.metrosPorUnidad * 100) / 100
+      ? redondear(item.stock * item.metrosPorUnidad)
       : null;
     return {
       key: `${prod.id}-stock-${item.id}`,

@@ -1,17 +1,19 @@
 import { useMemo, useState } from "react";
 import { api, ErrorApi } from "../Componentes/Api";
-import { normalizarTextoRecepcion, traducirRolloRecepcion } from "../Utils/recepcion";
+import { traducirRolloRecepcion } from "../Utils/recepcion";
+import { normalizarTexto } from "../Utils/texto";
 
 /** Verificación, resumen y confirmación de una recepción ya previsualizada. */
 type Archivo = {
   mapeoColumnas: Record<string, string>; faltanCamposRequeridos: boolean;
   paso: string; setPaso: (paso: string) => void;
 };
-type Sesion = { bodegaId?: number; bodegaNombre?: string; correo?: string } | null | undefined;
+import type { Sesion as SesionCompleta } from "../types/dominio";
+type Sesion = Partial<SesionCompleta> | null | undefined;
 type RolloCompleto = ReturnType<typeof traducirRolloRecepcion>;
 type ConfirmarRecepcionApi = { id: number; fecha: string; proveedor: string; archivo_origen: string; rollos_registrados?: number; rollos_omitidos?: string[] };
 type HistorialItem = {
-  id: number; fecha: string; bodegaId: number | undefined; bodega: string; encargado: string;
+  id: number; fecha: string; bodegaId: number | null | undefined; bodega: string; encargado: string;
   proveedor: string; archivoOrigen: string; tolerancia: number;
   resumen: { total: number; correctos: number; faltantes: number; adicionales: number; pendientesDatos: number; materialesNuevos: number };
   rollos: RolloCompleto[]; estado: string;
@@ -33,8 +35,8 @@ export function useVerificacionRecepcion({ sesion, archivo }: { sesion: Sesion; 
   const rollosCompletos = useMemo(() => rollosCrudos.map((rollo, indice) => traducirRolloRecepcion(rollo, indice, toleranciaPorcentaje)), [rollosCrudos, toleranciaPorcentaje]);
   const rollos = useMemo(() => {
     if (!busquedaClasificacion.trim()) return rollosCompletos;
-    const texto = normalizarTextoRecepcion(busquedaClasificacion);
-    return rollosCompletos.filter((rollo) => normalizarTextoRecepcion(rollo.codigoClasificacion).includes(texto) || normalizarTextoRecepcion(rollo.rollo).includes(texto));
+    const texto = normalizarTexto(busquedaClasificacion);
+    return rollosCompletos.filter((rollo) => normalizarTexto(rollo.codigoClasificacion).includes(texto) || normalizarTexto(rollo.rollo).includes(texto));
   }, [rollosCompletos, busquedaClasificacion]);
   // Sobre TODOS los rollos del archivo, no sobre los que deja ver el
   // buscador: antes, buscar algo que ocultara las filas con "Faltan datos"

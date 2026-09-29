@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { envioDesdeApi, rolloDesdeApi } from "./Mapeo";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
+import { normalizarTexto } from "../Utils/texto";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
 type RolloResumen = {
@@ -244,10 +245,6 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     setMostrarFormularioEnvio(false);
     setErrorFormularioEnvio("");
     setBusquedaRollosEnvio("");
-  }
-
-  function normalizarTexto(texto: string) {
-    return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   }
 
   const misRollosFiltrados = useMemo(() => {

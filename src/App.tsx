@@ -5,6 +5,8 @@ import { EVENTO_SESION_EXPIRADA } from "./Componentes/Api";
 import { borrarToken } from "./Utils/auth";
 import RutaProtegida from "./Componentes/RutaProtegida";
 import ErrorDePantalla from "./Componentes/ErrorDePantalla";
+import { rolesDelModulo } from "./Utils/modulos";
+import type { Sesion } from "./types/dominio";
 
 // Cada módulo se descarga solo al abrir su ruta. Al crecer la aplicación, una
 // pantalla nueva no penaliza el primer acceso de los demás usuarios.
@@ -23,7 +25,6 @@ const UsuariosPage = lazy(() => import("./Paginas/UsuariosPage"));
 
 const CLAVE_SESION = "arquitejas_sesion";
 
-type Sesion = { correo: string; bodegaId: number | null; bodegaNombre: string; rol: string };
 
 function leerSesionGuardada(): Sesion | null {
   try {
@@ -106,47 +107,47 @@ export default function App() {
       />
       <Route
         path="/inventario"
-        element={paginaProtegida(["administrativo"], InventarioPage)}
+        element={paginaProtegida(rolesDelModulo("inventario"), InventarioPage)}
       />
       <Route
         path="/apartados"
-        element={paginaProtegida(["administrativo", "jefe_planta"], ApartadosPage)}
+        element={paginaProtegida(rolesDelModulo("apartados"), ApartadosPage)}
       />
       <Route
         path="/recepcion"
-        element={paginaProtegida(["administrativo", "admin_inventario"], RecepcionVerificacionPage)}
+        element={paginaProtegida(rolesDelModulo("recepcion"), RecepcionVerificacionPage)}
       />
       <Route
         path="/bodegas"
-        element={paginaProtegida(["administrativo"], BodegasPage)}
+        element={paginaProtegida(rolesDelModulo("bodegas"), BodegasPage)}
       />
       <Route
         path="/rollos"
-        element={paginaProtegida(["administrativo", "admin_inventario"], RollosPage)}
+        element={paginaProtegida(rolesDelModulo("rollos"), RollosPage)}
       />
       <Route
         path="/admin-inventario"
-        element={paginaProtegida(["admin_inventario", "vendedor"], AdminInventarioPage)}
+        element={paginaProtegida(rolesDelModulo("admin_inventario"), AdminInventarioPage)}
       />
       <Route
         path="/reportes"
-        element={paginaProtegida(["administrativo"], ReportesPage)}
+        element={paginaProtegida(rolesDelModulo("reportes"), ReportesPage)}
       />
       <Route
         path="/ia"
-        element={paginaProtegida(["administrativo", "admin_inventario"], IAPage)}
+        element={paginaProtegida(rolesDelModulo("ia"), IAPage)}
       />
       <Route
         path="/produccion"
-        element={paginaProtegida(["jefe_planta"], ProduccionPage)}
+        element={paginaProtegida(rolesDelModulo("produccion"), ProduccionPage)}
       />
       <Route
         path="/hoja-vida"
-        element={paginaProtegida(["administrativo", "admin_inventario"], HojaVidaPage)}
+        element={paginaProtegida(rolesDelModulo("hoja_vida"), HojaVidaPage)}
       />
       <Route
         path="/usuarios"
-        element={paginaProtegida(["superadmin"], UsuariosPage)}
+        element={paginaProtegida(rolesDelModulo("usuarios"), UsuariosPage)}
       />
       <Route path="*" element={<Navigate to={rutaInicioPara(sesion)} replace />} />
       </Routes>

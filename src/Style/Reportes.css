@@ -46,12 +46,6 @@
   margin: 0;
 }
 
-.reportes-texto-ayuda {
-  color: var(--at-muted, #7C6A56);
-  font-size: 0.85rem;
-  margin: 0;
-}
-
 /* ── Resumen ──────────────────────────────────────────────────────────────── */
 .reportes-resumen-grid {
   display: grid;

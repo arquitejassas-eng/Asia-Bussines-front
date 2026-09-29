@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 
-type Sesion = { rol: string } | null | undefined;
+import type { Sesion as SesionCompleta } from "../types/dominio";
+type Sesion = Pick<SesionCompleta, "rol"> | null | undefined;
 
 type Props = {
   sesion: Sesion;

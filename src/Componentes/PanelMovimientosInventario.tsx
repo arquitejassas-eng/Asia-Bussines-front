@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { useEffect, useState } from "react";
+import { redondear } from "../Utils/numeros";
 
 // Pestaña "Movimientos" de Inventario: registrar entrada/salida/traslado,
 // incluida la lógica de Porcelanato (cantidad por cajas o por m²).
@@ -64,7 +65,7 @@ function PanelMovimientosInventario({
     ? Math.ceil(m2SolicitadosNum / m2PorCajaMov)
     : null;
   const m2EquivalentesMov = cajasCalculadasMov != null
-    ? Math.round(cajasCalculadasMov * m2PorCajaMov * 100) / 100
+    ? redondear(cajasCalculadasMov * m2PorCajaMov)
     : null;
 
   function cambiarM2SolicitadosMov(valor) {

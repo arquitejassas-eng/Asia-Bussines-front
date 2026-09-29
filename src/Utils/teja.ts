@@ -34,12 +34,3 @@ export function calibrePantalla(calibre: string | number | null | undefined): st
   return String(calibre ?? "").trim().replace(/[()]/g, "");
 }
 
-/** El calibre VERDADERO (según quien pidió esta regla) es el valor entre
- * paréntesis -- el número de afuera es un dato distinto (gauge), no el
- * calibre real. Se usa solo para comparar identidad/agrupar, nunca para
- * mostrar en pantalla (ver `calibrePantalla`) ni para escribir en BD. */
-export function calibreIdentidad(calibre: string | number | null | undefined): string {
-  const texto = String(calibre ?? "").trim();
-  const m = texto.match(/\(([^)]+)\)/);
-  return m ? m[1].trim() : texto;
-}

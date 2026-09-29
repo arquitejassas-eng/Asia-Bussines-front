@@ -13,60 +13,6 @@
 }
 
 /* ── Barra superior ──────────────────────────────────────────────────────── */
-.recepcion-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.75rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--at-border, #E1D5C0);
-}
-
-.recepcion-marca {
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin: 0;
-  color: var(--at-terra, #B7451F);
-}
-
-.recepcion-bodega {
-  margin: 0.15rem 0 0;
-  font-size: 0.85rem;
-  color: var(--at-muted, #7C6A56);
-}
-
-.recepcion-nav {
-  display: flex;
-  align-items: center;
-  gap: 1.1rem;
-}
-
-.recepcion-link {
-  color: var(--at-terra, #B7451F);
-  font-size: 0.88rem;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.recepcion-link:hover {
-  text-decoration: underline;
-}
-
-.recepcion-boton-salir {
-  padding: 0.55rem 1.1rem;
-  border: 1px solid var(--at-border, #E1D5C0);
-  border-radius: var(--at-r-sm, 8px);
-  background: var(--at-surface, #FFFFFF);
-  color: var(--at-text-2, #4A392C);
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--at-ease, 160ms cubic-bezier(0.4, 0, 0.2, 1));
-}
-
-.recepcion-boton-salir:hover {
-  background: var(--at-surface-2, #F1E9DC);
-}
 
 /* ── Encabezados ─────────────────────────────────────────────────────────── */
 .recepcion-titulo {
@@ -365,16 +311,6 @@
   font-family: var(--at-font-sans, "Inter", sans-serif);
 }
 
-.recepcion-input-peso {
-  width: 95px;
-  padding: 0.35rem 0.55rem;
-  border: 1px solid var(--at-terra, #B7451F);
-  border-radius: var(--at-r-sm, 8px);
-  background: var(--at-surface, #FFFFFF);
-  font-family: var(--at-font-mono, "DM Mono", monospace);
-  font-weight: 600;
-}
-
 .recepcion-resultado {
   padding: 0.28rem 0.7rem;
   border-radius: 999px;
@@ -404,26 +340,6 @@
 }
 
 /* ── Materiales nuevos ────────────────────────────────────────────────────── */
-.recepcion-materiales-nuevos {
-  margin-top: 1.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--at-border-soft, #EBE2D2);
-}
-
-.recepcion-materiales-nuevos h4 {
-  margin: 0 0 0.4rem;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.recepcion-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  font-size: 0.88rem;
-  color: var(--at-text-2, #4A392C);
-  margin: 0.45rem 0;
-}
 
 /* ── Mensajes ─────────────────────────────────────────────────────────────── */
 .recepcion-error {
@@ -585,16 +501,6 @@
     padding: 1.5rem;
   }
 
-  .recepcion-topbar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.85rem;
-  }
-
-  .recepcion-nav {
-    width: 100%;
-    justify-content: space-between;
-  }
 }
 
 @media (max-width: 480px) {

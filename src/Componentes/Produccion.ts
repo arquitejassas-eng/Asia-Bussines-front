@@ -5,6 +5,8 @@ import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, produccionDesdeApi, rolloDesdeApi } from "./Mapeo";
 import { calcularSolicitudesPendientes, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/produccion";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
+import { normalizarTexto } from "../Utils/texto";
+import { redondear } from "../Utils/numeros";
 
 // Refresco automático de solicitudes pendientes / historial de producción.
 // Más espaciado que el resto de pantallas (10 s): el historial completo de
@@ -12,20 +14,6 @@ import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica"
 const SEGUNDOS_POLLING_PRODUCCION = 20;
 
 const ESTADOS_SOLICITUD_PENDIENTE = ["enviado_a_produccion", "en_produccion"];
-
-function normalizarTexto(texto: unknown) {
-  return (texto ?? "")
-    .toString()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function redondear(numero: number, decimales = 2) {
-  const factor = 10 ** decimales;
-  return Math.round(numero * factor) / factor;
-}
 
 // Ajusta metros de los rollos `candidatos` (ya ordenados, normalmente del más
 // antiguo al más nuevo) hasta que la selección sume exactamente
@@ -79,7 +67,8 @@ function calcularAsignacionRollos(objetivoMetros, candidatos, seleccionBase) {
   return { seleccion: nuevaSeleccion, restanteSinCubrir: 0 };
 }
 
-type Sesion = { bodegaId?: number; rol?: string } | null | undefined;
+import type { Sesion as SesionCompleta } from "../types/dominio";
+type Sesion = Partial<SesionCompleta> | null | undefined;
 type Rollo = { id: number; codigoInterno: string; estado: string; identificadorRollo: string; metrosDisponibles: number; fechaIngreso: string };
 
 export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {

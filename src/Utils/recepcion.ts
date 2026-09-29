@@ -1,3 +1,4 @@
+import { redondear } from "./numeros";
 export const CAMPOS_REQUERIDOS_RECEPCION = ["rollo", "espesor", "net_weight", "coil_meters"];
 export const ETIQUETAS_CAMPOS_RECEPCION = {
   rollo: "Identificador único del rollo", espesor: "Espesor", ancho: "Ancho",
@@ -9,18 +10,10 @@ export const ETIQUETAS_CAMPOS_RECEPCION = {
 };
 export const TODOS_LOS_CAMPOS_RECEPCION = Object.keys(ETIQUETAS_CAMPOS_RECEPCION);
 
-export function redondearRecepcion(numero: number, decimales = 2) {
-  const factor = 10 ** decimales;
-  return Math.round(numero * factor) / factor;
-}
-
-export function normalizarTextoRecepcion(texto: unknown) {
-  return (texto ?? "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-}
 
 export function traducirRolloRecepcion(rollo: Record<string, any>, indice: number, toleranciaPorcentaje: number) {
   const diferencia = rollo.metros_calculados !== null && rollo.coil_meters !== null
-    ? redondearRecepcion(rollo.metros_calculados - rollo.coil_meters) : null;
+    ? redondear(rollo.metros_calculados - rollo.coil_meters) : null;
   let resultado = "faltan_datos";
   if (diferencia !== null) {
     const margen = (rollo.coil_meters || 0) * (toleranciaPorcentaje / 100);

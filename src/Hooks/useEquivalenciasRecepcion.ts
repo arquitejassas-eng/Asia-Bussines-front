@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../Componentes/Api";
-import { redondearRecepcion } from "../Utils/recepcion";
+import { redondear } from "../Utils/numeros";
 
 type EquivalenciasApi = {
   colores: { ral: string; nombre: string; codigo_interno: string }[];
@@ -36,8 +36,8 @@ export function useEquivalenciasRecepcion() {
   async function agregarEquivalenciaEspesor(espesorTexto: string, { mtPorTonTexto, pesoPorMetroTexto }: { mtPorTonTexto?: string; pesoPorMetroTexto?: string }) {
     const espesor = Number(espesorTexto); let mtPorTon = mtPorTonTexto ? Number(mtPorTonTexto) : null; let pesoPorMetro = pesoPorMetroTexto ? Number(pesoPorMetroTexto) : null;
     if (!Number.isFinite(espesor)) return false;
-    if (!mtPorTon && pesoPorMetro) mtPorTon = redondearRecepcion(1000 / pesoPorMetro);
-    if (!pesoPorMetro && mtPorTon) pesoPorMetro = redondearRecepcion(1000 / mtPorTon);
+    if (!mtPorTon && pesoPorMetro) mtPorTon = redondear(1000 / pesoPorMetro);
+    if (!pesoPorMetro && mtPorTon) pesoPorMetro = redondear(1000 / mtPorTon);
     if (!mtPorTon || !pesoPorMetro) return false;
     try { await guardar("/recepcion/equivalencias/espesor", { espesor, mt_por_ton: mtPorTon, peso_por_metro: pesoPorMetro }); return true; } catch { return false; }
   }

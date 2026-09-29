@@ -18,10 +18,14 @@ from __future__ import annotations
 from io import BytesIO
 import unicodedata
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from app.services.empresas import sigla_empresa_desde_nombre
+
+if TYPE_CHECKING:
+    from app.models.equivalencias import TablaEspesorEquivalencia
 
 CAMPOS_REQUERIDOS = ["rollo", "espesor", "net_weight", "coil_meters"]
 
@@ -323,7 +327,7 @@ def _crear_codigo_interno(codigo_tipo: str, color: dict, espesor: float) -> str:
 
 
 def peso_actual_toneladas(
-    calibre: float | None, metros_disponibles: float, espesores: dict[float, "TablaEspesorEquivalencia"]
+    calibre: float | None, metros_disponibles: float, espesores: dict[float, TablaEspesorEquivalencia]
 ) -> float | None:
     """Inverso de metros_calculados: cuánto pesa HOY un rollo según los metros
     que le quedan, usando el mismo espesor->mt_por_ton que ya convierte peso a

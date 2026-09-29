@@ -33,7 +33,6 @@ export type Solicitud = {
   observaciones: string; fecha: string;
 };
 export type UnidadFamilia = { id: number; familia: string; unidad: string; permiteDecimales: boolean };
-export type UsuarioApi = { id: number; correo: string; rol: string; bodega_id: number | null; activo: boolean };
 export type Usuario = { id: number; correo: string; rol: string; bodegaId: number | null; activo: boolean };
 export type AlmacenGlobal = {
   bodegas: Bodega[]; solicitudes: Solicitud[]; envios: Envio[]; unidadesFamilia: UnidadFamilia[];

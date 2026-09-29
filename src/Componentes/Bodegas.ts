@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { disponibilidadCodigoDesdeApi, envioDesdeApi, productoDesdeApi, rolloDesdeApi, solicitudDesdeApi } from "./Mapeo";
-import { redondearRecepcion } from "../Utils/recepcion";
+import { redondear } from "../Utils/numeros";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import type { AlmacenGlobal, Bodega, Envio, EnvioApi, Producto, Sesion, Solicitud, SolicitudApi } from "../types/dominio";
 
@@ -249,12 +249,12 @@ export function useControladorBodegas(sesion: Sesion | null | undefined, almacen
         .map((r) => rolloDesdeApi(r))
         .filter((r) => r.codigoInterno === solicitud.productoCodigo);
       const metrosReservados = disponibilidadCodigoDesdeApi(disponibilidadApi || {}).metrosReservados;
-      const metrosFisicosActuales = redondearRecepcion(
+      const metrosFisicosActuales = redondear(
         rollosDelCodigo.reduce((suma, r) => suma + r.metrosDisponibles, 0)
       );
       const metrosDelRollo = rollosDelCodigo.find((r) => r.id === solicitud.rolloId)?.metrosDisponibles ?? 0;
       const cantidadRollosConMaterial = rollosDelCodigo.filter((r) => r.metrosDisponibles > 0).length;
-      const metrosFisicosDespues = redondearRecepcion(metrosFisicosActuales - metrosDelRollo);
+      const metrosFisicosDespues = redondear(metrosFisicosActuales - metrosDelRollo);
       const alertaCobertura = metrosFisicosDespues < metrosReservados;
       const alertaUltimoRollo = cantidadRollosConMaterial === 1 && metrosReservados > 0;
 

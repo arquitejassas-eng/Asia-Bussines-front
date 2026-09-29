@@ -6,7 +6,7 @@ import { guardarToken } from "../Utils/auth";
 // en el navegador contra una lista fija: el servidor responde con el token
 // y los datos de la sesión (bodega, rol) según lo que haya en MySQL.
 
-type Sesion = { correo: string; bodegaId: number; bodegaNombre: string; rol: string };
+import type { Sesion } from "../types/dominio";
 
 export function useControladorInicio(onLogin: (sesion: Sesion) => void) {
   const [correo, setCorreo] = useState("");
