@@ -13,7 +13,7 @@ const ITEM_VACIO = {
   productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
   descripcion: "", cantidad: "",
 };
-const FORMULARIO_VACIO = { numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
+const FORMULARIO_VACIO = { bodegaId: "", numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
 
 type ItemFormulario = {
   modalidad: string;
@@ -22,7 +22,7 @@ type ItemFormulario = {
   descripcion: string; cantidad: string | number;
 };
 type FormularioApartado = {
-  numeroCotizacion: string; cliente: string; observaciones: string; items: ItemFormulario[];
+  bodegaId: string; numeroCotizacion: string; cliente: string; observaciones: string; items: ItemFormulario[];
 };
 type ApartadoItem = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string; cantidad: number;
@@ -31,7 +31,7 @@ type ApartadoItem = {
   metrosPendientes: number | null; tieneProduccionRegistrada: boolean;
 };
 type Apartado = {
-  id: number; bodegaId: number; numeroCotizacion: string; cliente: string; creadoPor: string;
+  id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; cliente: string; creadoPor: string;
   fechaCreacion: string; estado: string; enviadoAProduccionPor: string; fechaEnviadoAProduccion: string | null;
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;
@@ -53,8 +53,12 @@ function quitarPosicion<T>(porPosicion: Record<number, T>, indice: number): Reco
 /** Estado y operaciones del módulo Apartados (reserva de material por cotización).
  * Cada línea del formulario elige su modalidad (POR_ROLLO/POR_STOCK) de forma
  * independiente -- ver ITEM_VACIO arriba. */
-export function useApartados(sesion: { rol?: string } | null | undefined) {
-  const puedeGestionarApartados = sesion?.rol === "administrativo";
+export function useApartados(sesion: { rol?: string } | null | undefined, alCambiarApartados?: () => void) {
+  // Admin Inventario crea (cotización aprobada, eligiendo la bodega) y
+  // cancela; la bodega (administrativo) decide cuándo enviarlo a producción.
+  const puedeCrearApartados = sesion?.rol === "admin_inventario";
+  const puedeCancelarApartados = sesion?.rol === "admin_inventario";
+  const puedeEnviarAProduccion = sesion?.rol === "administrativo";
   const puedeMarcarTerminado = sesion?.rol === "jefe_planta";
 
   const [apartados, setApartados] = useState<Apartado[]>([]);
@@ -87,7 +91,12 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
     }
   }, [filtroEstado]);
 
-  const cargarApartados = useCallback(() => consultarApartados(false), [consultarApartados]);
+  // Tras un cambio también se avisa a App (alCambiarApartados) para que el
+  // contador de "Apartados" en la barra lateral se actualice de una vez.
+  const cargarApartados = useCallback(async () => {
+    await consultarApartados(false);
+    alCambiarApartados?.();
+  }, [consultarApartados, alCambiarApartados]);
 
   useEffect(() => { cargarApartados(); }, [cargarApartados]);
   useActualizacionAutomatica(() => consultarApartados(true));
@@ -114,6 +123,17 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
 
   function actualizarCampoApartado(campo: keyof FormularioApartado, valor: string) {
     setFormulario((actual) => ({ ...actual, [campo]: valor }));
+  }
+
+  // Cambiar de bodega invalida lo ya elegido: la disponibilidad y los
+  // productos de stock eran de la bodega anterior.
+  function cambiarBodegaApartado(bodegaId: string) {
+    setFormulario((actual) => ({
+      ...actual, bodegaId,
+      items: actual.items.map((item) => ({ ...item, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "" })),
+    }));
+    setDisponibilidadItems({});
+    setResultadosBusquedaProducto({});
   }
 
   function agregarItemApartado() {
@@ -171,9 +191,13 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
       });
       return;
     }
+    if (!formulario.bodegaId) {
+      setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, sinBodega: true } }));
+      return;
+    }
     setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: true } }));
     try {
-      const datos = await api.get(`/apartados/disponibilidad?codigo_interno=${encodeURIComponent(codigo)}`);
+      const datos = await api.get(`/apartados/disponibilidad?codigo_interno=${encodeURIComponent(codigo)}&bodega_id=${formulario.bodegaId}`);
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, datos: disponibilidadCodigoDesdeApi(datos as Record<string, unknown>) } }));
     } catch {
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, error: true } }));
@@ -184,7 +208,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
   async function consultarDisponibilidadProductoItem(indice: number, productoId: number) {
     setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: true } }));
     try {
-      const datos = await api.get(`/apartados/disponibilidad-producto?producto_id=${productoId}`);
+      const datos = await api.get(`/apartados/disponibilidad-producto?producto_id=${productoId}&bodega_id=${formulario.bodegaId}`);
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, datos: disponibilidadProductoDesdeApi(datos as Record<string, unknown>) } }));
     } catch {
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, error: true } }));
@@ -198,7 +222,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
   async function buscarProductoParaItem(indice: number, texto: string) {
     actualizarItemApartado(indice, "busquedaProducto", texto);
     const consulta = texto.trim();
-    if (!consulta) {
+    if (!consulta || !formulario.bodegaId) {
       setResultadosBusquedaProducto((actual) => {
         const { [indice]: _quitado, ...resto } = actual;
         return resto;
@@ -206,8 +230,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
       return;
     }
     try {
-      const datos = await api.get(`/inventario/productos?busqueda=${encodeURIComponent(consulta)}`);
-      setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: (datos as Record<string, unknown>[]).slice(0, 8) }));
+      const datos = await api.get(`/apartados/productos?busqueda=${encodeURIComponent(consulta)}&bodega_id=${formulario.bodegaId}`);
+      setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: datos as Record<string, unknown>[] }));
     } catch {
       setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: [] }));
     }
@@ -235,6 +259,10 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
 
   async function crearApartado(evento: { preventDefault: () => void }) {
     evento.preventDefault();
+    if (!formulario.bodegaId) {
+      setErrorFormularioApartado("Elige la bodega de donde sale el material.");
+      return;
+    }
     if (!formulario.numeroCotizacion.trim()) {
       setErrorFormularioApartado("Indica el número de cotización.");
       return;
@@ -262,6 +290,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
     setErrorFormularioApartado("");
     try {
       await api.post("/apartados", {
+        bodega_id: Number(formulario.bodegaId),
         numero_cotizacion: formulario.numeroCotizacion.trim(),
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
@@ -323,12 +352,12 @@ export function useApartados(sesion: { rol?: string } | null | undefined) {
   }
 
   return {
-    puedeGestionarApartados, puedeMarcarTerminado,
+    puedeCrearApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado,
     apartados, cargandoApartados, errorApartados, cargarApartados,
     filtroEstado, setFiltroEstado,
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
-    actualizarCampoApartado, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
+    actualizarCampoApartado, cambiarBodegaApartado, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
     cambiarModalidadItem,
     guardandoApartado, errorFormularioApartado, crearApartado,
     disponibilidadItems, consultarDisponibilidadItem,

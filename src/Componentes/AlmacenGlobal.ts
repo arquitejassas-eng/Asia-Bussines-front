@@ -113,22 +113,38 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     }
   }, [sesion?.rol]);
 
+  // Cotizaciones aprobadas (las crea Admin Inventario) que la bodega todavía
+  // no envía a producción -- badge de "Apartados" para administrativo.
+  const [apartadosPorEnviarCount, setApartadosPorEnviarCount] = useState(0);
+
+  const refrescarApartadosPorEnviar = useCallback(async () => {
+    if (sesion?.rol !== "administrativo") return setApartadosPorEnviarCount(0);
+    try {
+      const datos = await api.get<Record<string, unknown>[]>("/apartados?estado=apartado") || [];
+      setApartadosPorEnviarCount(datos.length);
+    } catch {
+      setApartadosPorEnviarCount(0);
+    }
+  }, [sesion?.rol]);
+
   useEffect(() => {
     cargarBodegas();
     refrescarSolicitudesPendientes();
     refrescarEnviosPendientes();
     refrescarProduccionPendiente();
+    refrescarApartadosPorEnviar();
     if (sesion?.correo) cargarUnidadesFamilia();
-  }, [cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente, cargarUnidadesFamilia, sesion?.correo]);
+  }, [cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente, refrescarApartadosPorEnviar, cargarUnidadesFamilia, sesion?.correo]);
 
   useActualizacionAutomatica(
-    () => Promise.all([refrescarSolicitudesPendientes(), refrescarEnviosPendientes(), refrescarProduccionPendiente()]),
+    () => Promise.all([refrescarSolicitudesPendientes(), refrescarEnviosPendientes(), refrescarProduccionPendiente(), refrescarApartadosPorEnviar()]),
     { activa: Boolean(sesion?.correo) },
   );
 
   return {
     bodegas, solicitudes, envios, cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes,
     produccionPendienteCount, refrescarProduccionPendiente,
+    apartadosPorEnviarCount, refrescarApartadosPorEnviar,
     unidadesFamilia, unidadPorFamilia, decimalesPorFamilia, cargarUnidadesFamilia, guardarUnidadFamilia,
     mostrarFormularioBodega, setMostrarFormularioBodega, nombreBodegaNueva, setNombreBodegaNueva,
     guardandoBodega, errorBodega, crearBodega,

@@ -69,6 +69,11 @@ class Apartado(Base):
     stock_separado_en: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     items = relationship("ApartadoItem", back_populates="apartado", cascade="all, delete-orphan")
+    bodega = relationship("Bodega")
+
+    @property
+    def bodega_nombre(self) -> str:
+        return self.bodega.nombre if self.bodega else ""
 
 
 class ApartadoItem(Base):

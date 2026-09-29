@@ -46,4 +46,5 @@ export type AlmacenGlobal = {
   guardandoBodega: boolean; errorBodega: string;
   crearBodega: (evento: { preventDefault: () => void }) => Promise<void>;
   produccionPendienteCount: number; refrescarProduccionPendiente: () => Promise<void>;
+  apartadosPorEnviarCount: number; refrescarApartadosPorEnviar: () => Promise<void>;
 };

@@ -1,4 +1,6 @@
+import { useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { ApartadosPorEnviarContexto } from "./AvisosApartados";
 import "../Style/Barralateral.css";
 
 type Sesion = { rol?: string; bodegaNombre?: string } | null | undefined;
@@ -9,7 +11,7 @@ type Props = { sesion: Sesion; onCerrarSesion: () => void; notificaciones?: numb
 // debería ver el enlace en la barra lateral.
 const MODULOS = [
   { clave: "inventario", etiqueta: "Inventario", ruta: "/inventario", disponible: true, roles: ["administrativo"] },
-  { clave: "apartados", etiqueta: "Apartados", ruta: "/apartados", disponible: true, roles: ["administrativo", "jefe_planta"] },
+  { clave: "apartados", etiqueta: "Apartados", ruta: "/apartados", disponible: true, roles: ["administrativo", "jefe_planta", "admin_inventario"] },
   { clave: "recepcion", etiqueta: "Recepción y Verificación", ruta: "/recepcion", disponible: true, roles: ["administrativo", "admin_inventario"] },
   { clave: "bodegas", etiqueta: "Bodegas", ruta: "/bodegas", disponible: true, notificable: true, roles: ["administrativo"] },
   { clave: "rollos", etiqueta: "Rollos almacenados", ruta: "/rollos", disponible: true, roles: ["administrativo", "admin_inventario"] },
@@ -23,6 +25,7 @@ const MODULOS = [
 
 export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 0 }: Props) {
   const location = useLocation();
+  const apartadosPorEnviar = useContext(ApartadosPorEnviarContexto);
   const modulosVisibles = MODULOS.filter((modulo) => !modulo.roles || modulo.roles.includes(sesion?.rol ?? ""));
 
   return (
@@ -35,6 +38,9 @@ export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 
             <Link to={modulo.ruta} className={`barra-item ${location.pathname === modulo.ruta ? "barra-item-activo" : ""}`}>
               <span>{modulo.etiqueta}</span>
               {modulo.notificable && notificaciones > 0 && <span className="barra-notificacion">{notificaciones}</span>}
+              {modulo.clave === "apartados" && sesion?.rol === "administrativo" && apartadosPorEnviar > 0 && (
+                <span className="barra-notificacion" title="Cotizaciones aprobadas por enviar a producción">{apartadosPorEnviar}</span>
+              )}
             </Link>
             {modulo.clave === "inventario" && <p className="barra-item-nota">Productos · Movimientos · Historial</p>}
           </div>

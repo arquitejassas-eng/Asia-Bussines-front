@@ -5,6 +5,7 @@ import { EVENTO_SESION_EXPIRADA } from "./Componentes/Api";
 import { borrarToken } from "./Utils/auth";
 import RutaProtegida from "./Componentes/RutaProtegida";
 import ErrorDePantalla from "./Componentes/ErrorDePantalla";
+import { ApartadosPorEnviarContexto } from "./Componentes/AvisosApartados";
 
 // Cada módulo se descarga solo al abrir su ruta. Al crecer la aplicación, una
 // pantalla nueva no penaliza el primer acceso de los demás usuarios.
@@ -91,6 +92,7 @@ export default function App() {
   }
 
   return (
+    <ApartadosPorEnviarContexto.Provider value={almacen.apartadosPorEnviarCount}>
     <ErrorDePantalla key={pathname}>
     <Suspense fallback={<main aria-live="polite">Cargando módulo...</main>}>
       <Routes>
@@ -110,7 +112,7 @@ export default function App() {
       />
       <Route
         path="/apartados"
-        element={paginaProtegida(["administrativo", "jefe_planta"], ApartadosPage)}
+        element={paginaProtegida(["administrativo", "jefe_planta", "admin_inventario"], ApartadosPage)}
       />
       <Route
         path="/recepcion"
@@ -152,5 +154,6 @@ export default function App() {
       </Routes>
     </Suspense>
     </ErrorDePantalla>
+    </ApartadosPorEnviarContexto.Provider>
   );
 }

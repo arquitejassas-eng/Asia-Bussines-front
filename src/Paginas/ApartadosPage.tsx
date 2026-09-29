@@ -33,10 +33,23 @@ type DatosDisponibilidad = {
   stock?: number; cantidadReservada?: number; cantidadDisponible?: number;
   productoId?: number; codigo?: string; descripcion?: string;
 };
-type ItemDisponibilidad = { cargando?: boolean; error?: boolean; datos?: DatosDisponibilidad };
+type ItemDisponibilidad = { cargando?: boolean; error?: boolean; sinBodega?: boolean; datos?: DatosDisponibilidad };
 
 function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
-  const a = useApartados(sesion);
+  const a = useApartados(sesion, almacen.refrescarApartadosPorEnviar);
+  const esAdminInventario = sesion.rol === "admin_inventario";
+  // Cotizaciones que Admin Inventario ya aprobó y esperan que la bodega
+  // decida cuándo mandarlas a producción.
+  const cotizacionesAprobadas = a.puedeEnviarAProduccion ? a.apartados.filter((ap) => ap.estado === "apartado") : [];
+
+  function confirmarEnvioAProduccion(ap: { id: number; numeroCotizacion: string }) {
+    setConfirmacion({
+      titulo: `¿Enviar ${ap.numeroCotizacion} a producción?`,
+      mensaje: "Planta verá esta cotización como pendiente de producir.",
+      textoConfirmar: "Sí, enviar a producción",
+      ejecutar: () => a.enviarApartadoAProduccion(ap.id),
+    });
+  }
   const disponibilidadItems = a.disponibilidadItems as Record<number, ItemDisponibilidad>;
   const navigate = useNavigate();
 
@@ -68,18 +81,35 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         <div className="inventario-page">
           <div className="inventario-header">
             <h1 className="inventario-titulo">Apartados</h1>
-            {a.puedeGestionarApartados && !a.mostrarFormularioApartado && (
+            {a.puedeCrearApartados && !a.mostrarFormularioApartado && (
               <button className="inventario-boton" onClick={a.abrirFormularioApartado}>
                 + Nuevo apartado
               </button>
             )}
           </div>
           <p className="inventario-carga-ayuda">
-            Reserva material para la cotización de un cliente sin enviarlo aún a producción/entrega.
-            Cada línea puede ser material por rollo (código de clasificación, color y calibre) o un
-            producto de stock (Tornillos, Amarres, etc.) — puedes mezclar ambos tipos en el mismo
-            apartado. El material queda como "reservado" hasta que canceles el apartado o lo entregues.
+            {esAdminInventario
+              ? <>Cuando se aprueba una cotización, créala aquí y elige de qué bodega sale el material.
+                Cada línea puede ser material por rollo (código de clasificación, color y calibre) o un
+                producto de stock (Tornillos, Amarres, etc.). El material queda reservado en esa bodega y a
+                su encargada le llega el aviso para enviarlo a producción cuando quiera.</>
+              : a.puedeEnviarAProduccion
+                ? <>Aquí llegan las cotizaciones aprobadas por Admin Inventario con el material ya reservado en tu
+                  bodega. Envíalas a producción cuando estés lista.</>
+                : <>Cotizaciones aprobadas con su material reservado.</>}
           </p>
+
+          {!a.mostrarFormularioApartado && cotizacionesAprobadas.map((ap) => (
+            <div key={ap.id} className="inventario-exito" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+              <span>
+                ✅ Cotización {ap.numeroCotizacion} aprobada{ap.cliente ? ` — ${ap.cliente}` : ""}
+                <span style={{ fontWeight: 400 }}> · {formatearFechaColombia(ap.fechaCreacion)}</span>
+              </span>
+              <button className="inventario-boton" onClick={() => confirmarEnvioAProduccion(ap)}>
+                Enviar a producción
+              </button>
+            </div>
+          ))}
 
           {a.errorAccionApartado && <p className="inventario-error">{a.errorAccionApartado}</p>}
 
@@ -88,6 +118,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               <h2 className="inventario-form-subtitulo">Nuevo apartado</h2>
 
               <div className="inventario-form-grid">
+                <div>
+                  <label>Bodega de donde sale *</label>
+                  <select value={a.formulario.bodegaId} onChange={(e) => a.cambiarBodegaApartado(e.target.value)}>
+                    <option value="">Elige la bodega...</option>
+                    {almacen.bodegas.map((bodega) => (
+                      <option key={bodega.id} value={bodega.id}>{bodega.nombre}</option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <label>Número de cotización *</label>
                   <input
@@ -137,6 +176,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         onChange={(e) => a.actualizarItemApartado(indice, "codigoInterno", e.target.value)}
                         onBlur={(e) => a.consultarDisponibilidadItem(indice, e.target.value)}
                       />
+                      {disponibilidadItems[indice]?.sinBodega && (
+                        <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
+                          Elige primero la bodega para ver el material disponible.
+                        </p>
+                      )}
                       {disponibilidadItems[indice]?.cargando && (
                         <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>
                           Consultando material disponible...
@@ -150,7 +194,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       {disponibilidadItems[indice]?.datos && (
                         disponibilidadItems[indice].datos.cantidadRollos === 0 ? (
                           <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
-                            No hay rollos con ese código en tu bodega.
+                            No hay rollos con ese código en esa bodega.
                           </p>
                         ) : (
                           <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>
@@ -175,7 +219,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       ) : (
                         <>
                           <input
-                            placeholder="Buscar por código o descripción..."
+                            placeholder={a.formulario.bodegaId ? "Buscar por código o descripción..." : "Elige primero la bodega"}
+                            disabled={!a.formulario.bodegaId}
                             value={item.busquedaProducto}
                             onChange={(e) => a.buscarProductoParaItem(indice, e.target.value)}
                           />
@@ -295,6 +340,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   <table className="inventario-tabla">
                     <thead>
                       <tr>
+                        {esAdminInventario && <th>Bodega</th>}
                         <th>Cotización</th>
                         <th>Cliente</th>
                         <th>Productos</th>
@@ -306,7 +352,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     <tbody>
                       {a.apartados.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="inventario-vacio">No hay apartados registrados.</td>
+                          <td colSpan={esAdminInventario ? 7 : 6} className="inventario-vacio">No hay apartados registrados.</td>
                         </tr>
                       ) : (
                         a.apartados.map((ap) => {
@@ -321,6 +367,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             && calcularSolicitudesPendientes([ap]).length > 0;
                           return (
                           <tr key={ap.id}>
+                            {esAdminInventario && <td>{ap.bodegaNombre || "—"}</td>}
                             <td>{ap.numeroCotizacion}</td>
                             <td>{ap.cliente || "—"}</td>
                             <td>
@@ -346,15 +393,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             <td>{ETIQUETAS_ESTADO[ap.estado] || ap.estado}</td>
                             <td>{formatearFechaColombia(ap.fechaCreacion)}</td>
                             <td className="inventario-acciones">
-                              {a.puedeGestionarApartados && ap.estado === "apartado" && (
-                                <button onClick={() => setConfirmacion({
-                                  titulo: `¿Enviar ${ap.numeroCotizacion} a producción?`,
-                                  mensaje: "Planta verá esta cotización como pendiente de producir.",
-                                  textoConfirmar: "Sí, enviar a producción",
-                                  ejecutar: () => a.enviarApartadoAProduccion(ap.id),
-                                })}>Enviar a producción</button>
+                              {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
+                                <button onClick={() => confirmarEnvioAProduccion(ap)}>Enviar a producción</button>
                               )}
-                              {a.puedeGestionarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
+                              {a.puedeCancelarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
                                 <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
                                   titulo: `¿Cancelar el apartado ${ap.numeroCotizacion}?`,
                                   mensaje: ap.estado === "apartado"

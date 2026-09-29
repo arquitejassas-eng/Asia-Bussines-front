@@ -35,6 +35,9 @@ class ApartadoItemCrear(BaseModel):
 
 
 class ApartadoCrear(BaseModel):
+    # Bodega de donde sale el material. La elige Admin Inventario (quien crea
+    # los apartados); para cualquier otro rol se ignora y se usa la suya.
+    bodega_id: int | None = None
     numero_cotizacion: str = Field(min_length=1, max_length=32)
     cliente: str = ""
     observaciones: str = ""
@@ -94,6 +97,7 @@ class ApartadoResponse(ModeloConFechasUtc):
     model_config = ConfigDict(from_attributes=True)
     id: int
     bodega_id: int
+    bodega_nombre: str = ""
     numero_cotizacion: str
     cliente: str
     creado_por: str

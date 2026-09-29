@@ -3,10 +3,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
 from app.models.apartado import Apartado, ApartadoItem, EstadoApartado
+from app.models.producto import Producto
+from app.services.productos import FAMILIA_ROLLOS
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.apartados import (
     ApartadoCrear, ApartadoResponse, DisponibilidadCodigoResponse, DisponibilidadProductoResponse, ReservaCodigoResponse,
 )
+from app.schemas.inventario import ProductoResponse
 from app.services import apartados as srv
 
 router = APIRouter(prefix="/apartados", tags=["Apartados"])
@@ -14,22 +17,43 @@ router = APIRouter(prefix="/apartados", tags=["Apartados"])
 
 @router.get("/disponibilidad", response_model=DisponibilidadCodigoResponse)
 def consultar_disponibilidad(
-    codigo_interno: str = Query(..., min_length=1),
+    codigo_interno: str = Query(..., min_length=1), bodega_id: int | None = None,
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> dict:
     """Cuánto material hay de un código de clasificación (color + calibre) antes
     de apartarlo: rollos, metros disponibles, reservados y consumidos."""
-    return srv.disponibilidad_por_codigo(db, bodega_id=usuario.bodega_id, codigo_interno=codigo_interno)
+    bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
+    return srv.disponibilidad_por_codigo(db, bodega_id=bodega, codigo_interno=codigo_interno)
 
 
 @router.get("/disponibilidad-producto", response_model=DisponibilidadProductoResponse)
 def consultar_disponibilidad_producto(
-    producto_id: int = Query(..., gt=0),
+    producto_id: int = Query(..., gt=0), bodega_id: int | None = None,
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> dict:
     """Cuánto stock hay de un `Producto` concreto antes de apartarlo (POR_STOCK):
     stock físico, cantidad ya reservada por apartados activos, y disponible."""
-    return srv.disponibilidad_producto(db, bodega_id=usuario.bodega_id, producto_id=producto_id)
+    bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
+    return srv.disponibilidad_producto(db, bodega_id=bodega, producto_id=producto_id)
+
+
+@router.get("/productos", response_model=list[ProductoResponse])
+def buscar_productos_para_apartar(
+    busqueda: str = Query(..., min_length=1), bodega_id: int | None = None,
+    db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> list[Producto]:
+    """Productos de stock de la bodega elegida para una línea POR_STOCK. Admin
+    Inventario no tiene bodega propia, por eso no sirve /inventario/productos."""
+    bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
+    termino = f"%{busqueda.strip()}%"
+    return (
+        db.query(Producto)
+        .filter(Producto.bodega_id == bodega, Producto.familia != FAMILIA_ROLLOS)
+        .filter(Producto.codigo.ilike(termino) | Producto.codigo_importacion.ilike(termino) | Producto.descripcion.ilike(termino))
+        .order_by(Producto.id.desc())
+        .limit(8)
+        .all()
+    )
 
 
 @router.get("/reservas", response_model=list[ReservaCodigoResponse])
@@ -42,8 +66,10 @@ def listar_reservas_por_codigo(
     return srv.metros_reservados_por_bodega(db, bodega_id=usuario.bodega_id)
 
 
+# Los apartados los crea Admin Inventario (cotización aprobada) eligiendo la
+# bodega; la bodega solo decide cuándo enviarlo a producción.
 @router.post("", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
     apartado = srv.crear_apartado(db, datos, usuario)
     db.commit(); db.refresh(apartado)
@@ -58,13 +84,19 @@ def listar_apartados(
     # refrescan solos: pedir todo el histórico (entregados, cancelados...)
     # en cada recarga gastaba datos de Supabase sin razón.
     estados: list[EstadoApartado] = Query(default=[]),
+    bodega_id: int | None = None,
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Apartado]:
     consulta = (
         db.query(Apartado)
-        .options(joinedload(Apartado.items).joinedload(ApartadoItem.producciones))
-        .filter(Apartado.bodega_id == usuario.bodega_id)
+        .options(joinedload(Apartado.items).joinedload(ApartadoItem.producciones), joinedload(Apartado.bodega))
     )
+    # Admin Inventario ve los de todas las bodegas (puede filtrar por una);
+    # los demás roles, solo los de la suya.
+    if usuario.rol == RolUsuario.ADMIN_INVENTARIO:
+        if bodega_id is not None: consulta = consulta.filter(Apartado.bodega_id == bodega_id)
+    else:
+        consulta = consulta.filter(Apartado.bodega_id == usuario.bodega_id)
     if estado: consulta = consulta.filter(Apartado.estado == estado)
     if estados: consulta = consulta.filter(Apartado.estado.in_(estados))
     if numero_cotizacion: consulta = consulta.filter(Apartado.numero_cotizacion.ilike(f"%{numero_cotizacion}%"))
@@ -77,7 +109,7 @@ def obtener_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: U
 
 
 @router.patch("/{apartado_id}/cancelar", response_model=ApartadoResponse,
-              dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO))])
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def cancelar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
     apartado = srv.cancelar_apartado(db, apartado_id, usuario)
     db.commit(); db.refresh(apartado)

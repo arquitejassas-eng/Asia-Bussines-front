@@ -94,7 +94,7 @@ export function apartadoItemDesdeApi(i: RegistroApi) {
 
 export function apartadoDesdeApi(a: RegistroApi) {
   const items = Array.isArray(a.items) ? a.items : [];
-  return { id: numero(a.id), bodegaId: numero(a.bodega_id), numeroCotizacion: texto(a.numero_cotizacion),
+  return { id: numero(a.id), bodegaId: numero(a.bodega_id), bodegaNombre: texto(a.bodega_nombre), numeroCotizacion: texto(a.numero_cotizacion),
     cliente: texto(a.cliente), creadoPor: texto(a.creado_por), fechaCreacion: texto(a.fecha_creacion),
     estado: texto(a.estado), enviadoAProduccionPor: texto(a.enviado_a_produccion_por),
     fechaEnviadoAProduccion: a.fecha_enviado_a_produccion == null ? null : texto(a.fecha_enviado_a_produccion),

@@ -31,10 +31,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.apartado import Apartado, ApartadoItem, EstadoApartado, ModalidadApartado
+from app.models.bodega import Bodega
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.rollo import Rollo
-from app.models.usuario import Usuario
+from app.models.usuario import RolUsuario, Usuario
 from app.schemas.apartados import ApartadoCrear
 
 ESTADOS_RESERVA_ACTIVA = (
@@ -240,9 +241,22 @@ def disponibilidad_producto(db: Session, *, bodega_id: int, producto_id: int, bl
     }
 
 
+def bodega_de_consulta(db: Session, usuario: Usuario, bodega_id: int | None) -> int:
+    """Bodega sobre la que se consulta o se aparta material. Admin Inventario
+    crea los apartados de todas las bodegas, así que elige cuál (bodega_id);
+    los demás roles siempre trabajan sobre la suya, aunque manden otra."""
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+        return usuario.bodega_id
+    if bodega_id is None or db.get(Bodega, bodega_id) is None:
+        raise HTTPException(status_code=400, detail="Elige la bodega de donde sale el material.")
+    return bodega_id
+
+
 def apartado_de_mi_bodega(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
+    """Admin Inventario puede abrir apartados de cualquier bodega (los crea y
+    es quien los cancela); los demás roles, solo los de su bodega."""
     apartado = db.get(Apartado, apartado_id)
-    if apartado is None or apartado.bodega_id != usuario.bodega_id:
+    if apartado is None or (usuario.rol != RolUsuario.ADMIN_INVENTARIO and apartado.bodega_id != usuario.bodega_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Apartado no encontrado.")
     return apartado
 
@@ -250,14 +264,15 @@ def apartado_de_mi_bodega(db: Session, apartado_id: int, usuario: Usuario) -> Ap
 def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apartado:
     if not datos.items:
         raise HTTPException(status_code=400, detail="El apartado debe tener al menos un producto solicitado.")
+    bodega_id = bodega_de_consulta(db, usuario, datos.bodega_id)
 
     ya_existe = (
         db.query(Apartado.id)
-        .filter(Apartado.bodega_id == usuario.bodega_id, Apartado.numero_cotizacion == datos.numero_cotizacion)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == datos.numero_cotizacion)
         .first()
     )
     if ya_existe:
-        raise HTTPException(status_code=400, detail=f"Ya existe un apartado con la cotización {datos.numero_cotizacion}.")
+        raise HTTPException(status_code=400, detail=f"Ya existe un apartado con la cotización {datos.numero_cotizacion} en esa bodega.")
 
     # Sin restricción de modalidad uniforme -- un mismo apartado puede
     # mezclar ítems POR_ROLLO y POR_STOCK libremente. Cada rama valida
@@ -274,7 +289,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         solicitado_por_codigo[item.codigo_interno] = solicitado_por_codigo.get(item.codigo_interno, 0) + metros
 
     for codigo_interno, metros_solicitados in solicitado_por_codigo.items():
-        resumen = disponibilidad_por_codigo(db, bodega_id=usuario.bodega_id, codigo_interno=codigo_interno, bloquear=True)
+        resumen = disponibilidad_por_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, bloquear=True)
         if metros_solicitados > resumen["metros_disponibles"]:
             raise HTTPException(
                 status_code=400,
@@ -291,7 +306,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         solicitado_por_producto[item.producto_id] = solicitado_por_producto.get(item.producto_id, 0) + item.cantidad
 
     for producto_id, cantidad_solicitada in solicitado_por_producto.items():
-        resumen = disponibilidad_producto(db, bodega_id=usuario.bodega_id, producto_id=producto_id, bloquear=True)
+        resumen = disponibilidad_producto(db, bodega_id=bodega_id, producto_id=producto_id, bloquear=True)
         if cantidad_solicitada > resumen["cantidad_disponible"]:
             raise HTTPException(
                 status_code=400,
@@ -303,7 +318,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
 
     ahora = datetime.now(timezone.utc)
     apartado = Apartado(
-        bodega_id=usuario.bodega_id,
+        bodega_id=bodega_id,
         numero_cotizacion=datos.numero_cotizacion,
         cliente=datos.cliente,
         creado_por=usuario.correo,
