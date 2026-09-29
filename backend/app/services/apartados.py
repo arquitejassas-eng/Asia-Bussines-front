@@ -36,7 +36,7 @@ from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
-from app.services.material_en_camino import metros_en_camino_codigo
+from app.services.material_en_camino import metros_en_camino_codigo, metros_por_repartir_codigo
 from app.schemas.apartados import ApartadoCrear
 
 ESTADOS_RESERVA_ACTIVA = (
@@ -247,6 +247,28 @@ def validar_reserva_producto(db: Session, *, producto: Producto, cantidad: float
         )
 
 
+def metros_esperando_codigo(db: Session, *, codigo_interno: str) -> float:
+    """Lo que las bodegas ya apartaron de este código sin tenerlo en su
+    bodega (sus faltantes): eso ya está comprometido de la bolsa "en camino /
+    por repartir" de la empresa, sea cual sea la bodega que lo apartó."""
+    reservado = dict(
+        db.query(Apartado.bodega_id, func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
+        .join(ApartadoItem, ApartadoItem.apartado_id == Apartado.id)
+        .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.codigo_interno == codigo_interno)
+        .group_by(Apartado.bodega_id)
+        .all()
+    )
+    if not reservado:
+        return 0.0
+    fisico = dict(
+        db.query(Rollo.bodega_id, func.sum(Rollo.metros_disponibles))
+        .filter(Rollo.codigo_interno == codigo_interno, Rollo.bodega_id.in_(list(reservado)))
+        .group_by(Rollo.bodega_id)
+        .all()
+    )
+    return round(sum(max(float(r or 0) - float(fisico.get(b) or 0), 0) for b, r in reservado.items()), 2)
+
+
 def disponibilidad_por_codigo(db: Session, *, bodega_id: int, codigo_interno: str, bloquear: bool = False) -> dict:
     """Agrega los rollos de un código de clasificación (color + calibre); con
     `bloquear=True` los bloquea (FOR UPDATE) para serializar apartados
@@ -259,7 +281,14 @@ def disponibilidad_por_codigo(db: Session, *, bodega_id: int, codigo_interno: st
     metros_disponibles_rollos = round(sum(r.metros_disponibles for r in rollos), 2)
     metros_consumidos = round(sum(r.metros_consumidos for r in rollos), 2)
     reservados = metros_reservados_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno)
-    en_camino = metros_en_camino_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno)
+    # Bolsa de la empresa (no de una bodega): lo que viene en camino más lo
+    # que Admin Inventario recibió y no ha repartido, menos lo que las
+    # bodegas ya están esperando de ahí.
+    en_camino = metros_en_camino_codigo(db, codigo_interno=codigo_interno)
+    por_repartir = metros_por_repartir_codigo(db, codigo_interno=codigo_interno)
+    esperando = metros_esperando_codigo(db, codigo_interno=codigo_interno)
+    bolsa_libre = round(max(en_camino + por_repartir - esperando, 0), 2)
+    libre_en_bodega = round(metros_disponibles_rollos - reservados, 2)
     primero = rollos[0] if rollos else None
 
     return {
@@ -268,11 +297,14 @@ def disponibilidad_por_codigo(db: Session, *, bodega_id: int, codigo_interno: st
         "color_material": primero.color_material if primero else "",
         "calibre": primero.calibre if primero else 0,
         "cantidad_rollos": len(rollos),
-        "metros_disponibles": round(metros_disponibles_rollos - reservados, 2),
+        "metros_disponibles": libre_en_bodega,
         "metros_reservados": reservados,
-        # Checklist de material que todavía no llega (ver material_en_camino).
+        # Ver material_en_camino: checklist que no ha llegado y lo recibido
+        # por Admin Inventario sin repartir; "esperando" es lo ya apartado de ahí.
         "metros_en_camino": en_camino,
-        "metros_para_apartar": round(metros_disponibles_rollos + en_camino - reservados, 2),
+        "metros_por_repartir": por_repartir,
+        "metros_esperando": esperando,
+        "metros_para_apartar": round(max(libre_en_bodega, 0) + bolsa_libre, 2),
         "metros_consumidos": metros_consumidos,
     }
 
@@ -369,16 +401,16 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         if metros_solicitados <= resumen["metros_disponibles"]:
             continue
         en_bodega = max(resumen["metros_disponibles"], 0)
-        en_camino = resumen["metros_en_camino"]
+        de_la_bolsa = round(resumen["metros_para_apartar"] - en_bodega, 2)
         if metros_solicitados > resumen["metros_para_apartar"]:
             # Ni con lo que viene en camino alcanza: solo se aparta material
             # que existe o que está en un checklist ya cargado.
-            puede = max(resumen["metros_para_apartar"], 0)
+            puede = resumen["metros_para_apartar"]
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Del código '{codigo_interno}' solo puedes apartar {puede} m "
-                    f"({en_bodega} m libres en bodega + {en_camino} m en camino, ya descontado lo apartado). "
+                    f"Del código '{codigo_interno}' solo puedes apartar {puede} m: {en_bodega} m libres en esta bodega "
+                    f"+ {de_la_bolsa} m libres de lo que viene en camino o está por repartir en Admin Inventario. "
                     f"Pediste {metros_solicitados} m: faltan {round(metros_solicitados - puede, 2)} m que no están "
                     "ni en la bodega ni en camino. Si viene otro pedido, sube su checklist en Recepción."
                 ),
@@ -387,8 +419,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"El código '{codigo_interno}' no tiene material suficiente en bodega: "
-                    f"libres {en_bodega} m, solicitados {metros_solicitados} m ({en_camino} m vienen en camino). "
+                    f"El código '{codigo_interno}' no tiene material suficiente en esta bodega: "
+                    f"libres {en_bodega} m, solicitados {metros_solicitados} m ({de_la_bolsa} m libres en camino o por repartir). "
                     "Para apartar lo que viene en camino, marca 'El material viene en camino'."
                 ),
             )

@@ -10,7 +10,6 @@ from app.models.equivalencias import (
     TablaEspesorEquivalencia,
     TablaTipoMaterialEquivalencia,
 )
-from app.models.bodega import Bodega
 from app.models.material_en_camino import Cargamento, CargamentoRollo
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.recepcion import Recepcion
@@ -465,19 +464,17 @@ def guardar_en_camino(
     usuario: Usuario = Depends(usuario_actual),
 ) -> dict:
     """Paso 4 alternativo: el archivo verificado es el checklist de material
-    que TODAVÍA NO LLEGA. Se guarda como "en camino" hacia la bodega elegida
-    (no crea rollos ni movimientos) para poder apartarlo. Cuando llegue, se
-    sube en Recepción como siempre y se marca como llegado."""
+    que TODAVÍA NO LLEGA. Se guarda como "en camino" para la empresa (no crea
+    rollos ni movimientos) y ya se puede apartar desde cualquier bodega. Llega
+    por partes: cada mula se recibe en Recepción como siempre y sus rollos se
+    marcan como llegados en el checklist."""
     en_proceso = archivos_recepcion.obtener(usuario.id)
     rollos_verificados: list[srv.RolloClasificado] | None = (
         en_proceso.get("rollos_verificados") if en_proceso else None
     )
     if not rollos_verificados:
         raise HTTPException(status_code=400, detail="Primero verifica el archivo con /recepcion/verificar.")
-    if db.get(Bodega, datos.bodega_id) is None:
-        raise HTTPException(status_code=400, detail="Elige la bodega a la que llega este material.")
-
-    _marcar_problemas_de_referencia(db, rollos_verificados, datos.bodega_id)
+    _marcar_problemas_de_referencia(db, rollos_verificados, usuario.bodega_id)
     _validar_filas_para_guardar(rollos_verificados)
     sin_datos = [r for r in rollos_verificados if r.resultado == "pendiente_datos"]
     if sin_datos:
@@ -488,7 +485,6 @@ def guardar_en_camino(
         )
 
     cargamento = Cargamento(
-        bodega_id=datos.bodega_id,
         proveedor=datos.proveedor_principal or (rollos_verificados[0].proveedor or "No especificado"),
         archivo_origen=en_proceso["nombre_archivo"],
         creado_por=usuario.correo,

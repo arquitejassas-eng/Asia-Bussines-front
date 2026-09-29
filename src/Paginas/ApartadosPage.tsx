@@ -30,7 +30,7 @@ const ETIQUETAS_ESTADO: Record<string, string> = {
 
 type DatosDisponibilidad = {
   cantidadRollos?: number; familia?: string; metrosDisponibles?: number; metrosReservados?: number;
-  metrosEnCamino?: number; metrosParaApartar?: number;
+  metrosEnCamino?: number; metrosPorRepartir?: number; metrosEsperando?: number; metrosParaApartar?: number;
   stock?: number; cantidadReservada?: number; cantidadDisponible?: number;
   productoId?: number; codigo?: string; descripcion?: string;
 };
@@ -207,7 +207,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         </p>
                       )}
                       {disponibilidadItems[indice]?.datos && (
-                        disponibilidadItems[indice].datos.cantidadRollos === 0 && !disponibilidadItems[indice].datos.metrosEnCamino ? (
+                        disponibilidadItems[indice].datos.cantidadRollos === 0 && !disponibilidadItems[indice].datos.metrosEnCamino
+                          && !disponibilidadItems[indice].datos.metrosPorRepartir ? (
                           <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
                             No hay rollos con ese código en esa bodega.
                           </p>
@@ -217,11 +218,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             {disponibilidadItems[indice].datos.cantidadRollos} rollo{disponibilidadItems[indice].datos.cantidadRollos === 1 ? "" : "s"} ·{" "}
                             <strong>{disponibilidadItems[indice].datos.metrosDisponibles} m disponibles</strong>
                             {(disponibilidadItems[indice].datos?.metrosReservados ?? 0) > 0 && ` · ${disponibilidadItems[indice].datos?.metrosReservados} m ya reservados`}
-                            {(disponibilidadItems[indice].datos?.metrosEnCamino ?? 0) > 0 && (
+                            {((disponibilidadItems[indice].datos?.metrosEnCamino ?? 0) > 0 || (disponibilidadItems[indice].datos?.metrosPorRepartir ?? 0) > 0) && (
                               <>
-                                {` · ${disponibilidadItems[indice].datos?.metrosEnCamino} m en camino`}
                                 <br />
-                                <strong>Puedes apartar hasta {Math.max(disponibilidadItems[indice].datos?.metrosParaApartar ?? 0, 0)} m</strong> (bodega + en camino − apartado)
+                                Empresa: {disponibilidadItems[indice].datos?.metrosEnCamino} m en camino
+                                {` · ${disponibilidadItems[indice].datos?.metrosPorRepartir} m por repartir en Admin Inventario`}
+                                {(disponibilidadItems[indice].datos?.metrosEsperando ?? 0) > 0 && ` · ${disponibilidadItems[indice].datos?.metrosEsperando} m ya apartados de ahí`}
+                                <br />
+                                <strong>Puedes apartar hasta {disponibilidadItems[indice].datos?.metrosParaApartar} m</strong>
                               </>
                             )}
                           </p>

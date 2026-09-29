@@ -50,22 +50,20 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
   // ---- Material en camino: el mismo Excel del proveedor, guardado ANTES de
   // que llegue para poder apartarlo (solo Admin Inventario lo guarda). ----
   const esAdminInventario = sesion?.rol === "admin_inventario";
-  const [bodegaEnCamino, setBodegaEnCamino] = useState("");
   const [guardandoEnCamino, setGuardandoEnCamino] = useState(false);
   const [errorEnCamino, setErrorEnCamino] = useState("");
   const [avisoEnCamino, setAvisoEnCamino] = useState("");
   const [recargarEnCamino, setRecargarEnCamino] = useState(0);
   const puedeGuardarEnCamino = c.rollos.length > 0 && c.resumenVerificacion.pendientesDatos === 0
-    && c.referenciasConProblema === 0 && !!bodegaEnCamino && !guardandoEnCamino;
+    && c.referenciasConProblema === 0 && !guardandoEnCamino;
 
   async function guardarEnCamino() {
     if (!puedeGuardarEnCamino) return;
     setGuardandoEnCamino(true); setErrorEnCamino(""); setAvisoEnCamino("");
     try {
       const proveedor = c.rollos.find((r) => r.proveedor)?.proveedor || "";
-      const guardado = await api.post("/recepcion/en-camino", { bodega_id: Number(bodegaEnCamino), proveedor_principal: proveedor });
-      setAvisoEnCamino(`Guardado como material en camino hacia ${guardado.bodega_nombre}: ${guardado.total_rollos} rollos, ${guardado.total_metros} m. Ya lo puedes apartar.`);
-      setBodegaEnCamino("");
+      const guardado = await api.post("/recepcion/en-camino", { proveedor_principal: proveedor });
+      setAvisoEnCamino(`Guardado como material en camino: ${guardado.total_rollos} rollos, ${guardado.total_metros} m. Ya se puede apartar desde cualquier bodega.`);
       c.iniciarNuevaRecepcion();
       setRecargarEnCamino((n) => n + 1);
     } catch (err) {
@@ -473,21 +471,15 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                     <h3>¿Este material todavía no ha llegado?</h3>
                     <p className="recepcion-texto-ayuda">
                       Si este Excel es el checklist de un pedido que viene en camino, guárdalo como
-                      <strong> material en camino</strong>: no entra al inventario, pero ya se puede apartar para
-                      los clientes. Cuando llegue, lo subes aquí de nuevo y le das "Confirmar recepción".
+                      <strong> material en camino</strong>: no entra al inventario, pero ya se puede apartar desde
+                      cualquier bodega. Cada vez que llegue una mula, subes sus rollos aquí, le das "Confirmar
+                      recepción" y los marcas como llegados en la lista de abajo.
                     </p>
                     <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-                      <select value={bodegaEnCamino} onChange={(e) => setBodegaEnCamino(e.target.value)}>
-                        <option value="">¿A qué bodega llega?</option>
-                        {(almacen?.bodegas || []).map((b) => (
-                          <option key={b.id} value={b.id}>{b.nombre}</option>
-                        ))}
-                      </select>
                       <button
                         className="recepcion-boton-secundario"
                         onClick={guardarEnCamino}
                         disabled={!puedeGuardarEnCamino}
-                        title={!bodegaEnCamino ? "Elige la bodega a la que llega" : ""}
                       >
                         {guardandoEnCamino ? "Guardando..." : "Guardar como material en camino"}
                       </button>
