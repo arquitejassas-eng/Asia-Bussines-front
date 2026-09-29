@@ -5,6 +5,8 @@ import { formatearFechaColombia } from "../Utils/fechas";
 import { useControladorRecepcion } from "../Componentes/Recepcionverificacion";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import PanelAdminEquivalencias from "../Componentes/PanelAdminEquivalencias";
+import PanelMaterialEnCamino from "../Componentes/PanelMaterialEnCamino";
+import { api, ErrorApi } from "../Componentes/Api";
 import { nombreEmpresa } from "../Utils/empresas";
 import "../Style/Recepcionverificacion.css";
 
@@ -44,6 +46,34 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
   // tablas de equivalencias (puntos 5 y 6 del requerimiento). No necesita
   // vivir en el controlador porque no afecta ningún cálculo.
   const [mostrarAdmin, setMostrarAdmin] = useState(false);
+
+  // ---- Material en camino: el mismo Excel del proveedor, guardado ANTES de
+  // que llegue para poder apartarlo (solo Admin Inventario lo guarda). ----
+  const esAdminInventario = sesion?.rol === "admin_inventario";
+  const [bodegaEnCamino, setBodegaEnCamino] = useState("");
+  const [guardandoEnCamino, setGuardandoEnCamino] = useState(false);
+  const [errorEnCamino, setErrorEnCamino] = useState("");
+  const [avisoEnCamino, setAvisoEnCamino] = useState("");
+  const [recargarEnCamino, setRecargarEnCamino] = useState(0);
+  const puedeGuardarEnCamino = c.rollos.length > 0 && c.resumenVerificacion.pendientesDatos === 0
+    && c.referenciasConProblema === 0 && !!bodegaEnCamino && !guardandoEnCamino;
+
+  async function guardarEnCamino() {
+    if (!puedeGuardarEnCamino) return;
+    setGuardandoEnCamino(true); setErrorEnCamino(""); setAvisoEnCamino("");
+    try {
+      const proveedor = c.rollos.find((r) => r.proveedor)?.proveedor || "";
+      const guardado = await api.post("/recepcion/en-camino", { bodega_id: Number(bodegaEnCamino), proveedor_principal: proveedor });
+      setAvisoEnCamino(`Guardado como material en camino hacia ${guardado.bodega_nombre}: ${guardado.total_rollos} rollos, ${guardado.total_metros} m. Ya lo puedes apartar.`);
+      setBodegaEnCamino("");
+      c.iniciarNuevaRecepcion();
+      setRecargarEnCamino((n) => n + 1);
+    } catch (err) {
+      setErrorEnCamino(err instanceof ErrorApi ? err.message : "No se pudo guardar el material en camino.");
+    } finally {
+      setGuardandoEnCamino(false);
+    }
+  }
   // Mismos roles que ROLES_EDITAN_EQUIVALENCIAS en backend/app/api/routes/recepcion.py.
   const puedeEditarEquivalencias = ["admin_inventario", "superadmin"].includes(sesion?.rol);
 
@@ -438,6 +468,34 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                   )}
                 </div>
 
+                {esAdminInventario && c.estadoRecepcion !== "registrada_en_inventario" && (
+                  <section className="recepcion-tarjeta">
+                    <h3>¿Este material todavía no ha llegado?</h3>
+                    <p className="recepcion-texto-ayuda">
+                      Si este Excel es el checklist de un pedido que viene en camino, guárdalo como
+                      <strong> material en camino</strong>: no entra al inventario, pero ya se puede apartar para
+                      los clientes. Cuando llegue, lo subes aquí de nuevo y le das "Confirmar recepción".
+                    </p>
+                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                      <select value={bodegaEnCamino} onChange={(e) => setBodegaEnCamino(e.target.value)}>
+                        <option value="">¿A qué bodega llega?</option>
+                        {(almacen?.bodegas || []).map((b) => (
+                          <option key={b.id} value={b.id}>{b.nombre}</option>
+                        ))}
+                      </select>
+                      <button
+                        className="recepcion-boton-secundario"
+                        onClick={guardarEnCamino}
+                        disabled={!puedeGuardarEnCamino}
+                        title={!bodegaEnCamino ? "Elige la bodega a la que llega" : ""}
+                      >
+                        {guardandoEnCamino ? "Guardando..." : "Guardar como material en camino"}
+                      </button>
+                    </div>
+                    {errorEnCamino && <p className="recepcion-error">{errorEnCamino}</p>}
+                  </section>
+                )}
+
                 {c.estadoRecepcion === "registrada_en_inventario" && (
                   <p className="recepcion-exito">
                     Recepción confirmada. El inventario de {sesion?.bodegaNombre} fue actualizado.
@@ -448,6 +506,10 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                 )}
               </>
             )}
+
+            {avisoEnCamino && <p className="recepcion-exito">{avisoEnCamino}</p>}
+
+            <PanelMaterialEnCamino puedeGestionar={esAdminInventario} recargar={recargarEnCamino} />
 
             {c.historialRecepciones.length > 0 && (
               <section className="recepcion-tarjeta">

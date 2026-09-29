@@ -75,6 +75,8 @@ class DisponibilidadCodigoResponse(BaseModel):
     metros_disponibles: float
     metros_reservados: float
     metros_consumidos: float
+    metros_en_camino: float = 0
+    metros_para_apartar: float = 0
 
 
 class ReservaCodigoResponse(BaseModel):

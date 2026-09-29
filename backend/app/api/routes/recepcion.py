@@ -10,6 +10,8 @@ from app.models.equivalencias import (
     TablaEspesorEquivalencia,
     TablaTipoMaterialEquivalencia,
 )
+from app.models.bodega import Bodega
+from app.models.material_en_camino import Cargamento, CargamentoRollo
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.recepcion import Recepcion
 from app.models.rollo import Rollo
@@ -29,7 +31,9 @@ from app.schemas.recepcion import (
     TablasEquivalenciaResponse,
     VerificacionRecepcionResponse,
 )
+from app.schemas.material_en_camino import CargamentoResponse, GuardarEnCaminoRequest
 from app.services import clasificacion as srv
+from app.services.material_en_camino import resumen_cargamento
 from app.services import archivos_recepcion
 from app.core.config import settings
 
@@ -313,6 +317,34 @@ def _marcar_problemas_de_referencia(db: Session, rollos: list[srv.RolloClasifica
             rollo.problema_referencia = ""
 
 
+def _codigo_descripcion_metros(r: srv.RolloClasificado) -> tuple[str, str, float]:
+    """Código interno, descripción y metros con que entra un rollo -- iguales
+    al registrarlo en inventario y al guardarlo como material en camino, para
+    que lo apartado "en camino" sea exactamente el código que después llega."""
+    codigo_interno = r.codigo_clasificacion or f"SC-{r.tipo_material or '?'}-{r.color_top or '?'}-{r.espesor or '?'}"
+    descripcion = (
+        f"{r.tipo_nombre or r.tipo_material} {r.color_nombre or r.color_top}"
+        f"{' / ' + r.color_back if r.color_back else ''} {r.espesor}"
+        if r.clasificado
+        else f"Sin clasificar ({r.tipo_material or 'tipo'} / {r.color_top or 'color'})"
+    )
+    metros = round(r.metros_calculados if r.metros_calculados is not None else (r.coil_meters or 0), 2)
+    return codigo_interno, descripcion, metros
+
+
+def _validar_filas_para_guardar(rollos: list[srv.RolloClasificado]) -> None:
+    sin_referencia = [r for r in rollos if r.problema_referencia == "sin_referencia"]
+    repetidas = [r.rollo.strip() for r in rollos if r.problema_referencia == "repetida_en_archivo"]
+    if sin_referencia:
+        filas = _lista_corta([str(r.fila) for r in sin_referencia])
+        raise HTTPException(status_code=400, detail=f"Hay rollos sin referencia en el Excel (filas {filas}). Corrige el archivo y vuelve a subirlo.")
+    if repetidas:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Estas referencias aparecen más de una vez en el Excel: {_lista_corta(repetidas)}. Deja una sola fila por rollo y vuelve a subirlo.",
+        )
+
+
 def _lista_corta(referencias: list[str]) -> str:
     unicas = list(dict.fromkeys(referencias))
     return ", ".join(unicas[:6]) + (f" y {len(unicas) - 6} más" if len(unicas) > 6 else "")
@@ -338,16 +370,7 @@ def confirmar(
     # auditoría). Además, la restricción única uq_rollos_bodega_identificador
     # frena un doble clic o dos confirmaciones simultáneas del mismo archivo.
     _marcar_problemas_de_referencia(db, rollos_verificados, usuario.bodega_id)
-    sin_referencia = [r for r in rollos_verificados if r.problema_referencia == "sin_referencia"]
-    repetidas = [r.rollo.strip() for r in rollos_verificados if r.problema_referencia == "repetida_en_archivo"]
-    if sin_referencia:
-        filas = _lista_corta([str(r.fila) for r in sin_referencia])
-        raise HTTPException(status_code=400, detail=f"Hay rollos sin referencia en el Excel (filas {filas}). Corrige el archivo y vuelve a subirlo.")
-    if repetidas:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Estas referencias aparecen más de una vez en el Excel: {_lista_corta(repetidas)}. Deja una sola fila por rollo y vuelve a subirlo.",
-        )
+    _validar_filas_para_guardar(rollos_verificados)
     omitidos = [r.rollo.strip() for r in rollos_verificados if r.problema_referencia == "ya_existe"]
     a_registrar = [r for r in rollos_verificados if r.problema_referencia != "ya_existe"]
     # Hallazgo #9: un rollo sin peso o sin metros reportados no se puede
@@ -381,14 +404,7 @@ def confirmar(
     db.flush()
 
     for r in a_registrar:
-        codigo_interno = r.codigo_clasificacion or f"SC-{r.tipo_material or '?'}-{r.color_top or '?'}-{r.espesor or '?'}"
-        descripcion = (
-            f"{r.tipo_nombre or r.tipo_material} {r.color_nombre or r.color_top}"
-            f"{' / ' + r.color_back if r.color_back else ''} {r.espesor}"
-            if r.clasificado
-            else f"Sin clasificar ({r.tipo_material or 'tipo'} / {r.color_top or 'color'})"
-        )
-        metros = round(r.metros_calculados if r.metros_calculados is not None else (r.coil_meters or 0), 2)
+        codigo_interno, descripcion, metros = _codigo_descripcion_metros(r)
 
         rollo = Rollo(
             bodega_id=usuario.bodega_id,
@@ -439,6 +455,57 @@ def confirmar(
     recepcion.rollos_registrados = len(a_registrar)
     recepcion.rollos_omitidos = omitidos
     return recepcion
+
+
+@router.post("/en-camino", response_model=CargamentoResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def guardar_en_camino(
+    datos: GuardarEnCaminoRequest,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_actual),
+) -> dict:
+    """Paso 4 alternativo: el archivo verificado es el checklist de material
+    que TODAVÍA NO LLEGA. Se guarda como "en camino" hacia la bodega elegida
+    (no crea rollos ni movimientos) para poder apartarlo. Cuando llegue, se
+    sube en Recepción como siempre y se marca como llegado."""
+    en_proceso = archivos_recepcion.obtener(usuario.id)
+    rollos_verificados: list[srv.RolloClasificado] | None = (
+        en_proceso.get("rollos_verificados") if en_proceso else None
+    )
+    if not rollos_verificados:
+        raise HTTPException(status_code=400, detail="Primero verifica el archivo con /recepcion/verificar.")
+    if db.get(Bodega, datos.bodega_id) is None:
+        raise HTTPException(status_code=400, detail="Elige la bodega a la que llega este material.")
+
+    _marcar_problemas_de_referencia(db, rollos_verificados, datos.bodega_id)
+    _validar_filas_para_guardar(rollos_verificados)
+    sin_datos = [r for r in rollos_verificados if r.resultado == "pendiente_datos"]
+    if sin_datos:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hay {len(sin_datos)} rollo(s) con datos faltantes (peso o metros), por ejemplo "
+            f"{_lista_corta([r.rollo.strip() for r in sin_datos])}. Complétalos en el Excel o revisa las columnas elegidas.",
+        )
+
+    cargamento = Cargamento(
+        bodega_id=datos.bodega_id,
+        proveedor=datos.proveedor_principal or (rollos_verificados[0].proveedor or "No especificado"),
+        archivo_origen=en_proceso["nombre_archivo"],
+        creado_por=usuario.correo,
+        fecha_creacion=datetime.now(timezone.utc),
+    )
+    db.add(cargamento)
+    db.flush()
+    for r in rollos_verificados:
+        codigo_interno, descripcion, metros = _codigo_descripcion_metros(r)
+        db.add(CargamentoRollo(
+            cargamento_id=cargamento.id, identificador_rollo=r.rollo.strip(), codigo_interno=codigo_interno,
+            empresa=r.empresa, descripcion=descripcion, calibre=r.espesor or 0, peso_neto=r.net_weight, metros=metros,
+        ))
+    db.commit()
+    db.refresh(cargamento)
+    archivos_recepcion.eliminar(usuario.id)
+    return resumen_cargamento(db, cargamento)
 
 
 @router.get("/historial", response_model=list[RecepcionResponse])

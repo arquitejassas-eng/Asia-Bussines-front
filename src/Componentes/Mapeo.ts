@@ -67,7 +67,8 @@ export function rolloDesdeApi(r: RegistroApi) {
 export function disponibilidadCodigoDesdeApi(d: RegistroApi) {
   return { codigoInterno: texto(d.codigo_interno), familia: texto(d.familia), colorMaterial: texto(d.color_material),
     calibre: numero(d.calibre), cantidadRollos: numero(d.cantidad_rollos), metrosDisponibles: numero(d.metros_disponibles),
-    metrosReservados: numero(d.metros_reservados), metrosConsumidos: numero(d.metros_consumidos) };
+    metrosReservados: numero(d.metros_reservados), metrosConsumidos: numero(d.metros_consumidos),
+    metrosEnCamino: numero(d.metros_en_camino || 0), metrosParaApartar: numero(d.metros_para_apartar || 0) };
 }
 
 export function reservaCodigoDesdeApi(r: RegistroApi) {

@@ -20,6 +20,7 @@ from app.models import (  # noqa: E402,F401
     bodega,
     envio,
     equivalencias,
+    material_en_camino,
     movimiento,
     produccion,
     producto,

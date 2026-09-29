@@ -36,6 +36,7 @@ from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
+from app.services.material_en_camino import metros_en_camino_codigo
 from app.schemas.apartados import ApartadoCrear
 
 ESTADOS_RESERVA_ACTIVA = (
@@ -258,6 +259,7 @@ def disponibilidad_por_codigo(db: Session, *, bodega_id: int, codigo_interno: st
     metros_disponibles_rollos = round(sum(r.metros_disponibles for r in rollos), 2)
     metros_consumidos = round(sum(r.metros_consumidos for r in rollos), 2)
     reservados = metros_reservados_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno)
+    en_camino = metros_en_camino_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno)
     primero = rollos[0] if rollos else None
 
     return {
@@ -268,6 +270,9 @@ def disponibilidad_por_codigo(db: Session, *, bodega_id: int, codigo_interno: st
         "cantidad_rollos": len(rollos),
         "metros_disponibles": round(metros_disponibles_rollos - reservados, 2),
         "metros_reservados": reservados,
+        # Checklist de material que todavía no llega (ver material_en_camino).
+        "metros_en_camino": en_camino,
+        "metros_para_apartar": round(metros_disponibles_rollos + en_camino - reservados, 2),
         "metros_consumidos": metros_consumidos,
     }
 
@@ -361,13 +366,30 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
 
     for codigo_interno, metros_solicitados in solicitado_por_codigo.items():
         resumen = disponibilidad_por_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, bloquear=True)
-        if metros_solicitados > resumen["metros_disponibles"] and not datos.material_en_camino:
+        if metros_solicitados <= resumen["metros_disponibles"]:
+            continue
+        en_bodega = max(resumen["metros_disponibles"], 0)
+        en_camino = resumen["metros_en_camino"]
+        if metros_solicitados > resumen["metros_para_apartar"]:
+            # Ni con lo que viene en camino alcanza: solo se aparta material
+            # que existe o que está en un checklist ya cargado.
+            puede = max(resumen["metros_para_apartar"], 0)
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"El código '{codigo_interno}' no tiene material suficiente: "
-                    f"disponibles {max(resumen['metros_disponibles'], 0)} m, solicitados {metros_solicitados} m. "
-                    "Si ese material ya viene en camino, marca 'El material viene en camino'."
+                    f"Del código '{codigo_interno}' solo puedes apartar {puede} m "
+                    f"({en_bodega} m libres en bodega + {en_camino} m en camino, ya descontado lo apartado). "
+                    f"Pediste {metros_solicitados} m: faltan {round(metros_solicitados - puede, 2)} m que no están "
+                    "ni en la bodega ni en camino. Si viene otro pedido, sube su checklist en Recepción."
+                ),
+            )
+        if not datos.material_en_camino:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"El código '{codigo_interno}' no tiene material suficiente en bodega: "
+                    f"libres {en_bodega} m, solicitados {metros_solicitados} m ({en_camino} m vienen en camino). "
+                    "Para apartar lo que viene en camino, marca 'El material viene en camino'."
                 ),
             )
 
