@@ -1,4 +1,5 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
+import { EMPRESAS } from "../Utils/empresas";
 
 // Sección "Solicitudes de producción pendientes" de Producción. Extraído de
 // ProduccionPage.tsx sin cambiar props ni comportamiento -- no usa estado
@@ -29,6 +30,7 @@ function PanelSolicitudesPendientes({
           <thead>
             <tr>
               <th>Cotización</th>
+              <th>Empresa</th>
               <th>Cliente</th>
               <th>Código de clasificación</th>
               <th>Pendiente</th>
@@ -43,6 +45,7 @@ function PanelSolicitudesPendientes({
                 style={apartadoItemId === s.itemId ? { fontWeight: 600 } : undefined}
               >
                 <td>{s.numeroCotizacion}</td>
+                <td title="Usa rollos de esta empresa">{EMPRESAS[s.empresa] || s.empresa || "—"}</td>
                 <td>{s.cliente || "—"}</td>
                 <td>{s.codigoInterno}{s.descripcion ? ` — ${s.descripcion}` : ""}</td>
                 <td>{s.metrosPendientes} m ({s.cantidad} × {s.medida} m)</td>

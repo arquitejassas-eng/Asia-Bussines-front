@@ -47,6 +47,10 @@ class Apartado(Base):
 
     numero_cotizacion: Mapped[str] = mapped_column(String(32), nullable=False)
     cliente: Mapped[str] = mapped_column(String(150), default="")
+    # Empresa de la que sale el material: "AR" (Arquitejas) o "ABG" (Asia
+    # Business), mismas siglas que Rollo.empresa. Informativo: le dice a la
+    # bodega y a Planta de qué empresa tomar los rollos.
+    empresa: Mapped[str] = mapped_column(String(10), default="")
 
     creado_por: Mapped[str] = mapped_column(String(150), default="")
     fecha_creacion: Mapped[DateTime] = mapped_column(DateTime(timezone=True))

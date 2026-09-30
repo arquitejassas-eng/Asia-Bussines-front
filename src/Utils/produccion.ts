@@ -13,9 +13,9 @@ type ApartadoItemPendiente = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string;
   cantidad: number; medida: number | null; metrosPendientes: number | null;
 };
-type ApartadoParaProduccion = { id: number; numeroCotizacion: string; cliente: string; items: ApartadoItemPendiente[] };
+type ApartadoParaProduccion = { id: number; numeroCotizacion: string; cliente: string; empresa?: string; items: ApartadoItemPendiente[] };
 export type SolicitudProduccionPendiente = {
-  itemId: number; apartadoId: number; numeroCotizacion: string; cliente: string;
+  itemId: number; apartadoId: number; numeroCotizacion: string; cliente: string; empresa: string;
   codigoInterno: string | null; descripcion: string; cantidad: number; medida: number | null; metrosPendientes: number;
 };
 
@@ -29,7 +29,7 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
     ap.items
       .filter((it) => it.modalidad === "por_rollo" && (it.metrosPendientes ?? 0) > 0)
       .map((it) => ({
-        itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente,
+        itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, empresa: ap.empresa || "",
         codigoInterno: it.codigoInterno, descripcion: it.descripcion, cantidad: it.cantidad, medida: it.medida,
         metrosPendientes: it.metrosPendientes ?? 0,
       }))

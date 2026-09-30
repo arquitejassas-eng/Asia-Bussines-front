@@ -13,7 +13,7 @@ const ITEM_VACIO = {
   productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
   descripcion: "", cantidad: "",
 };
-const FORMULARIO_VACIO = { bodegaId: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
+const FORMULARIO_VACIO = { bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
 
 type ItemFormulario = {
   modalidad: string;
@@ -22,7 +22,7 @@ type ItemFormulario = {
   descripcion: string; cantidad: string | number;
 };
 type FormularioApartado = {
-  bodegaId: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string; items: ItemFormulario[];
+  bodegaId: string; empresa: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string; items: ItemFormulario[];
 };
 type ApartadoItem = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string; cantidad: number;
@@ -31,7 +31,7 @@ type ApartadoItem = {
   metrosPendientes: number | null; tieneProduccionRegistrada: boolean;
 };
 type Apartado = {
-  id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; cliente: string; creadoPor: string;
+  id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; cliente: string; creadoPor: string;
   fechaCreacion: string; estado: string; enviadoAProduccionPor: string; fechaEnviadoAProduccion: string | null;
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;
@@ -267,6 +267,10 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       setErrorFormularioApartado("Elige la bodega de donde sale el material.");
       return;
     }
+    if (!formulario.empresa) {
+      setErrorFormularioApartado("Elige de qué empresa sale el material: Arquitejas o Asia Business.");
+      return;
+    }
     if (!formulario.numeroCotizacion.trim()) {
       setErrorFormularioApartado("Indica el número de cotización.");
       return;
@@ -297,6 +301,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         bodega_id: Number(formulario.bodegaId),
         material_en_camino: formulario.materialEnCamino,
         numero_cotizacion: formulario.numeroCotizacion.trim(),
+        empresa: formulario.empresa,
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
         items: formulario.items.map((i) => (

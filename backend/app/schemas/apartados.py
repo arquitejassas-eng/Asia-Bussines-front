@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from app.models.apartado import EstadoApartado, ModalidadApartado
+from app.services.empresas import EMPRESAS_CONOCIDAS
 from app.schemas.fechas import ModeloConFechasUtc
 
 
@@ -43,9 +44,18 @@ class ApartadoCrear(BaseModel):
     # producción hasta que se le dé ingreso (ver faltantes_apartado).
     material_en_camino: bool = False
     numero_cotizacion: str = Field(min_length=1, max_length=32)
+    # De qué empresa sale el material (obligatorio): "AR" o "ABG".
+    empresa: str
     cliente: str = ""
     observaciones: str = ""
     items: list[ApartadoItemCrear]
+
+    @model_validator(mode="after")
+    def _empresa_valida(self) -> "ApartadoCrear":
+        self.empresa = (self.empresa or "").strip().upper()
+        if self.empresa not in EMPRESAS_CONOCIDAS:
+            raise ValueError("Elige de qué empresa sale el material: Arquitejas o Asia Business.")
+        return self
 
 
 class ApartadoItemResponse(BaseModel):
@@ -107,6 +117,7 @@ class ApartadoResponse(ModeloConFechasUtc):
     bodega_id: int
     bodega_nombre: str = ""
     numero_cotizacion: str
+    empresa: str = ""
     cliente: str
     creado_por: str
     fecha_creacion: datetime

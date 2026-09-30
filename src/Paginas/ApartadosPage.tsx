@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
 import { formatearFechaColombia } from "../Utils/fechas";
+import { EMPRESAS } from "../Utils/empresas";
 import { useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
 import { calcularSolicitudesPendientes } from "../Utils/produccion";
@@ -113,6 +114,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             <div key={ap.id} className="inventario-exito" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
               <span>
                 {ap.faltantes.length ? "⏳" : "✅"} Cotización {ap.numeroCotizacion} aprobada{ap.cliente ? ` — ${ap.cliente}` : ""}
+                {ap.empresa && <> · material de <strong>{EMPRESAS[ap.empresa] || ap.empresa}</strong></>}
                 <span style={{ fontWeight: 400 }}> · {formatearFechaColombia(ap.fechaCreacion)}</span>
                 {ap.faltantes.length > 0 && (
                   <span style={{ display: "block", fontWeight: 400 }}>
@@ -139,6 +141,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     <option value="">Elige la bodega...</option>
                     {almacen.bodegas.map((bodega) => (
                       <option key={bodega.id} value={bodega.id}>{bodega.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label>Empresa de la que sale el material *</label>
+                  <select value={a.formulario.empresa} onChange={(e) => a.actualizarCampoApartado("empresa", e.target.value)}>
+                    <option value="">Elige la empresa...</option>
+                    {Object.entries(EMPRESAS).map(([sigla, nombre]) => (
+                      <option key={sigla} value={sigla}>{nombre}</option>
                     ))}
                   </select>
                 </div>
@@ -383,6 +394,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       <tr>
                         {esAdminInventario && <th>Bodega</th>}
                         <th>Cotización</th>
+                        <th>Empresa</th>
                         <th>Cliente</th>
                         <th>Productos</th>
                         <th>Estado</th>
@@ -393,7 +405,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     <tbody>
                       {a.apartados.length === 0 ? (
                         <tr>
-                          <td colSpan={esAdminInventario ? 7 : 6} className="inventario-vacio">No hay apartados registrados.</td>
+                          <td colSpan={esAdminInventario ? 8 : 7} className="inventario-vacio">No hay apartados registrados.</td>
                         </tr>
                       ) : (
                         a.apartados.map((ap) => {
@@ -410,6 +422,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           <tr key={ap.id}>
                             {esAdminInventario && <td>{ap.bodegaNombre || "—"}</td>}
                             <td>{ap.numeroCotizacion}</td>
+                            <td>{EMPRESAS[ap.empresa] || ap.empresa || "—"}</td>
                             <td>{ap.cliente || "—"}</td>
                             <td>
                               <div>

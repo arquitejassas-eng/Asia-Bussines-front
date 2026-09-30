@@ -448,6 +448,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     apartado = Apartado(
         bodega_id=bodega_id,
         numero_cotizacion=datos.numero_cotizacion,
+        empresa=datos.empresa,
         cliente=datos.cliente,
         creado_por=usuario.correo,
         fecha_creacion=ahora,
