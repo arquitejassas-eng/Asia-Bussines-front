@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
@@ -9,8 +9,12 @@ from app.models.usuario import RolUsuario, Usuario
 from app.schemas.apartados import (
     ApartadoCrear, ApartadoResponse, DisponibilidadCodigoResponse, DisponibilidadProductoResponse, ReservaCodigoResponse,
 )
+from app.core.config import settings
+from app.schemas.apartados import RegistrarSalidaRequest
 from app.schemas.inventario import ProductoResponse
 from app.services import apartados as srv
+from app.services import importar_cotizaciones
+from app.services.salida_apartado import registrar_salida
 
 router = APIRouter(prefix="/apartados", tags=["Apartados"])
 
@@ -71,6 +75,46 @@ def listar_reservas_por_codigo(
     usado en "Rollos almacenados" para mostrar el stock físico ya descontado
     por apartados activos, sin esperar a que producción los consuma."""
     return srv.metros_reservados_por_bodega(db, bodega_id=usuario.bodega_id)
+
+
+@router.post("/importar", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+async def importar_desde_excel(
+    archivo: UploadFile, confirmar: bool = False,
+    db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> dict:
+    """Carga las cotizaciones que siguen apartadas en el Excel de control
+    (hoja SALIDA, REFERENCIA vacía). Sin `confirmar` solo muestra lo que
+    se va a crear; con `confirmar=true` lo crea (ver importar_cotizaciones)."""
+    nombre = archivo.filename or ""
+    if not nombre.lower().endswith((".xlsx", ".xls", ".xlsm")):
+        raise HTTPException(status_code=415, detail="Solo se aceptan archivos Excel (.xlsx o .xls).")
+    contenido = await archivo.read(settings.MAX_ARCHIVO_RECEPCION_BYTES + 1)
+    if len(contenido) > settings.MAX_ARCHIVO_RECEPCION_BYTES:
+        limite_mb = settings.MAX_ARCHIVO_RECEPCION_BYTES // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"El archivo supera el límite de {limite_mb} MB.")
+    resultado = importar_cotizaciones.analizar(db, contenido)
+    respuesta = importar_cotizaciones.resumen(resultado)
+    if confirmar:
+        if not resultado.apartados:
+            raise HTTPException(status_code=400, detail="No hay cotizaciones nuevas para cargar en este archivo.")
+        creados = importar_cotizaciones.crear(db, resultado, usuario, nombre)
+        db.commit()
+        respuesta["creados"] = len(creados)
+        respuesta["esperando_material"] = importar_cotizaciones.cuantos_esperan_material(db, creados)
+    return respuesta
+
+
+@router.post("/{apartado_id}/registrar-salida", response_model=ApartadoResponse,
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def registrar_salida_con_hoja_de_vida(
+    apartado_id: int, datos: RegistrarSalidaRequest,
+    db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Apartado:
+    """Admin Inventario registra la salida con la hoja de vida física: la
+    referencia del rollo usado y los metros (ver salida_apartado)."""
+    apartado = registrar_salida(db, apartado_id, datos, usuario)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
 
 
 # Los apartados los crea Admin Inventario (cotización aprobada) eligiendo la

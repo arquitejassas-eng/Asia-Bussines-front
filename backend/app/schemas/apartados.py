@@ -58,6 +58,19 @@ class ApartadoCrear(BaseModel):
         return self
 
 
+class RolloUsadoEnSalida(BaseModel):
+    """Un rollo de la hoja de vida física: de qué línea, cuál rollo y cuánto."""
+    item_id: int
+    referencia: str = Field(min_length=1)
+    metros: float = Field(gt=0)
+
+
+class RegistrarSalidaRequest(BaseModel):
+    rollos: list[RolloUsadoEnSalida] = []
+    # Líneas de producto de stock a descontar (caballetes, tornillos...).
+    items_stock: list[int] = []
+
+
 class ApartadoItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

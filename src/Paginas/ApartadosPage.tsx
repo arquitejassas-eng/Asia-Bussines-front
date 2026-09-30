@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { EMPRESAS } from "../Utils/empresas";
+import PanelImportarCotizaciones from "../Componentes/PanelImportarCotizaciones";
+import PanelRegistrarSalida from "../Componentes/PanelRegistrarSalida";
 import { useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
 import { calcularSolicitudesPendientes } from "../Utils/produccion";
@@ -68,6 +70,24 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const [mensajeInformativo, setMensajeInformativo] = useState("");
   // Acciones que cambian el estado de un apartado piden confirmación: antes
   // un clic accidental lo enviaba a producción o cerraba la producción.
+  // Carga desde Excel y salida con hoja de vida (solo Admin Inventario).
+  const [mostrarImportar, setMostrarImportar] = useState(false);
+  const [salidaAbierta, setSalidaAbierta] = useState<number | null>(null);
+
+  // Filtros de la lista (en el navegador: la lista ya viene completa).
+  const [filtroTexto, setFiltroTexto] = useState("");
+  const [filtroBodega, setFiltroBodega] = useState("");
+  const [filtroEmpresa, setFiltroEmpresa] = useState("");
+  const [soloPendientesSalida, setSoloPendientesSalida] = useState(false);
+  const apartadosFiltrados = useMemo(() => {
+    const texto = filtroTexto.trim().toLowerCase();
+    return a.apartados.filter((ap) =>
+      (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
+      && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
+      && (!filtroEmpresa || ap.empresa === filtroEmpresa)
+      && (!soloPendientesSalida || ESTADOS_CANCELABLES.includes(ap.estado)));
+  }, [a.apartados, filtroTexto, filtroBodega, filtroEmpresa, soloPendientesSalida]);
+
   const [confirmacion, setConfirmacion] = useState<{
     titulo: string; mensaje: string; textoConfirmar: string; ejecutar: () => void;
   } | null>(null);
@@ -92,10 +112,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         <div className="inventario-page">
           <div className="inventario-header">
             <h1 className="inventario-titulo">Apartados</h1>
-            {a.puedeCrearApartados && !a.mostrarFormularioApartado && (
-              <button className="inventario-boton" onClick={a.abrirFormularioApartado}>
-                + Nuevo apartado
-              </button>
+            {a.puedeCrearApartados && !a.mostrarFormularioApartado && !mostrarImportar && (
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <button className="inventario-boton-cancelar" onClick={() => setMostrarImportar(true)}>
+                  📥 Cargar desde Excel
+                </button>
+                <button className="inventario-boton" onClick={a.abrirFormularioApartado}>
+                  + Nuevo apartado
+                </button>
+              </div>
             )}
           </div>
           <p className="inventario-carga-ayuda">
@@ -374,16 +399,47 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             </form>
           )}
 
+          {mostrarImportar && (
+            <PanelImportarCotizaciones alTerminar={a.cargarApartados} alCerrar={() => setMostrarImportar(false)} />
+          )}
+
           {!a.mostrarFormularioApartado && (
             <>
-              <div className="inventario-buscador">
-                <select value={a.filtroEstado} onChange={(e) => a.setFiltroEstado(e.target.value)}>
+              <div className="inventario-buscador" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                <input
+                  type="text"
+                  placeholder="Buscar cotización o cliente..."
+                  value={filtroTexto}
+                  onChange={(e) => setFiltroTexto(e.target.value)}
+                  style={{ flex: "1 1 200px" }}
+                />
+                <select value={a.filtroEstado} onChange={(e) => a.setFiltroEstado(e.target.value)} aria-label="Estado">
                   <option value="">Todos los estados</option>
                   {Object.entries(ETIQUETAS_ESTADO).map(([valor, etiqueta]) => (
                     <option key={valor} value={valor}>{etiqueta}</option>
                   ))}
                 </select>
+                {esAdminInventario && (
+                  <select value={filtroBodega} onChange={(e) => setFiltroBodega(e.target.value)} aria-label="Bodega">
+                    <option value="">Todas las bodegas</option>
+                    {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                  </select>
+                )}
+                <select value={filtroEmpresa} onChange={(e) => setFiltroEmpresa(e.target.value)} aria-label="Empresa">
+                  <option value="">Todas las empresas</option>
+                  {Object.entries(EMPRESAS).map(([sigla, nombre]) => <option key={sigla} value={sigla}>{nombre}</option>)}
+                </select>
+                <label style={{ display: "flex", gap: "0.35rem", alignItems: "center", whiteSpace: "nowrap" }}>
+                  <input type="checkbox" style={{ width: "auto" }} checked={soloPendientesSalida}
+                    onChange={(e) => setSoloPendientesSalida(e.target.checked)} />
+                  Solo pendientes de salida
+                </label>
               </div>
+              {!a.cargandoApartados && (
+                <p className="inventario-carga-ayuda" style={{ margin: "0 0 0.5rem" }}>
+                  Mostrando {apartadosFiltrados.length} de {a.apartados.length} cotizaciones.
+                </p>
+              )}
 
               {a.cargandoApartados ? (
                 <p className="inventario-cargando">Cargando apartados...</p>
@@ -403,12 +459,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       </tr>
                     </thead>
                     <tbody>
-                      {a.apartados.length === 0 ? (
+                      {apartadosFiltrados.length === 0 ? (
                         <tr>
-                          <td colSpan={esAdminInventario ? 8 : 7} className="inventario-vacio">No hay apartados registrados.</td>
+                          <td colSpan={esAdminInventario ? 8 : 7} className="inventario-vacio">
+                            {a.apartados.length === 0 ? "No hay apartados registrados." : "Ninguna cotización coincide con los filtros."}
+                          </td>
                         </tr>
                       ) : (
-                        a.apartados.map((ap) => {
+                        apartadosFiltrados.map((ap) => {
                           const itemsRollo = ap.items.filter((it) => it.modalidad === "por_rollo");
                           const itemsStock = ap.items.filter((it) => it.modalidad === "por_stock");
                           const rolloPendientes = itemsRollo.filter((it) => (it.metrosPendientes ?? 0) > 0).length;
@@ -419,7 +477,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           const tieneProduccionPendiente = (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion")
                             && calcularSolicitudesPendientes([ap]).length > 0;
                           return (
-                          <tr key={ap.id}>
+                          <Fragment key={ap.id}>
+                          <tr>
                             {esAdminInventario && <td>{ap.bodegaNombre || "—"}</td>}
                             <td>{ap.numeroCotizacion}</td>
                             <td>{EMPRESAS[ap.empresa] || ap.empresa || "—"}</td>
@@ -477,7 +536,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                   ejecutar: () => a.eliminarApartado(ap.id),
                                 })}>Eliminar</button>
                               )}
-                              {tieneProduccionPendiente && (
+                              {esAdminInventario && ESTADOS_CANCELABLES.includes(ap.estado) && (
+                                <button onClick={() => setSalidaAbierta(salidaAbierta === ap.id ? null : ap.id)}>
+                                  {salidaAbierta === ap.id ? "Cerrar salida" : "Registrar salida"}
+                                </button>
+                              )}
+                              {tieneProduccionPendiente && !esAdminInventario && (
                                 <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>Iniciar Producción</button>
                               )}
                               {a.puedeMarcarTerminado && (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion") && (
@@ -493,6 +557,18 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               )}
                             </td>
                           </tr>
+                          {salidaAbierta === ap.id && (
+                            <tr>
+                              <td colSpan={esAdminInventario ? 8 : 7}>
+                                <PanelRegistrarSalida
+                                  apartado={ap}
+                                  alTerminar={() => { setSalidaAbierta(null); a.cargarApartados(); }}
+                                  alCerrar={() => setSalidaAbierta(null)}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                           );
                         })
                       )}
