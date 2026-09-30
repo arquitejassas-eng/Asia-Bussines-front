@@ -26,7 +26,20 @@ router = APIRouter(
 
 def _agregar_apartados(filas: list[FilaComparativoResponse], reservas: dict[tuple[str, int], float]) -> None:
     """Descuenta lo apartado de cada código en cada sede: la tabla muestra
-    lo físico, lo apartado y lo que de verdad queda libre para vender."""
+    lo físico, lo apartado y lo que de verdad queda libre para vender. Un
+    código apartado sin material en la sede (viene en camino) también
+    aparece, con 0 físico y el libre en negativo -- igual que en el Excel."""
+    por_codigo = {fila.codigo: fila for fila in filas}
+    for (codigo, bodega_id), reservado in reservas.items():
+        if not reservado or not codigo:
+            continue
+        fila = por_codigo.get(codigo)
+        if fila is None:
+            fila = FilaComparativoResponse(codigo=codigo, descripcion="", por_bodega={}, total=0.0)
+            filas.append(fila)
+            por_codigo[codigo] = fila
+        fila.por_bodega.setdefault(bodega_id, 0.0)
+    filas.sort(key=lambda f: f.codigo)
     for fila in filas:
         for bodega_id, fisico in fila.por_bodega.items():
             reservado = round(reservas.get((fila.codigo, bodega_id), 0), 2)
