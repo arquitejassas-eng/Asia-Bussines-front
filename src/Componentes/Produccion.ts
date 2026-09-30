@@ -121,6 +121,9 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   }
 
   const [codigoBusqueda, setCodigoBusqueda] = useState("");
+  // Empresa de los rollos a mostrar ("" = todas). Al iniciar la producción
+  // de una cotización se pone sola en la empresa de esa cotización.
+  const [empresaFiltro, setEmpresaFiltro] = useState("");
   const [rollosDeMiBodega, setRollosDeMiBodega] = useState<Rollo[]>([]);
 
   // Rollos y solicitudes solo los necesita quien registra producción; Hoja
@@ -234,6 +237,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     setMedidaProducto(String(solicitud.medida));
     setCantidadProductos(String(solicitud.cantidad));
     setCodigoBusqueda(solicitud.codigoInterno); // llena la tabla de "rollos disponibles" con este código.
+    setEmpresaFiltro(solicitud.empresa || ""); // y solo los rollos de la empresa de la cotización.
 
     // El rollo físico lo elige Planta a mano en la tabla de abajo (checkbox +
     // metros por fila) -- ya no se preselecciona por antigüedad (FIFO): en la
@@ -246,6 +250,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     gestionandoStockRef.current = false;
     setApartadoItemId(null);
     setCodigoBusqueda("");
+    setEmpresaFiltro("");
     setSeleccion({});
     setAdvertenciaSeleccion("");
   }
@@ -270,10 +275,11 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     return rollosDeMiBodega.filter(
       (r) =>
         r.metrosDisponibles > 0 &&
+        (!empresaFiltro || r.empresa === empresaFiltro) &&
         (normalizarTexto(r.codigoInterno).includes(termino) ||
           normalizarTexto(r.identificadorRollo).includes(termino))
     );
-  }, [rollosDeMiBodega, codigoBusqueda]);
+  }, [rollosDeMiBodega, codigoBusqueda, empresaFiltro]);
 
   const [seleccion, setSeleccion] = useState({});
 
@@ -659,6 +665,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
 
     codigoBusqueda,
     setCodigoBusqueda,
+    empresaFiltro,
+    setEmpresaFiltro,
     rollosDisponibles,
 
     seleccion,

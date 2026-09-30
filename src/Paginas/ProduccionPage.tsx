@@ -93,6 +93,8 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
               <PanelBusquedaRollosProduccion
                 codigoBusqueda={p.codigoBusqueda}
                 setCodigoBusqueda={p.setCodigoBusqueda}
+                empresaFiltro={p.empresaFiltro}
+                setEmpresaFiltro={p.setEmpresaFiltro}
                 rollosDisponibles={p.rollosDisponibles}
                 seleccion={p.seleccion}
                 alternarSeleccionRollo={p.alternarSeleccionRollo}
