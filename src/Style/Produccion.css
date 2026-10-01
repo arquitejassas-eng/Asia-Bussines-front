@@ -266,3 +266,11 @@
   font-size: 0.85rem;
   margin: 0.6rem 0 0;
 }
+.produccion-exito {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--at-r-sm, 8px);
+  background: var(--at-green-dim, rgba(46, 125, 79, 0.12));
+  color: var(--at-green, #2E7D4F);
+  font-weight: 600;
+}

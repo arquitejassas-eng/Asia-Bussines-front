@@ -55,6 +55,7 @@ export function rolloDesdeApi(r: RegistroApi) {
     descripcion: texto(r.descripcion), familia: texto(r.familia), colorMaterial: texto(r.color_material),
     calibre: numero(r.calibre), anchoMaterial: numero(r.ancho_material), pesoNeto: r.peso_neto == null ? null : numero(r.peso_neto),
     pesoActualToneladas: r.peso_actual_toneladas == null ? null : numero(r.peso_actual_toneladas),
+    mermaMetros: r.merma_metros == null ? null : numero(r.merma_metros),
     metrosProveedor: numero(r.metros_proveedor), metrosCalculados: numero(r.metros_calculados),
     metrosDisponibles: numero(r.metros_disponibles), metrosConsumidos: numero(r.metros_consumidos),
     fechaIngreso: texto(r.fecha_ingreso), estado: texto(r.estado), observaciones: texto(r.observaciones),

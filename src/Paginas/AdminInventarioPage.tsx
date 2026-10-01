@@ -5,6 +5,7 @@ import { useControladorAdminInventario } from "../Componentes/AdminInventario";
 import { ESTADOS_ROLLO } from "../Componentes/Rollos";
 import { claseColorMaterial } from "../Utils/colorRollo";
 import Paginacion from "../Componentes/Paginacion";
+import PanelMermaRollo from "../Componentes/PanelMermaRollo";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
@@ -417,6 +418,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                               <th>Peso actual (t)</th>
                                               <th>Metros disponibles</th>
                                               <th>Metros consumidos</th>
+                                              <th>Merma</th>
                                               <th>Ingreso</th>
                                               <th>Estado</th>
                                             </tr>
@@ -431,6 +433,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                                 <td>{rollo.pesoActualToneladas ?? "—"}</td>
                                                 <td>{rollo.metrosDisponibles}</td>
                                                 <td>{rollo.metrosConsumidos}</td>
+                                                <td>{rollo.mermaMetros ? `${rollo.mermaMetros} m${rollo.mermaMetros < 0 ? " (sobrante)" : ""}` : "—"}</td>
                                                 <td>{formatearFechaColombia(rollo.fechaIngreso, false)}</td>
                                                 <td>
                                                   <span className={`rollos-estado-badge estado-${rollo.estado}`}>
@@ -552,6 +555,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 </>
               )}
 
+              {!c.soloLectura && <PanelMermaRollo bodegas={bodegas} />}
               {!c.soloLectura && <h2 className="inventario-form-subtitulo">Envíos enviados</h2>}
               {c.soloLectura ? null : c.cargandoEnvios ? (
                 <p className="inventario-cargando">Cargando...</p>

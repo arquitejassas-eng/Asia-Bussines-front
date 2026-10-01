@@ -10,6 +10,7 @@ import PanelBusquedaRollosProduccion from "../Componentes/PanelBusquedaRollosPro
 import PanelResumenProduccion from "../Componentes/PanelResumenProduccion";
 import PanelSolicitudesPendientes from "../Componentes/PanelSolicitudesPendientes";
 import PanelHistorialProduccion from "../Componentes/PanelHistorialProduccion";
+import PanelMermaRollo from "../Componentes/PanelMermaRollo";
 import "../Style/Produccion.css";
 import "../Style/Rollos.css";
 
@@ -132,6 +133,7 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
             </>
           )}
 
+          {sesion?.rol === "jefe_planta" && <PanelMermaRollo bodegas={almacen?.bodegas} />}
           <PanelHistorialProduccion misProducciones={p.misProducciones} />
         </div>
       </div>

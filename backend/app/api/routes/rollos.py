@@ -14,12 +14,13 @@ from app.schemas.rollos import (
     ActualizarAnchoRollo, ActualizarEmpresaRollo, ActualizarFamiliaRollo, ActualizarObservacionesRollo, ClasificacionSugeridaResponse, ConfirmarCargaRollosRequest,
     ConsumoRolloCrear, PaginaRollos, PrevisualizacionCargaRollosResponse, ResultadoCargaRollosResponse, RolloCrear,
     SalidaExternaRolloCrear,
-    RolloResponse, SeleccionarHojaCargaRollosRequest, SugerenciaReferenciaResponse,
+    RolloResponse, SeleccionarHojaCargaRollosRequest, SugerenciaReferenciaResponse, SobranteRolloCrear, TerminarRolloCrear,
 )
 from app.services import archivos_carga_rollos
 from app.services import carga_rollos as srv_carga
 from app.services import clasificacion as srv_excel
 from app.services.consumos_rollo import registrar_consumo_rollo, registrar_salida_externa_rollo
+from app.services import merma_rollo
 
 router = APIRouter(prefix="/rollos", tags=["Rollos almacenados"])
 
@@ -289,6 +290,44 @@ def registrar_consumo(
     db.commit()
     db.refresh(rollo)
     return rollo
+
+
+# Merma y sobrante: los registra Planta (decide cuándo se acaba un rollo)
+# o Admin Inventario; ver app/services/merma_rollo.py.
+ROLES_MERMA = (RolUsuario.JEFE_PLANTA, RolUsuario.ADMIN_INVENTARIO)
+
+
+def _con_merma(db: Session, rollo: Rollo) -> Rollo:
+    rollo.merma_metros = merma_rollo.merma_por_rollo(db, [rollo.id]).get(rollo.id, 0.0)
+    return rollo
+
+
+@router.get("/por-referencia", response_model=RolloResponse, dependencies=[Depends(requiere_rol(*ROLES_MERMA))])
+def buscar_por_referencia(
+    referencia: str = Query(..., min_length=1), db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Rollo:
+    """El rollo de la hoja de vida (aunque esté agotado), con su merma."""
+    return _con_merma(db, merma_rollo.rollo_por_referencia(db, referencia, usuario))
+
+
+@router.post("/{rollo_id}/terminar", response_model=RolloResponse, dependencies=[Depends(requiere_rol(*ROLES_MERMA))])
+def terminar_rollo(
+    rollo_id: int, datos: TerminarRolloCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Rollo:
+    """El rollo se acabó: lo que le quedaba en el sistema sale como merma."""
+    rollo, _ = merma_rollo.terminar_rollo(db, rollo_id, datos.observaciones, usuario)
+    db.commit(); db.refresh(rollo)
+    return _con_merma(db, rollo)
+
+
+@router.post("/{rollo_id}/sobrante", response_model=RolloResponse, dependencies=[Depends(requiere_rol(*ROLES_MERMA))])
+def registrar_sobrante(
+    rollo_id: int, datos: SobranteRolloCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Rollo:
+    """El rollo rindió más de lo registrado: se le suman esos metros."""
+    rollo = merma_rollo.registrar_sobrante(db, rollo_id, datos.metros, datos.observaciones, usuario)
+    db.commit(); db.refresh(rollo)
+    return _con_merma(db, rollo)
 
 
 @router.post("/{rollo_id}/salida-externa", response_model=RolloResponse,

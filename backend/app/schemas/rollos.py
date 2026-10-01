@@ -39,9 +39,21 @@ class RolloResponse(ModeloConFechasUtc):
     proveedor: str
     lote: str
     peso_actual_toneladas: float | None = None
+    # Merma neta del rollo (merma registrada - sobrantes); solo en las
+    # pantallas que la piden (detalle de Inventario total, merma/sobrante).
+    merma_metros: float | None = None
     # Sin historial_consumos: ninguna pantalla lo usaba y viajaba completo con
     # cada rollo en cada actualización automática (crece con cada consumo).
     # La hoja de vida del rollo usa GET /rollos/{id}/historial.
+
+
+class TerminarRolloCrear(BaseModel):
+    observaciones: str = ""
+
+
+class SobranteRolloCrear(BaseModel):
+    metros: float = Field(gt=0)
+    observaciones: str = ""
 
 
 class PaginaRollos(BaseModel):

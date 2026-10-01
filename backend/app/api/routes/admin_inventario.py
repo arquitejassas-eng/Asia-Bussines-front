@@ -14,6 +14,7 @@ from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComp
 from app.schemas.rollos import RolloResponse
 from app.services.apartados import ESTADOS_RESERVA_ACTIVA
 from app.services.clasificacion import formatear_calibre
+from app.services.merma_rollo import merma_por_rollo
 
 # Todo este router es de solo lectura, por eso VENDEDOR también entra: es su
 # única vista del inventario (todas las sedes). Si se agrega aquí un endpoint
@@ -264,4 +265,7 @@ def rollos_por_codigo(
         consulta = consulta.filter(Rollo.empresa == filtro_empresa(empresa))
     rollos = consulta.order_by(Rollo.bodega_id.asc(), Rollo.fecha_ingreso.desc()).all()
     asignar_peso_actual(db, rollos)
+    mermas = merma_por_rollo(db, [r.id for r in rollos])
+    for rollo in rollos:
+        rollo.merma_metros = mermas.get(rollo.id, 0.0)
     return rollos
