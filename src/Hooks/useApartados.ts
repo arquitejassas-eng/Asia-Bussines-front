@@ -20,6 +20,8 @@ type ItemFormulario = {
   codigoInterno: string; medida: string | number;
   productoId: number | null; productoCodigo: string; productoDescripcion: string; busquedaProducto: string;
   descripcion: string; cantidad: string | number;
+  // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
+  id?: number; metrosConsumidos?: number; stockDescontado?: boolean;
 };
 type FormularioApartado = {
   bodegaId: string; empresa: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string; items: ItemFormulario[];
@@ -106,7 +108,11 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   const [guardandoApartado, setGuardandoApartado] = useState(false);
   const [errorFormularioApartado, setErrorFormularioApartado] = useState("");
 
+  // Cotización que se está editando (null = se está creando una nueva).
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+
   function abrirFormularioApartado() {
+    setEditandoId(null);
     setFormulario(FORMULARIO_VACIO);
     setErrorFormularioApartado("");
     setDisponibilidadItems({});
@@ -114,7 +120,28 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     setMostrarFormularioApartado(true);
   }
 
+  /** Abre el mismo formulario con los datos de la cotización para corregirla. */
+  function abrirEdicionApartado(ap: Apartado) {
+    setEditandoId(ap.id);
+    setFormulario({
+      bodegaId: String(ap.bodegaId), empresa: ap.empresa, materialEnCamino: false,
+      numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, observaciones: ap.observaciones,
+      items: ap.items.map((it) => ({
+        ...ITEM_VACIO,
+        id: it.id, modalidad: it.modalidad, descripcion: it.descripcion, cantidad: String(it.cantidad),
+        codigoInterno: it.codigoInterno || "", medida: it.medida == null ? "" : String(it.medida),
+        productoId: it.productoId, productoDescripcion: it.modalidad === "por_stock" ? it.descripcion : "",
+        metrosConsumidos: it.metrosConsumidos, stockDescontado: it.stockDescontado,
+      })),
+    });
+    setErrorFormularioApartado("");
+    setDisponibilidadItems({});
+    setResultadosBusquedaProducto({});
+    setMostrarFormularioApartado(true);
+  }
+
   function cerrarFormularioApartado() {
+    setEditandoId(null);
     setMostrarFormularioApartado(false);
     setErrorFormularioApartado("");
     setDisponibilidadItems({});
@@ -297,7 +324,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     setGuardandoApartado(true);
     setErrorFormularioApartado("");
     try {
-      await api.post("/apartados", {
+      const enviar = editandoId ? (cuerpo: unknown) => api.put(`/apartados/${editandoId}`, cuerpo) : (cuerpo: unknown) => api.post("/apartados", cuerpo);
+      await enviar({
         bodega_id: Number(formulario.bodegaId),
         material_en_camino: formulario.materialEnCamino,
         numero_cotizacion: formulario.numeroCotizacion.trim(),
@@ -306,14 +334,15 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         observaciones: formulario.observaciones,
         items: formulario.items.map((i) => (
           i.modalidad === "por_stock"
-            ? { modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad) }
-            : { modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida) }
+            ? { id: i.id, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad) }
+            : { id: i.id, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida) }
         )),
       });
       await cargarApartados();
       setMostrarFormularioApartado(false);
+      setEditandoId(null);
     } catch (err) {
-      setErrorFormularioApartado(err instanceof ErrorApi ? err.message : "No se pudo crear el apartado.");
+      setErrorFormularioApartado(err instanceof ErrorApi ? err.message : editandoId ? "No se pudieron guardar los cambios." : "No se pudo crear el apartado.");
     } finally {
       setGuardandoApartado(false);
     }
@@ -377,6 +406,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     filtroEstado, setFiltroEstado,
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
+    editandoId, abrirEdicionApartado,
     actualizarCampoApartado, cambiarBodegaApartado, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
     cambiarModalidadItem,
     guardandoApartado, errorFormularioApartado, crearApartado,

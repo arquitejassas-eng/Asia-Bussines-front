@@ -732,3 +732,9 @@
   font-weight: 700;
   cursor: pointer;
 }
+.apartado-linea-con-salida {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--at-green, #2E7D4F);
+}

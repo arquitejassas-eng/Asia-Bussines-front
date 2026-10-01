@@ -37,7 +37,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.services.material_en_camino import metros_en_camino_codigo, metros_por_repartir_codigo
-from app.schemas.apartados import ApartadoCrear
+from app.schemas.apartados import ApartadoCrear, ApartadoEditar
 
 ESTADOS_RESERVA_ACTIVA = (
     EstadoApartado.APARTADO,
@@ -369,34 +369,13 @@ def apartado_de_mi_bodega(db: Session, apartado_id: int, usuario: Usuario) -> Ap
     return apartado
 
 
-def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apartado:
-    if not datos.items:
-        raise HTTPException(status_code=400, detail="El apartado debe tener al menos un producto solicitado.")
-    bodega_id = bodega_de_consulta(db, usuario, datos.bodega_id)
-
-    ya_existe = (
-        db.query(Apartado.id)
-        .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == datos.numero_cotizacion,
-                Apartado.estado != EstadoApartado.CANCELADO)
-        .first()
-    )
-    if ya_existe:
-        raise HTTPException(status_code=400, detail=f"Ya existe un apartado con la cotización {datos.numero_cotizacion} en esa bodega.")
-
-    # Sin restricción de modalidad uniforme -- un mismo apartado puede
-    # mezclar ítems POR_ROLLO y POR_STOCK libremente. Cada rama valida
-    # únicamente su propio subconjunto de ítems, sin interferirse.
-    items_rollo = [item for item in datos.items if item.modalidad == ModalidadApartado.POR_ROLLO]
-    items_stock = [item for item in datos.items if item.modalidad == ModalidadApartado.POR_STOCK]
-
-    # POR_ROLLO: exactamente la validación que ya existía (sin ningún cambio
-    # de comportamiento) -- solo que ahora agrupa `items_rollo` en vez de
-    # `datos.items` completo, para no mezclar con las cantidades de stock.
-    solicitado_por_codigo: dict[str, float] = {}
-    for item in items_rollo:
-        metros = round(item.cantidad * item.medida, 2)
-        solicitado_por_codigo[item.codigo_interno] = solicitado_por_codigo.get(item.codigo_interno, 0) + metros
-
+def _validar_que_quepa(
+    db: Session, *, bodega_id: int, solicitado_por_codigo: dict[str, float],
+    solicitado_por_producto: dict[int, float], material_en_camino: bool,
+) -> None:
+    """Lo que se va a apartar (o lo que se aumenta al editar) tiene que caber
+    en lo libre de la bodega; con `material_en_camino`, también en lo que
+    viene en camino o está por repartir. Misma regla al crear y al editar."""
     for codigo_interno, metros_solicitados in solicitado_por_codigo.items():
         resumen = disponibilidad_por_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, bloquear=True)
         if metros_solicitados <= resumen["metros_disponibles"]:
@@ -416,7 +395,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                     "ni en la bodega ni en camino. Si viene otro pedido, sube su checklist en Recepción."
                 ),
             )
-        if not datos.material_en_camino:
+        if not material_en_camino:
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -426,15 +405,9 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 ),
             )
 
-    # POR_STOCK: mismo principio, pero por producto_id -- nunca descuenta
-    # Producto.stock aquí, solo valida que la reserva quepa en lo disponible.
-    solicitado_por_producto: dict[int, float] = {}
-    for item in items_stock:
-        solicitado_por_producto[item.producto_id] = solicitado_por_producto.get(item.producto_id, 0) + item.cantidad
-
     for producto_id, cantidad_solicitada in solicitado_por_producto.items():
         resumen = disponibilidad_producto(db, bodega_id=bodega_id, producto_id=producto_id, bloquear=True)
-        if cantidad_solicitada > resumen["cantidad_disponible"] and not datos.material_en_camino:
+        if cantidad_solicitada > resumen["cantidad_disponible"] and not material_en_camino:
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -443,6 +416,32 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                     "Si ese material ya viene en camino, marca 'El material viene en camino'."
                 ),
             )
+
+
+def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apartado:
+    if not datos.items:
+        raise HTTPException(status_code=400, detail="El apartado debe tener al menos un producto solicitado.")
+    bodega_id = bodega_de_consulta(db, usuario, datos.bodega_id)
+
+    ya_existe = (
+        db.query(Apartado.id)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == datos.numero_cotizacion,
+                Apartado.estado != EstadoApartado.CANCELADO)
+        .first()
+    )
+    if ya_existe:
+        raise HTTPException(status_code=400, detail=f"Ya existe un apartado con la cotización {datos.numero_cotizacion} en esa bodega.")
+
+    solicitado_por_codigo: dict[str, float] = {}
+    solicitado_por_producto: dict[int, float] = {}
+    for item in datos.items:
+        if item.modalidad == ModalidadApartado.POR_STOCK:
+            solicitado_por_producto[item.producto_id] = solicitado_por_producto.get(item.producto_id, 0) + item.cantidad
+        else:
+            metros = round(item.cantidad * item.medida, 2)
+            solicitado_por_codigo[item.codigo_interno] = solicitado_por_codigo.get(item.codigo_interno, 0) + metros
+    _validar_que_quepa(db, bodega_id=bodega_id, solicitado_por_codigo=solicitado_por_codigo,
+                       solicitado_por_producto=solicitado_por_producto, material_en_camino=datos.material_en_camino)
 
     ahora = datetime.now(timezone.utc)
     apartado = Apartado(
@@ -471,6 +470,121 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 cantidad=item.cantidad, medida=item.medida, metros_requeridos=round(item.cantidad * item.medida, 2),
             ))
 
+    return apartado
+
+
+def _tiene_salida(item: ApartadoItem) -> bool:
+    return (item.metros_consumidos or 0) > 0.005 or bool(item.producciones) or bool(item.stock_descontado)
+
+
+def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuario: Usuario) -> Apartado:
+    """Admin Inventario corrige una cotización activa. Lo que ya tuvo salida
+    (metros consumidos, producción registrada o stock descontado) no se puede
+    quitar ni bajar de lo que ya salió; la bodega solo cambia si no ha salido
+    nada. Lo que se AUMENTA se valida igual que al crear (_validar_que_quepa)."""
+    apartado_de_mi_bodega(db, apartado_id, usuario)
+    apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
+    if apartado.estado not in ESTADOS_RESERVA_ACTIVA:
+        raise HTTPException(status_code=400, detail="Solo se pueden editar cotizaciones activas (no terminadas, entregadas ni canceladas).")
+    if not datos.items:
+        raise HTTPException(status_code=400, detail="El apartado debe tener al menos un producto solicitado.")
+    bodega_id = bodega_de_consulta(db, usuario, datos.bodega_id)
+    actuales = {item.id: item for item in apartado.items}
+    con_salida = [item for item in apartado.items if _tiene_salida(item)]
+    if bodega_id != apartado.bodega_id and con_salida:
+        raise HTTPException(status_code=400, detail="No se puede cambiar la bodega: esta cotización ya tiene salidas registradas.")
+
+    repetida = (
+        db.query(Apartado.id)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == datos.numero_cotizacion,
+                Apartado.estado != EstadoApartado.CANCELADO, Apartado.id != apartado.id)
+        .first()
+    )
+    if repetida:
+        raise HTTPException(status_code=400, detail=f"Ya existe un apartado con la cotización {datos.numero_cotizacion} en esa bodega.")
+
+    ids_nuevos = {item.id for item in datos.items if item.id}
+    if any(i not in actuales for i in ids_nuevos):
+        raise HTTPException(status_code=400, detail="Alguna línea no pertenece a esta cotización. Recarga e intenta de nuevo.")
+    for item in con_salida:
+        if item.id not in ids_nuevos:
+            raise HTTPException(status_code=400, detail=f"No puedes quitar la línea '{item.descripcion or item.codigo_interno}': ya tiene salida registrada.")
+    for linea in datos.items:
+        if not linea.id:
+            continue
+        item = actuales[linea.id]
+        if linea.modalidad != item.modalidad:
+            raise HTTPException(status_code=400, detail="No se puede cambiar el tipo de una línea existente: quítala y agrega una nueva.")
+        if not _tiene_salida(item):
+            continue
+        if item.modalidad == ModalidadApartado.POR_STOCK:
+            if linea.producto_id != item.producto_id or abs(linea.cantidad - item.cantidad) > 0.005:
+                raise HTTPException(status_code=400, detail=f"La línea '{item.descripcion}' ya se descontó del stock: no se puede cambiar.")
+        else:
+            if linea.codigo_interno != item.codigo_interno:
+                raise HTTPException(status_code=400, detail=f"La línea de {item.codigo_interno} ya tiene salida: no se puede cambiar el código.")
+            nuevos = round(linea.cantidad * linea.medida, 2)
+            if nuevos + 0.005 < (item.metros_consumidos or 0):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"La línea de {item.codigo_interno} ya tiene {item.metros_consumidos:g} m de salida: no puede quedar en {nuevos:g} m.",
+                )
+
+    # Solo se valida lo que AUMENTA (lo que ya estaba apartado ya era suyo);
+    # si cambia de bodega, todo es nuevo en la otra bodega.
+    misma_bodega = bodega_id == apartado.bodega_id
+    antes_codigo: dict[str, float] = {}
+    antes_producto: dict[int, float] = {}
+    if misma_bodega:
+        for item in apartado.items:
+            if item.modalidad == ModalidadApartado.POR_STOCK:
+                if not item.stock_descontado:
+                    antes_producto[item.producto_id] = antes_producto.get(item.producto_id, 0) + item.cantidad
+            else:
+                antes_codigo[item.codigo_interno] = antes_codigo.get(item.codigo_interno, 0) + (item.metros_requeridos or 0)
+    despues_codigo: dict[str, float] = {}
+    despues_producto: dict[int, float] = {}
+    for linea in datos.items:
+        if linea.modalidad == ModalidadApartado.POR_STOCK:
+            if linea.id and actuales[linea.id].stock_descontado:
+                continue
+            despues_producto[linea.producto_id] = despues_producto.get(linea.producto_id, 0) + linea.cantidad
+        else:
+            despues_codigo[linea.codigo_interno] = despues_codigo.get(linea.codigo_interno, 0) + round(linea.cantidad * linea.medida, 2)
+    aumento_codigo = {c: round(m - antes_codigo.get(c, 0), 2) for c, m in despues_codigo.items() if m - antes_codigo.get(c, 0) > 0.005}
+    aumento_producto = {p: round(q - antes_producto.get(p, 0), 2) for p, q in despues_producto.items() if q - antes_producto.get(p, 0) > 0.005}
+    _validar_que_quepa(db, bodega_id=bodega_id, solicitado_por_codigo=aumento_codigo,
+                       solicitado_por_producto=aumento_producto, material_en_camino=datos.material_en_camino)
+
+    apartado.bodega_id = bodega_id
+    apartado.numero_cotizacion = datos.numero_cotizacion
+    apartado.empresa = datos.empresa
+    apartado.cliente = datos.cliente
+    apartado.observaciones = datos.observaciones
+    for item in list(apartado.items):
+        if item.id not in ids_nuevos:
+            apartado.items.remove(item)
+            db.delete(item)
+    for linea in datos.items:
+        if linea.id:
+            item = actuales[linea.id]
+            item.descripcion = linea.descripcion
+            if item.modalidad == ModalidadApartado.POR_STOCK:
+                item.producto_id, item.cantidad = linea.producto_id, linea.cantidad
+            else:
+                item.codigo_interno, item.cantidad, item.medida = linea.codigo_interno, linea.cantidad, linea.medida
+                item.metros_requeridos = round(linea.cantidad * linea.medida, 2)
+        elif linea.modalidad == ModalidadApartado.POR_STOCK:
+            apartado.items.append(ApartadoItem(
+                modalidad=ModalidadApartado.POR_STOCK, producto_id=linea.producto_id,
+                descripcion=linea.descripcion, cantidad=linea.cantidad,
+            ))
+        else:
+            apartado.items.append(ApartadoItem(
+                modalidad=ModalidadApartado.POR_ROLLO, codigo_interno=linea.codigo_interno, descripcion=linea.descripcion,
+                cantidad=linea.cantidad, medida=linea.medida, metros_requeridos=round(linea.cantidad * linea.medida, 2),
+            ))
+    db.flush()
     return apartado
 
 

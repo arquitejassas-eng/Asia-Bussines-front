@@ -10,7 +10,7 @@ from app.schemas.apartados import (
     ApartadoCrear, ApartadoResponse, DisponibilidadCodigoResponse, DisponibilidadProductoResponse, ReservaCodigoResponse,
 )
 from app.core.config import settings
-from app.schemas.apartados import RegistrarSalidaRequest
+from app.schemas.apartados import ApartadoEditar, RegistrarSalidaRequest
 from app.schemas.inventario import ProductoResponse
 from app.services import apartados as srv
 from app.services import importar_cotizaciones
@@ -164,6 +164,17 @@ def obtener_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: U
 def eliminar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> None:
     srv.eliminar_apartado_cancelado(db, apartado_id, usuario)
     db.commit()
+
+
+@router.put("/{apartado_id}", response_model=ApartadoResponse,
+            dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def editar_apartado(
+    apartado_id: int, datos: ApartadoEditar, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Apartado:
+    """Admin Inventario corrige una cotización activa (ver srv.editar_apartado)."""
+    apartado = srv.editar_apartado(db, apartado_id, datos, usuario)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
 
 
 @router.patch("/{apartado_id}/cancelar", response_model=ApartadoResponse,

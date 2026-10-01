@@ -194,7 +194,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
           {a.mostrarFormularioApartado && (
             <form className="inventario-form" onSubmit={a.crearApartado} noValidate>
-              <h2 className="inventario-form-subtitulo">Nuevo apartado</h2>
+              <h2 className="inventario-form-subtitulo">
+                {a.editandoId ? `Editar cotización ${a.formulario.numeroCotizacion}` : "Nuevo apartado"}
+              </h2>
+              {a.editandoId && (
+                <p className="inventario-carga-ayuda">
+                  Puedes cambiar los datos y las líneas. Las líneas que ya tuvieron salida no se pueden quitar ni bajar de
+                  lo que ya salió, y la bodega solo se puede cambiar si todavía no ha salido nada.
+                </p>
+              )}
 
               <div className="inventario-form-grid">
                 <div>
@@ -235,7 +243,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               <h3 className="inventario-form-subtitulo">Productos solicitados</h3>
               {a.formulario.items.map((item, indice) => (
                 <div key={indice} className="inventario-form-grid" style={{ marginBottom: "0.75rem", borderBottom: "1px solid #eee", paddingBottom: "0.75rem" }}>
-                  <div style={{ gridColumn: "1 / -1" }}>
+                  {item.id && (item.metrosConsumidos || item.stockDescontado) ? (
+                    <p className="apartado-linea-con-salida" style={{ gridColumn: "1 / -1" }}>
+                      ✓ Esta línea ya tiene salida{item.stockDescontado ? " (stock descontado)" : `: ${item.metrosConsumidos} m`}.
+                      {item.stockDescontado ? " No se puede cambiar." : " Puedes subirla, pero no quitarla ni bajarla de lo que ya salió."}
+                    </p>
+                  ) : null}
+                  <div style={{ gridColumn: "1 / -1", display: item.id ? "none" : undefined }}>
                     <label>Tipo de material</label>
                     <div style={{ display: "flex", gap: "0.5rem" }}>
                       <button
@@ -310,7 +324,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       <label>Producto *</label>
                       {item.productoId ? (
                         <div className="inventario-carga-ayuda" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span><strong>{item.productoCodigo}</strong> — {item.productoDescripcion}</span>
+                          <span>{item.productoCodigo && <strong>{item.productoCodigo} — </strong>}{item.productoDescripcion}</span>
                           <button type="button" className="inventario-boton-cancelar" onClick={() => a.cambiarModalidadItem(indice, "por_stock")}>
                             Cambiar
                           </button>
@@ -386,7 +400,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       />
                     </div>
                   )}
-                  {a.formulario.items.length > 1 && (
+                  {a.formulario.items.length > 1 && !(item.metrosConsumidos || item.stockDescontado) && (
                     <div style={{ alignSelf: "end" }}>
                       <button type="button" className="inventario-boton-cancelar" onClick={() => a.quitarItemApartado(indice)}>
                         Quitar
@@ -427,7 +441,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
               <div className="inventario-form-botones">
                 <button type="submit" className="inventario-boton" disabled={a.guardandoApartado}>
-                  {a.guardandoApartado ? "Guardando..." : "Crear apartado"}
+                  {a.guardandoApartado ? "Guardando..." : a.editandoId ? "Guardar cambios" : "Crear apartado"}
                 </button>
                 <button type="button" className="inventario-boton-cancelar" onClick={a.cerrarFormularioApartado}>
                   Cancelar
@@ -595,6 +609,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                   textoConfirmar: "Sí, eliminar",
                                   ejecutar: () => a.eliminarApartado(ap.id),
                                 })}>Eliminar</button>
+                              )}
+                              {esAdminInventario && ESTADOS_CANCELABLES.includes(ap.estado) && (
+                                <button onClick={() => { setSalidaAbierta(null); a.abrirEdicionApartado(ap); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+                                  Editar
+                                </button>
                               )}
                               {esAdminInventario && ESTADOS_CANCELABLES.includes(ap.estado) && (
                                 <button onClick={() => setSalidaAbierta(salidaAbierta === ap.id ? null : ap.id)}>

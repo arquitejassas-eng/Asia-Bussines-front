@@ -71,6 +71,15 @@ class RegistrarSalidaRequest(BaseModel):
     items_stock: list[int] = []
 
 
+class ApartadoItemEditar(ApartadoItemCrear):
+    # Línea que ya existe (se modifica); sin id es una línea nueva.
+    id: int | None = None
+
+
+class ApartadoEditar(ApartadoCrear):
+    items: list[ApartadoItemEditar]
+
+
 class ApartadoItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
