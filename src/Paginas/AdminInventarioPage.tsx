@@ -302,24 +302,6 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 </select>
               </div>
               {c.errorComparativo && <p className="inventario-error">{c.errorComparativo}</p>}
-              {!c.cargandoComparativo && !c.empresaResumen && Object.keys(c.comparativo.totalesPorEmpresa).length > 0 && (
-                <div className="empresa-resumen">
-                  {Object.entries(c.comparativo.totalesPorEmpresa)
-                    .sort(([a], [b]) => (a || "zz").localeCompare(b || "zz"))
-                    .map(([sigla, m]) => (
-                      <div key={sigla || "sin"} className="empresa-resumen-tarjeta">
-                        <span className="empresa-resumen-nombre">{sigla ? EMPRESAS[sigla] || sigla : "Sin empresa"}</span>
-                        <strong className={m.libre < 0 ? "empresa-resumen-negativo" : undefined}>
-                          {m.libre.toLocaleString("es-CO", { maximumFractionDigits: 2 })} m libres
-                        </strong>
-                        <span>
-                          Físico {m.fisico.toLocaleString("es-CO", { maximumFractionDigits: 2 })} m · Apartado{" "}
-                          {m.reservado.toLocaleString("es-CO", { maximumFractionDigits: 2 })} m
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              )}
               {c.cargandoComparativo ? (
                 <p className="inventario-cargando">Cargando...</p>
               ) : (

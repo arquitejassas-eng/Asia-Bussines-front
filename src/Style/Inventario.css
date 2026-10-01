@@ -740,38 +740,6 @@
 }
 
 /* ── Inventario total: metros por empresa ─────────────────────────────── */
-.empresa-resumen {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin: 0.5rem 0 1rem;
-}
-.empresa-resumen-tarjeta {
-  flex: 1 1 220px;
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.75rem 1rem;
-  border-radius: var(--at-r-sm, 8px);
-  border: 1px solid var(--at-border-soft, #EBE2D2);
-  background: var(--at-surface, #FFFFFF);
-  font-size: 0.82rem;
-}
-.empresa-resumen-nombre {
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-size: 0.75rem;
-  color: var(--at-text-muted, #6b5e50);
-}
-.empresa-resumen-tarjeta strong {
-  font-size: 1.15rem;
-}
 .empresa-resumen-negativo {
   color: #b3261e;
-}
-.empresa-desglose {
-  display: grid;
-  margin-top: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--at-text-muted, #6b5e50);
 }
