@@ -57,6 +57,12 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
       fila["Total empresa (m)"] = f.total;
       fila["Apartado (m)"] = f.reservadoTotal;
       fila["Libre para vender (m)"] = f.libreTotal;
+      for (const [sigla, m] of Object.entries(f.porEmpresa)) {
+        const nombre = sigla ? EMPRESAS[sigla] || sigla : "Sin empresa";
+        fila[`${nombre} físico (m)`] = m.fisico;
+        fila[`${nombre} apartado (m)`] = m.reservado;
+        fila[`${nombre} libre (m)`] = m.libre;
+      }
       fila["Total rollos"] = f.cantidadTotal;
       fila["Peso actual (t)"] = f.pesoActualTotal;
       fila["Rollos sin peso actual"] = f.rollosSinPesoActual;
@@ -280,6 +286,24 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 </select>
               </div>
               {c.errorComparativo && <p className="inventario-error">{c.errorComparativo}</p>}
+              {!c.cargandoComparativo && !c.empresaResumen && Object.keys(c.comparativo.totalesPorEmpresa).length > 0 && (
+                <div className="empresa-resumen">
+                  {Object.entries(c.comparativo.totalesPorEmpresa)
+                    .sort(([a], [b]) => (a || "zz").localeCompare(b || "zz"))
+                    .map(([sigla, m]) => (
+                      <div key={sigla || "sin"} className="empresa-resumen-tarjeta">
+                        <span className="empresa-resumen-nombre">{sigla ? EMPRESAS[sigla] || sigla : "Sin empresa"}</span>
+                        <strong className={m.libre < 0 ? "empresa-resumen-negativo" : undefined}>
+                          {m.libre.toLocaleString("es-CO", { maximumFractionDigits: 2 })} m libres
+                        </strong>
+                        <span>
+                          Físico {m.fisico.toLocaleString("es-CO", { maximumFractionDigits: 2 })} m · Apartado{" "}
+                          {m.reservado.toLocaleString("es-CO", { maximumFractionDigits: 2 })} m
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
               {c.cargandoComparativo ? (
                 <p className="inventario-cargando">Cargando...</p>
               ) : (
@@ -358,6 +382,18 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                       {f.cantidadTotal} rollo{f.cantidadTotal === 1 ? "" : "s"}
                                     </span>
                                     <CeldaApartado reservado={f.reservadoTotal} libre={f.libreTotal} unidad=" m" />
+                                    {Object.keys(f.porEmpresa).length > 0 && (
+                                      <span className="empresa-desglose">
+                                        {Object.entries(f.porEmpresa)
+                                          .sort(([a], [b]) => (a || "zz").localeCompare(b || "zz"))
+                                          .map(([sigla, m]) => (
+                                            <span key={sigla || "sin"} title={`Físico ${m.fisico} m · Apartado ${m.reservado} m`}
+                                              className={m.libre < 0 ? "empresa-resumen-negativo" : undefined}>
+                                              {sigla || "Sin emp."}: {m.libre} m
+                                            </span>
+                                          ))}
+                                      </span>
+                                    )}
                                   </td>
                                   <td>
                                     {f.pesoActualTotal} t
@@ -443,7 +479,9 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   <p className="inventario-carga-ayuda" style={{ marginTop: "0.5rem" }}>
                     En cada sede se muestran los metros disponibles y, debajo, cuántos rollos de esa
                     clasificación hay ahí. Si hay cotizaciones apartadas, se ve cuánto está apartado y
-                    cuánto queda <strong>libre para vender</strong>.{c.empresaResumen && " (Con el filtro de empresa no se descuenta lo apartado: los apartados no son de una empresa.)"} El peso es el peso ACTUAL de esos rollos (según lo que les
+                    cuánto queda <strong>libre para vender</strong>.{c.empresaResumen
+                      ? " Con el filtro de empresa se descuenta solo lo apartado de esa empresa."
+                      : " Debajo del total sale lo libre de cada empresa (AR = Arquitejas, ABG = Asia Business)."} El peso es el peso ACTUAL de esos rollos (según lo que les
                     queda hoy, no el peso con el que llegaron) — dale clic a ▼ para ver cada rollo
                     individual con su propio peso, bodega y referencia.
                   </p>

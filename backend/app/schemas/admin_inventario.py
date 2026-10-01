@@ -21,6 +21,10 @@ class FilaComparativoResponse(BaseModel):
     reservado_total: float = 0.0
     libre_por_bodega: dict[int, float] = {}
     libre_total: float = 0.0
+    # Solo rollos y sin filtro de empresa: metros de cada empresa ("AR",
+    # "ABG", "" = sin empresa) en toda la compañía -> {"fisico", "reservado", "libre"}.
+    # Lo apartado cuenta para la empresa de la que sale el material (Apartado.empresa).
+    por_empresa: dict[str, dict[str, float]] = {}
     # Solo para rollos (peso ACTUAL en toneladas -- según metros disponibles
     # hoy, no el peso neto de ingreso -- y cantidad de rollos); en productos
     # quedan vacíos, un producto no se cuenta por unidad física.
@@ -43,6 +47,8 @@ class ComparativoInventarioResponse(BaseModel):
     peso_actual_total_por_bodega: dict[int, float] = {}
     peso_actual_total_general: float = 0.0
     rollos_sin_peso_actual_total: int = 0
+    # Totales de rollos por empresa (todos los códigos): {"AR": {"fisico", "reservado", "libre"}, ...}
+    totales_por_empresa: dict[str, dict[str, float]] = {}
     # Calibres de esos rollos que faltan en la tabla de equivalencias de
     # espesor: para decirle al usuario exactamente cuáles registrar.
     calibres_sin_equivalencia: list[float] = []

@@ -50,16 +50,50 @@ def _agregar_apartados(filas: list[FilaComparativoResponse], reservas: dict[tupl
         fila.libre_total = round(fila.total - fila.reservado_total, 2)
 
 
-def _reservas_rollos(db: Session) -> dict[tuple[str, int], float]:
-    filas = (
-        db.query(ApartadoItem.codigo_interno, Apartado.bodega_id,
-                 func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
+def _consulta_reservas_rollos(db: Session, *columnas):
+    return (
+        db.query(*columnas, func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
         .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.modalidad == ModalidadApartado.POR_ROLLO)
-        .group_by(ApartadoItem.codigo_interno, Apartado.bodega_id)
+        .group_by(*columnas)
+    )
+
+
+def _reservas_rollos(db: Session, empresa: str = "") -> dict[tuple[str, int], float]:
+    """Metros apartados por (código, sede). Con filtro de empresa, solo lo
+    que se apartó de esa empresa (la empresa de la que sale el material)."""
+    consulta = _consulta_reservas_rollos(db, ApartadoItem.codigo_interno, Apartado.bodega_id)
+    if empresa:
+        consulta = consulta.filter(Apartado.empresa == filtro_empresa(empresa))
+    return {(codigo, bodega_id): max(float(total or 0), 0) for codigo, bodega_id, total in consulta.all()}
+
+
+def _agregar_por_empresa(db: Session, filas: list[FilaComparativoResponse]) -> dict[str, dict[str, float]]:
+    """Metros de cada empresa por código (físico de sus rollos en sedes,
+    apartado de las cotizaciones de esa empresa, libre) y el total de la compañía."""
+    fisico = (
+        db.query(Rollo.codigo_interno, Rollo.empresa, func.sum(Rollo.metros_disponibles))
+        .filter(Rollo.bodega_id.isnot(None), Rollo.metros_disponibles > 0)
+        .group_by(Rollo.codigo_interno, Rollo.empresa)
         .all()
     )
-    return {(codigo, bodega_id): max(float(total or 0), 0) for codigo, bodega_id, total in filas}
+    reservado = _consulta_reservas_rollos(db, ApartadoItem.codigo_interno, Apartado.empresa).all()
+    por_codigo: dict[str, dict[str, dict[str, float]]] = {}
+    for codigo, sigla, metros in fisico:
+        datos = por_codigo.setdefault(codigo, {}).setdefault(sigla or "", {"fisico": 0.0, "reservado": 0.0})
+        datos["fisico"] += float(metros or 0)
+    for codigo, sigla, metros in reservado:
+        datos = por_codigo.setdefault(codigo, {}).setdefault(sigla or "", {"fisico": 0.0, "reservado": 0.0})
+        datos["reservado"] += max(float(metros or 0), 0)
+    totales: dict[str, dict[str, float]] = {}
+    for fila in filas:
+        for sigla, datos in por_codigo.get(fila.codigo, {}).items():
+            libre = datos["fisico"] - datos["reservado"]
+            fila.por_empresa[sigla] = {"fisico": round(datos["fisico"], 2), "reservado": round(datos["reservado"], 2),
+                                       "libre": round(libre, 2)}
+            total = totales.setdefault(sigla, {"fisico": 0.0, "reservado": 0.0, "libre": 0.0})
+            total["fisico"] += datos["fisico"]; total["reservado"] += datos["reservado"]; total["libre"] += libre
+    return {sigla: {k: round(v, 2) for k, v in t.items()} for sigla, t in totales.items()}
 
 
 def _reservas_productos(db: Session) -> dict[tuple[str, int], float]:
@@ -191,8 +225,10 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
 
     rollos_pivotados = _pivotear(filas_rollos, con_color=True, con_peso=True)
     productos_pivotados = _pivotear(filas_productos, con_color=False, con_familia=True)
-    if not empresa:
-        _agregar_apartados(rollos_pivotados, _reservas_rollos(db))
+    # Con filtro de empresa se descuenta lo apartado de esa empresa; sin
+    # filtro, todo lo apartado (y además el desglose por empresa).
+    _agregar_apartados(rollos_pivotados, _reservas_rollos(db, empresa))
+    totales_por_empresa = {} if empresa else _agregar_por_empresa(db, rollos_pivotados)
     _agregar_apartados(productos_pivotados, _reservas_productos(db))
     peso_actual_total_por_bodega: dict[int, float] = {}
     for fila in rollos_pivotados:
@@ -206,6 +242,7 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
         "peso_actual_total_por_bodega": peso_actual_total_por_bodega,
         "peso_actual_total_general": round(sum(peso_actual_total_por_bodega.values()), 2),
         "rollos_sin_peso_actual_total": sum(fila.rollos_sin_peso_actual for fila in rollos_pivotados),
+        "totales_por_empresa": totales_por_empresa,
         "calibres_sin_equivalencia": calibres_sin_equivalencia,
     }
 

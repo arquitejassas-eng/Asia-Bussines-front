@@ -8,7 +8,9 @@ type Apartado = {
   reservadoPorBodega: Record<string, number>; reservadoTotal: number;
   librePorBodega: Record<string, number>; libreTotal: number;
 };
+type MetrosEmpresa = { fisico: number; reservado: number; libre: number };
 type RolloResumen = Apartado & {
+  porEmpresa: Record<string, MetrosEmpresa>;
   codigo: string; descripcion: string; colorMaterial: string; calibre: string;
   porBodega: Record<string, number>; total: number;
   pesoActualPorBodega: Record<string, number>; pesoActualTotal: number; rollosSinPesoActual: number;
@@ -22,6 +24,7 @@ type Comparativo = {
   bodegas: { id: number; nombre: string }[]; rollos: RolloResumen[]; productos: ProductoResumen[];
   pesoActualTotalPorBodega: Record<string, number>; pesoActualTotalGeneral: number; rollosSinPesoActualTotal: number;
   calibresSinEquivalencia: number[];
+  totalesPorEmpresa: Record<string, MetrosEmpresa>;
 };
 type ItemProducto = { codigo: string; cantidad: string };
 type FormularioEnvio = { bodegaDestinoId: string; rollosSeleccionados: number[]; itemsProducto: ItemProducto[]; observaciones: string };
@@ -29,6 +32,7 @@ type FormularioEnvio = { bodegaDestinoId: string; rollosSeleccionados: number[];
 const COMPARATIVO_VACIO: Comparativo = {
   bodegas: [], rollos: [], productos: [],
   pesoActualTotalPorBodega: {}, pesoActualTotalGeneral: 0, rollosSinPesoActualTotal: 0, calibresSinEquivalencia: [],
+  totalesPorEmpresa: {},
 };
 const TAMANO_PAGINA_RESUMEN = 10;
 // 5 s (el resto de pantallas usa SEGUNDOS_ACTUALIZACION_PANTALLAS): es la
@@ -83,6 +87,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
         rollos?: Record<string, any>[]; productos?: Record<string, any>[];
         peso_actual_total_por_bodega?: Record<string, number>; peso_actual_total_general?: number;
         rollos_sin_peso_actual_total?: number; calibres_sin_equivalencia?: number[];
+        totales_por_empresa?: Record<string, MetrosEmpresa>;
       }>(`/admin-inventario/comparativo${parametroEmpresa ? `?${parametroEmpresa}` : ""}`);
       if (!datos) throw new Error("Respuesta vacía del servidor.");
       if (consulta !== consultaComparativo.current) return;
@@ -98,6 +103,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
           pesoActualPorBodega: f.peso_actual_por_bodega || {}, pesoActualTotal: f.peso_actual_total || 0,
           rollosSinPesoActual: f.rollos_sin_peso_actual || 0,
           cantidadPorBodega: f.cantidad_por_bodega || {}, cantidadTotal: f.cantidad_total || 0,
+          porEmpresa: f.por_empresa || {},
           ...apartado(f),
         })),
         productos: (datos.productos || []).map((f) => ({
@@ -109,6 +115,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
         pesoActualTotalGeneral: datos.peso_actual_total_general || 0,
         rollosSinPesoActualTotal: datos.rollos_sin_peso_actual_total || 0,
         calibresSinEquivalencia: datos.calibres_sin_equivalencia || [],
+        totalesPorEmpresa: datos.totales_por_empresa || {},
       });
       setErrorComparativo("");
       if (!silenciosa) {
