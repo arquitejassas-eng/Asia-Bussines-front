@@ -23,14 +23,16 @@ negocio:
 - Quedan "enviado a producción" (ya estaban en la cola de Planta), también
   las que esperan material: así no le llegan decenas de avisos de
   "cotización aprobada" a las bodegas. Su faltante se ve en la lista.
-- La fecha del apartado es la de la cotización: las más antiguas se cubren
-  primero con el material que llegue.
+- La fecha del apartado es la de la cotización, más un segundo por cada fila
+  del Excel: así, dentro del mismo día, conservan el orden en que se
+  escribieron (las más antiguas se cubren primero con el material que llegue
+  y en la lista la última escrita sale de primera).
 """
 
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import pandas as pd
@@ -47,6 +49,8 @@ from app.services.apartados import faltantes_apartado
 from app.services.empresas import sigla_empresa_desde_nombre
 from app.services.productos import FAMILIA_ROLLOS
 
+# Las fechas del Excel son días de Colombia: 00:00 en UTC caía el día anterior.
+HORA_COLOMBIA = timezone(timedelta(hours=-5))
 HOJA_PREFERIDA = "SALIDA"
 COLUMNAS = {
     "empresa": "DE QUE EMPRESA SALE EL MATERIAL",
@@ -199,7 +203,8 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
             apartado = ApartadoImportado(
                 numero_cotizacion=numero, bodega_id=bodega_id, bodega_nombre=bodega.nombre, empresa=empresa,
                 cliente=_texto(primera.get("cliente"))[:150], vendedor=_texto(primera.get("vendedor")),
-                fecha=(fecha.to_pydatetime().replace(tzinfo=timezone.utc) if not pd.isna(fecha) else datetime.now(timezone.utc)),
+                fecha=((fecha.to_pydatetime().replace(tzinfo=HORA_COLOMBIA) + timedelta(seconds=propias[0][0])).astimezone(timezone.utc)
+                      if not pd.isna(fecha) else datetime.now(timezone.utc)),
             )
             for numero_fila, datos in propias:
                 codigo = datos["codigo"]

@@ -102,7 +102,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const [soloPendientesSalida, setSoloPendientesSalida] = useState(false);
   const apartadosFiltrados = useMemo(() => {
     const texto = filtroTexto.trim().toLowerCase();
-    return a.apartados.filter((ap) =>
+    // Lo más reciente primero (las cargadas desde Excel conservan el orden en
+    // que se escribieron: ver importar_cotizaciones).
+    return [...a.apartados].sort((x, y) =>
+      y.fechaCreacion.localeCompare(x.fechaCreacion) || y.id - x.id,
+    ).filter((ap) =>
       (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
       && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
       && (!filtroEmpresa || ap.empresa === filtroEmpresa)
