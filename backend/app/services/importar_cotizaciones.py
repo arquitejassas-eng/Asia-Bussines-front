@@ -13,11 +13,11 @@ negocio:
   nombre del cliente), esas líneas se omiten y se informan.
 - Si una cotización tiene, en la misma bodega, líneas de las dos empresas se
   separa en dos apartados: "3811-AR" y "3811-ABG".
-- Códigos de rollo (lámina: L + color + RAL + calibre, o un código que ya
-  tenga rollos) se apartan en metros ("SALE"); lo demás (caballetes,
-  flanches, tornillos...) es producto de stock por unidades. Si el producto
-  no existe en esa bodega se crea con 0 unidades (queda en negativo hasta
-  darle entrada).
+- SOLO se cargan las líneas de rollo (lámina: L + color + RAL + calibre, o
+  un código que ya tenga rollos), en metros ("SALE"). Las de productos de
+  stock (caballetes, flanches, tornillos, perfiles...) se omiten y no se
+  crea ningún producto: ese inventario no se maneja desde esta carga. Una
+  cotización que solo tiene productos no se carga.
 - Se aparta aunque no haya material (en el Excel ya estaba en negativo): el
   apartado queda "esperando material" y se cubre solo cuando le den ingreso.
 - Quedan "enviado a producción" (ya estaban en la cola de Planta), también
@@ -42,12 +42,10 @@ from sqlalchemy.orm import Session
 from app.models.apartado import Apartado, ApartadoItem, EstadoApartado, ModalidadApartado
 from app.models.bodega import Bodega
 from app.models.material_en_camino import CargamentoRollo
-from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.services.apartados import faltantes_apartado
 from app.services.empresas import sigla_empresa_desde_nombre
-from app.services.productos import FAMILIA_ROLLOS
 
 # Las fechas del Excel son días de Colombia: 00:00 en UTC caía el día anterior.
 HORA_COLOMBIA = timezone(timedelta(hours=-5))
@@ -67,7 +65,6 @@ COLUMNAS = {
 }
 OBLIGATORIAS = ("empresa", "cotizacion", "codigo", "referencia", "sale", "bodega")
 NO_SON_DE_CLIENTE = {"STOCK", "AJUSTE"}
-FAMILIA_PRODUCTO_NUEVO = "POR CLASIFICAR"
 CODIGO_LAMINA = re.compile(r"^L[A-Z]\d{5},\d{2}$")
 CODIGO_TRASLADO = re.compile(r"^TRA[SN]\b", re.IGNORECASE)
 
@@ -120,6 +117,7 @@ class ResultadoImportacion:
     lineas_producidas: int = 0
     lineas_stock_ajuste: int = 0
     lineas_traslado: int = 0
+    lineas_producto: int = 0
 
 
 def _leer_hoja(contenido: bytes) -> pd.DataFrame:
@@ -160,6 +158,9 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
         if not cotizacion or _normalizar(cotizacion) in NO_SON_DE_CLIENTE:
             resultado.lineas_stock_ajuste += 1
             continue
+        if not (CODIGO_LAMINA.match(codigo) or codigo in codigos_rollo):
+            resultado.lineas_producto += 1
+            continue
         nombre_bodega = _texto(fila.get("bodega"))
         bodega = bodegas.get(_normalizar(nombre_bodega))
         if bodega is None:
@@ -181,7 +182,6 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
             "descripcion": _texto(fila.get("descripcion")) or _texto(fila.get("producto")) or codigo,
         }))
 
-    productos_existentes: dict[tuple[int, str], int] = {}
     for (cotizacion, bodega_id), filas in grupos.items():
         bodega = db.get(Bodega, bodega_id)
         empresas = sorted({empresa for _, empresa, _ in filas})
@@ -207,23 +207,8 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
                       if not pd.isna(fecha) else datetime.now(timezone.utc)),
             )
             for numero_fila, datos in propias:
-                codigo = datos["codigo"]
-                if CODIGO_LAMINA.match(codigo) or codigo in codigos_rollo:
-                    apartado.lineas.append(LineaImportada(numero_fila, codigo, datos["descripcion"][:255], datos["cantidad"],
-                                                          ModalidadApartado.POR_ROLLO))
-                    continue
-                clave = (bodega_id, codigo)
-                if clave not in productos_existentes:
-                    producto = (
-                        db.query(Producto.id)
-                        .filter(Producto.bodega_id == bodega_id, Producto.codigo == codigo, Producto.familia != FAMILIA_ROLLOS)
-                        .first()
-                    )
-                    productos_existentes[clave] = producto[0] if producto else 0
-                producto_id = productos_existentes[clave] or None
-                apartado.lineas.append(LineaImportada(numero_fila, codigo, datos["descripcion"][:255], datos["cantidad"],
-                                                      ModalidadApartado.POR_STOCK, producto_id=producto_id,
-                                                      producto_nuevo=producto_id is None))
+                apartado.lineas.append(LineaImportada(numero_fila, datos["codigo"], datos["descripcion"][:255],
+                                                      datos["cantidad"], ModalidadApartado.POR_ROLLO))
             resultado.apartados.append(apartado)
     resultado.apartados.sort(key=lambda a: (a.fecha, a.numero_cotizacion))
     return resultado
@@ -232,7 +217,6 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
 def crear(db: Session, resultado: ResultadoImportacion, usuario: Usuario, nombre_archivo: str) -> list[Apartado]:
     """Crea los apartados analizados (sin confirmar la transacción)."""
     ahora = datetime.now(timezone.utc)
-    productos_creados: dict[tuple[int, str], int] = {}
     creados: list[Apartado] = []
     for importado in resultado.apartados:
         apartado = Apartado(
@@ -246,25 +230,9 @@ def crear(db: Session, resultado: ResultadoImportacion, usuario: Usuario, nombre
         db.add(apartado)
         db.flush()
         for linea in importado.lineas:
-            if linea.modalidad == ModalidadApartado.POR_ROLLO:
-                db.add(ApartadoItem(
-                    apartado_id=apartado.id, modalidad=ModalidadApartado.POR_ROLLO, codigo_interno=linea.codigo,
-                    descripcion=linea.descripcion, cantidad=linea.cantidad, medida=1, metros_requeridos=linea.cantidad,
-                ))
-                continue
-            producto_id = linea.producto_id
-            if producto_id is None:
-                clave = (importado.bodega_id, linea.codigo)
-                if clave not in productos_creados:
-                    producto = Producto(bodega_id=importado.bodega_id, codigo=linea.codigo, descripcion=linea.descripcion or linea.codigo,
-                                        familia=FAMILIA_PRODUCTO_NUEVO, entrada=0, stock=0)
-                    db.add(producto)
-                    db.flush()
-                    productos_creados[clave] = producto.id
-                producto_id = productos_creados[clave]
             db.add(ApartadoItem(
-                apartado_id=apartado.id, modalidad=ModalidadApartado.POR_STOCK, producto_id=producto_id,
-                descripcion=linea.descripcion, cantidad=linea.cantidad,
+                apartado_id=apartado.id, modalidad=ModalidadApartado.POR_ROLLO, codigo_interno=linea.codigo,
+                descripcion=linea.descripcion, cantidad=linea.cantidad, medida=1, metros_requeridos=linea.cantidad,
             ))
         creados.append(apartado)
     db.flush()
@@ -298,7 +266,8 @@ def resumen(resultado: ResultadoImportacion) -> dict:
         "lineas_producidas": resultado.lineas_producidas,
         "lineas_stock_ajuste": resultado.lineas_stock_ajuste,
         "lineas_traslado": resultado.lineas_traslado,
+        "lineas_producto": resultado.lineas_producto,
         "total_apartados": len(resultado.apartados),
         "total_lineas": sum(len(a.lineas) for a in resultado.apartados),
-        "productos_nuevos": len({(a.bodega_id, ln.codigo) for a in resultado.apartados for ln in a.lineas if ln.producto_nuevo}),
+        "productos_nuevos": 0,
     }

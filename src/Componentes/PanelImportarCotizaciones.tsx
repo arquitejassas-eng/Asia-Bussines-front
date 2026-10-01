@@ -8,7 +8,7 @@ type ApartadoPrevio = {
 };
 type Omitida = { fila: number; cotizacion: string; codigo: string; motivo: string };
 type Previa = {
-  apartados: ApartadoPrevio[]; omitidas: Omitida[]; lineas_producidas: number; lineas_stock_ajuste: number; lineas_traslado?: number;
+  apartados: ApartadoPrevio[]; omitidas: Omitida[]; lineas_producidas: number; lineas_stock_ajuste: number; lineas_traslado?: number; lineas_producto?: number;
   total_apartados: number; total_lineas: number; productos_nuevos: number; creados?: number; esperando_material?: number;
 };
 
@@ -51,8 +51,9 @@ export default function PanelImportarCotizaciones({ alTerminar, alCerrar }: { al
     <section className="inventario-form">
       <h2 className="inventario-form-subtitulo">Cargar cotizaciones apartadas desde Excel</h2>
       <p className="inventario-carga-ayuda">
-        Sube el Excel de control. Se lee la hoja <strong>SALIDA</strong> y se cargan las líneas de cotizaciones de clientes
-        que todavía no tienen <strong>REFERENCIA</strong> (su producción no ha salido). Las que ya estén cargadas no se repiten.
+        Sube el Excel de control. Se lee la hoja <strong>SALIDA</strong> y se cargan las líneas de <strong>rollo</strong> de
+        cotizaciones de clientes que todavía no tienen <strong>REFERENCIA</strong> (su producción no ha salido). Los productos de
+        stock no se cargan. Las cotizaciones que ya estén cargadas no se repiten.
         Nada se guarda hasta que confirmes.
       </p>
       {!previa && !resultado && (
@@ -75,10 +76,9 @@ export default function PanelImportarCotizaciones({ alTerminar, alCerrar }: { al
         <>
           <p className="inventario-exito" style={{ display: "block" }}>
             Se van a cargar <strong>{previa.total_apartados} cotizaciones</strong> ({previa.total_lineas} líneas).
-            {previa.productos_nuevos > 0 && ` Se crearán ${previa.productos_nuevos} productos que no existían en esa bodega, con 0 unidades.`}
             <br />
             <span style={{ fontWeight: 400 }}>
-              No se cargan: {previa.lineas_producidas} líneas que ya tienen REFERENCIA (ya salieron), {previa.lineas_stock_ajuste} de STOCK/AJUSTE y {previa.lineas_traslado ?? 0} traslados entre bodegas.
+              No se cargan: {previa.lineas_producidas} líneas que ya tienen REFERENCIA (ya salieron), {previa.lineas_stock_ajuste} de STOCK/AJUSTE, {previa.lineas_traslado ?? 0} traslados entre bodegas y {previa.lineas_producto ?? 0} de productos de stock (tornillos, caballetes, perfiles…).
             </span>
           </p>
           {previa.omitidas.length > 0 && (
