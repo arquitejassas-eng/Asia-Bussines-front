@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
@@ -6,6 +6,7 @@ import { formatearFechaColombia } from "../Utils/fechas";
 import { EMPRESAS } from "../Utils/empresas";
 import PanelImportarCotizaciones from "../Componentes/PanelImportarCotizaciones";
 import PanelRegistrarSalida from "../Componentes/PanelRegistrarSalida";
+import Paginacion from "../Componentes/Paginacion";
 import { useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
 import { calcularSolicitudesPendientes } from "../Utils/produccion";
@@ -21,6 +22,18 @@ const DESPACHOS_INTEGRADO = false;
 // Mismos estados que backend/app/services/apartados.py::ESTADOS_CANCELABLES:
 // se puede cancelar mientras la producción no haya terminado.
 const ESTADOS_CANCELABLES = ["apartado", "enviado_a_produccion", "en_produccion"];
+
+const APARTADOS_POR_PAGINA = 15;
+// Cotizaciones con muchas líneas (ej. 18 tejas distintas) muestran estas y un "+N más".
+const LINEAS_VISIBLES = 4;
+
+/** Cantidad legible de una línea: metros para rollo (con la cuenta si son
+ * piezas de una medida, ej. "18 × 6 m = 108 m"), unidades para producto. */
+function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null }) {
+  if (it.modalidad === "por_stock") return `${it.cantidad} und`;
+  if (it.medida && it.medida !== 1) return `${it.cantidad} × ${it.medida} m = ${it.metrosRequeridos} m`;
+  return `${it.metrosRequeridos ?? it.cantidad} m`;
+}
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
   apartado: "Apartado",
@@ -73,6 +86,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   // Carga desde Excel y salida con hoja de vida (solo Admin Inventario).
   const [mostrarImportar, setMostrarImportar] = useState(false);
   const [salidaAbierta, setSalidaAbierta] = useState<number | null>(null);
+  const [lineasExpandidas, setLineasExpandidas] = useState<Set<number>>(new Set());
+  function alternarLineas(id: number) {
+    setLineasExpandidas((actual) => {
+      const nueva = new Set(actual);
+      if (nueva.has(id)) nueva.delete(id); else nueva.add(id);
+      return nueva;
+    });
+  }
 
   // Filtros de la lista (en el navegador: la lista ya viene completa).
   const [filtroTexto, setFiltroTexto] = useState("");
@@ -87,6 +108,18 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       && (!filtroEmpresa || ap.empresa === filtroEmpresa)
       && (!soloPendientesSalida || ESTADOS_CANCELABLES.includes(ap.estado)));
   }, [a.apartados, filtroTexto, filtroBodega, filtroEmpresa, soloPendientesSalida]);
+
+  // Paginación en el navegador: con cientos de cotizaciones la tabla era eterna.
+  const [paginaApartados, setPaginaApartados] = useState(1);
+  useEffect(() => { setPaginaApartados(1); }, [filtroTexto, filtroBodega, filtroEmpresa, soloPendientesSalida, a.filtroEstado]);
+  const totalPaginas = Math.max(1, Math.ceil(apartadosFiltrados.length / APARTADOS_POR_PAGINA));
+  const paginaSegura = Math.min(paginaApartados, totalPaginas);
+  const apartadosPagina = apartadosFiltrados.slice((paginaSegura - 1) * APARTADOS_POR_PAGINA, paginaSegura * APARTADOS_POR_PAGINA);
+  const paginacionApartados = { total: apartadosFiltrados.length, pagina: paginaSegura, total_paginas: totalPaginas };
+  function cambiarPagina(pagina: number) {
+    setPaginaApartados(Math.min(Math.max(1, pagina), totalPaginas));
+    setSalidaAbierta(null);
+  }
 
   const [confirmacion, setConfirmacion] = useState<{
     titulo: string; mensaje: string; textoConfirmar: string; ejecutar: () => void;
@@ -445,7 +478,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 <p className="inventario-cargando">Cargando apartados...</p>
               ) : (
                 <div className="inventario-tabla-contenedor">
-                  <table className="inventario-tabla">
+                  <table className="inventario-tabla apartados-tabla">
                     <thead>
                       <tr>
                         {esAdminInventario && <th>Bodega</th>}
@@ -466,7 +499,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           </td>
                         </tr>
                       ) : (
-                        apartadosFiltrados.map((ap) => {
+                        apartadosPagina.map((ap) => {
                           const itemsRollo = ap.items.filter((it) => it.modalidad === "por_rollo");
                           const itemsStock = ap.items.filter((it) => it.modalidad === "por_stock");
                           const rolloPendientes = itemsRollo.filter((it) => (it.metrosPendientes ?? 0) > 0).length;
@@ -483,33 +516,56 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             <td>{ap.numeroCotizacion}</td>
                             <td>{EMPRESAS[ap.empresa] || ap.empresa || "—"}</td>
                             <td>{ap.cliente || "—"}</td>
-                            <td>
-                              <div>
-                                {ap.items.map((it) => (
-                                  it.modalidad === "por_stock"
-                                    ? `${it.cantidad} × ${it.descripcion || `producto #${it.productoId}`}`
-                                    : `${it.cantidad} × ${it.codigoInterno}${it.descripcion ? ` (${it.descripcion})` : ""}`
-                                )).join("; ")}
+                            <td style={{ minWidth: 280 }}>
+                              <ul className="apartado-lineas">
+                                {(lineasExpandidas.has(ap.id) ? ap.items : ap.items.slice(0, LINEAS_VISIBLES)).map((it) => {
+                                  const lista = it.modalidad === "por_stock" ? it.stockDescontado : (it.metrosPendientes ?? 0) <= 0;
+                                  const codigo = it.modalidad === "por_stock" ? "" : it.codigoInterno;
+                                  const texto = it.descripcion || (it.modalidad === "por_stock" ? `producto #${it.productoId}` : "");
+                                  return (
+                                    <li key={it.id} className={lista ? "apartado-linea-lista" : undefined}>
+                                      <div className="apartado-linea-cabeza">
+                                        <strong>{cantidadLinea(it)}</strong>
+                                        {codigo && <span className="apartado-linea-codigo">{codigo}</span>}
+                                        {lista
+                                          ? <span className="apartado-linea-estado" title="Ya tiene salida">✓ con salida</span>
+                                          : it.modalidad === "por_rollo" && (it.metrosConsumidos ?? 0) > 0
+                                            ? <span className="apartado-linea-estado">faltan {it.metrosPendientes} m</span>
+                                            : null}
+                                      </div>
+                                      {texto && <div className="apartado-linea-texto" title={texto}>{texto}</div>}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                              {ap.items.length > LINEAS_VISIBLES && (
+                                <button type="button" className="apartado-ver-mas" onClick={() => alternarLineas(ap.id)}>
+                                  {lineasExpandidas.has(ap.id) ? "Ver menos" : `+${ap.items.length - LINEAS_VISIBLES} más`}
+                                </button>
+                              )}
+                              <div className="apartado-chips">
+                                {itemsRollo.length > 0 && (
+                                  <span className={`apartado-chip ${rolloPendientes ? "" : "apartado-chip-ok"}`}>
+                                    Rollo {itemsRollo.length - rolloPendientes}/{itemsRollo.length}{rolloPendientes ? "" : " ✓"}
+                                  </span>
+                                )}
+                                {itemsStock.length > 0 && (
+                                  <span className={`apartado-chip ${ap.stockSeparadoConfirmado ? "apartado-chip-ok" : ""}`}>
+                                    Stock {ap.stockSeparadoConfirmado ? "separado ✓" : "por separar"}
+                                  </span>
+                                )}
                               </div>
-                              {itemsStock.length > 0 && (
-                                <div className="inventario-carga-ayuda" style={{ margin: "0.15rem 0 0" }}>
-                                  Stock ({itemsStock.length}): {ap.stockSeparadoConfirmado ? "separado ✓" : "pendiente de separar"}
-                                </div>
-                              )}
                               {ap.faltantes.length > 0 && (
-                                <div className="inventario-error" style={{ margin: "0.15rem 0 0" }}>
-                                  ⏳ Esperando material: {ap.faltantes.join("; ")}
-                                </div>
-                              )}
-                              {itemsRollo.length > 0 && (
-                                <div className="inventario-carga-ayuda" style={{ margin: "0.15rem 0 0" }}>
-                                  Rollo: {itemsRollo.length - rolloPendientes} de {itemsRollo.length} producido{itemsRollo.length === 1 ? "" : "s"}
-                                  {rolloPendientes > 0 ? ` — ${rolloPendientes} pendiente${rolloPendientes === 1 ? "" : "s"}` : " ✓"}
+                                <div className="apartado-faltantes">
+                                  <strong>⏳ Esperando material</strong>
+                                  <ul>
+                                    {ap.faltantes.map((f) => <li key={f}>{f.replace(/^faltan /, "")}</li>)}
+                                  </ul>
                                 </div>
                               )}
                             </td>
                             <td>{ETIQUETAS_ESTADO[ap.estado] || ap.estado}</td>
-                            <td>{formatearFechaColombia(ap.fechaCreacion)}</td>
+                            <td style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
                             <td className="inventario-acciones">
                               {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
                                 <button
@@ -575,6 +631,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     </tbody>
                   </table>
                 </div>
+              )}
+              {!a.cargandoApartados && (
+                <Paginacion paginacion={paginacionApartados} alCambiarPagina={cambiarPagina} etiqueta="cotizaciones" />
               )}
             </>
           )}
