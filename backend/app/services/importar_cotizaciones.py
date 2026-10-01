@@ -6,7 +6,9 @@ mientras su REFERENCIA (el rollo del que salió) está vacía: la producción no
 ha salido o no se ha revisado su hoja de vida física. Reglas acordadas con el
 negocio:
 
-- Solo cotizaciones de clientes: "# DE COT" = STOCK / AJUSTE se omiten.
+- Solo cotizaciones de clientes: "# DE COT" = STOCK / AJUSTE se omiten, y
+  los traslados entre bodegas (CODIGO "TRAS R-S", "TRAN R-F"...) también:
+  mueven material entre sedes, no lo apartan para un cliente.
 - La bodega sale de "BODEGA DE SALIDA"; si no es una bodega de la app (ej. el
   nombre del cliente), esas líneas se omiten y se informan.
 - Si una cotización tiene, en la misma bodega, líneas de las dos empresas se
@@ -63,6 +65,7 @@ OBLIGATORIAS = ("empresa", "cotizacion", "codigo", "referencia", "sale", "bodega
 NO_SON_DE_CLIENTE = {"STOCK", "AJUSTE"}
 FAMILIA_PRODUCTO_NUEVO = "POR CLASIFICAR"
 CODIGO_LAMINA = re.compile(r"^L[A-Z]\d{5},\d{2}$")
+CODIGO_TRASLADO = re.compile(r"^TRA[SN]\b", re.IGNORECASE)
 
 
 def _normalizar(texto) -> str:
@@ -112,6 +115,7 @@ class ResultadoImportacion:
     omitidas: list[dict] = field(default_factory=list)
     lineas_producidas: int = 0
     lineas_stock_ajuste: int = 0
+    lineas_traslado: int = 0
 
 
 def _leer_hoja(contenido: bytes) -> pd.DataFrame:
@@ -141,6 +145,9 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
         numero_fila = int(indice) + 2
         codigo = _texto(fila.get("codigo"))
         if not codigo:
+            continue
+        if CODIGO_TRASLADO.match(codigo):
+            resultado.lineas_traslado += 1
             continue
         if _texto(fila.get("referencia")):
             resultado.lineas_producidas += 1
@@ -285,6 +292,7 @@ def resumen(resultado: ResultadoImportacion) -> dict:
         "omitidas": resultado.omitidas,
         "lineas_producidas": resultado.lineas_producidas,
         "lineas_stock_ajuste": resultado.lineas_stock_ajuste,
+        "lineas_traslado": resultado.lineas_traslado,
         "total_apartados": len(resultado.apartados),
         "total_lineas": sum(len(a.lineas) for a in resultado.apartados),
         "productos_nuevos": len({(a.bodega_id, ln.codigo) for a in resultado.apartados for ln in a.lineas if ln.producto_nuevo}),

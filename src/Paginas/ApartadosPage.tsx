@@ -516,7 +516,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             <td>{ap.numeroCotizacion}</td>
                             <td>{EMPRESAS[ap.empresa] || ap.empresa || "—"}</td>
                             <td>{ap.cliente || "—"}</td>
-                            <td style={{ minWidth: 280 }}>
+                            <td style={{ minWidth: 340 }}>
                               <ul className="apartado-lineas">
                                 {(lineasExpandidas.has(ap.id) ? ap.items : ap.items.slice(0, LINEAS_VISIBLES)).map((it) => {
                                   const lista = it.modalidad === "por_stock" ? it.stockDescontado : (it.metrosPendientes ?? 0) <= 0;
@@ -533,7 +533,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                             ? <span className="apartado-linea-estado">faltan {it.metrosPendientes} m</span>
                                             : null}
                                       </div>
-                                      {texto && <div className="apartado-linea-texto" title={texto}>{texto}</div>}
+                                      {texto && <div className="apartado-linea-texto">{texto}</div>}
                                     </li>
                                   );
                                 })}

@@ -661,14 +661,13 @@
   white-space: nowrap;
   font-weight: 600;
 }
+/* Completa, sin cortar: es lo que hay que fabricar. */
 .apartado-linea-texto {
   font-size: 0.78rem;
-  line-height: 1.25;
+  line-height: 1.3;
   color: var(--at-text-muted, #6b5e50);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .apartado-linea-estado {
   white-space: nowrap;

@@ -8,7 +8,7 @@ type ApartadoPrevio = {
 };
 type Omitida = { fila: number; cotizacion: string; codigo: string; motivo: string };
 type Previa = {
-  apartados: ApartadoPrevio[]; omitidas: Omitida[]; lineas_producidas: number; lineas_stock_ajuste: number;
+  apartados: ApartadoPrevio[]; omitidas: Omitida[]; lineas_producidas: number; lineas_stock_ajuste: number; lineas_traslado?: number;
   total_apartados: number; total_lineas: number; productos_nuevos: number; creados?: number; esperando_material?: number;
 };
 
@@ -78,7 +78,7 @@ export default function PanelImportarCotizaciones({ alTerminar, alCerrar }: { al
             {previa.productos_nuevos > 0 && ` Se crearán ${previa.productos_nuevos} productos que no existían en esa bodega, con 0 unidades.`}
             <br />
             <span style={{ fontWeight: 400 }}>
-              No se cargan: {previa.lineas_producidas} líneas que ya tienen REFERENCIA (ya salieron) y {previa.lineas_stock_ajuste} de STOCK/AJUSTE.
+              No se cargan: {previa.lineas_producidas} líneas que ya tienen REFERENCIA (ya salieron), {previa.lineas_stock_ajuste} de STOCK/AJUSTE y {previa.lineas_traslado ?? 0} traslados entre bodegas.
             </span>
           </p>
           {previa.omitidas.length > 0 && (
