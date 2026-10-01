@@ -33,6 +33,22 @@ function CeldaApartado({ reservado, libre, unidad }: { reservado?: number; libre
   );
 }
 
+/** Metros de una empresa en un código: lo libre (como STOCK ARQUITEJAS /
+ * STOCK ASIA del Excel) y, si hay algo apartado, el físico y lo apartado. */
+function CeldaEmpresa({ metros }: { metros?: { fisico: number; reservado: number; libre: number } }) {
+  if (!metros) return <td className="rollos-texto-ayuda">—</td>;
+  return (
+    <td>
+      <strong style={{ color: metros.libre < 0 ? "#b3261e" : undefined }}>{metros.libre} m</strong>
+      {metros.reservado > 0 && (
+        <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>
+          Físico {metros.fisico} m<br />Apartado {metros.reservado} m
+        </span>
+      )}
+    </td>
+  );
+}
+
 function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const c = useControladorAdminInventario(sesion, almacen);
   const bodegas = c.comparativo.bodegas;
@@ -327,12 +343,14 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                           <th>Calibre</th>
                           {bodegas.map((b) => <th key={b.id}>{b.nombre}</th>)}
                           <th>Total empresa</th>
+                          {!c.empresaResumen && <th>Arquitejas</th>}
+                          {!c.empresaResumen && <th>Asia</th>}
                           <th>Peso actual (t)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {c.rollosResumenPagina.length === 0 ? (
-                          <tr><td colSpan={bodegas.length + 7} className="inventario-vacio">
+                          <tr><td colSpan={bodegas.length + (c.empresaResumen ? 7 : 9)} className="inventario-vacio">
                             {c.busquedaResumenRollos ? "Sin resultados para tu búsqueda." : "Sin datos."}
                           </td></tr>
                         ) : (
@@ -382,19 +400,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                       {f.cantidadTotal} rollo{f.cantidadTotal === 1 ? "" : "s"}
                                     </span>
                                     <CeldaApartado reservado={f.reservadoTotal} libre={f.libreTotal} unidad=" m" />
-                                    {Object.keys(f.porEmpresa).length > 0 && (
-                                      <span className="empresa-desglose">
-                                        {Object.entries(f.porEmpresa)
-                                          .sort(([a], [b]) => (a || "zz").localeCompare(b || "zz"))
-                                          .map(([sigla, m]) => (
-                                            <span key={sigla || "sin"} title={`Físico ${m.fisico} m · Apartado ${m.reservado} m`}
-                                              className={m.libre < 0 ? "empresa-resumen-negativo" : undefined}>
-                                              {sigla || "Sin emp."}: {m.libre} m
-                                            </span>
-                                          ))}
-                                      </span>
-                                    )}
                                   </td>
+                                  {!c.empresaResumen && ["AR", "ABG"].map((sigla) => <CeldaEmpresa key={sigla} metros={f.porEmpresa[sigla]} />)}
                                   <td>
                                     {f.pesoActualTotal} t
                                     {f.rollosSinPesoActual > 0 && (
@@ -414,7 +421,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                 </tr>
                                 {expandido && (
                                   <tr>
-                                    <td colSpan={bodegas.length + 7} style={{ padding: 0 }}>
+                                    <td colSpan={bodegas.length + (c.empresaResumen ? 7 : 9)} style={{ padding: 0 }}>
                                       {c.cargandoRollosExpandido ? (
                                         <p className="inventario-cargando">Cargando rollos...</p>
                                       ) : (
@@ -469,6 +476,9 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                               <td key={b.id}><strong>{c.comparativo.pesoActualTotalPorBodega[b.id] ?? 0} t</strong></td>
                             ))}
                             <td></td>
+                            {!c.empresaResumen && ["AR", "ABG"].map((sigla) => (
+                              <td key={sigla}><strong>{(c.comparativo.totalesPorEmpresa[sigla]?.libre ?? 0).toLocaleString("es-CO", { maximumFractionDigits: 2 })} m</strong></td>
+                            ))}
                             <td><strong>{c.comparativo.pesoActualTotalGeneral} t</strong></td>
                           </tr>
                         </tfoot>
@@ -481,7 +491,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                     clasificación hay ahí. Si hay cotizaciones apartadas, se ve cuánto está apartado y
                     cuánto queda <strong>libre para vender</strong>.{c.empresaResumen
                       ? " Con el filtro de empresa se descuenta solo lo apartado de esa empresa."
-                      : " Debajo del total sale lo libre de cada empresa (AR = Arquitejas, ABG = Asia Business)."} El peso es el peso ACTUAL de esos rollos (según lo que les
+                      : " Las columnas Arquitejas y Asia muestran lo libre de cada empresa en cada código (lo físico de sus rollos menos lo apartado de sus cotizaciones)."} El peso es el peso ACTUAL de esos rollos (según lo que les
                     queda hoy, no el peso con el que llegaron) — dale clic a ▼ para ver cada rollo
                     individual con su propio peso, bodega y referencia.
                   </p>
