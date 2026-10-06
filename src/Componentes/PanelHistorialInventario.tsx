@@ -1,6 +1,9 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
+import { useState } from "react";
 import Paginacion from "./Paginacion";
 import { formatearFechaColombia } from "../Utils/fechas";
+
+const unicos = (valores) => [...new Set(valores.filter(Boolean))].join(", ") || "—";
 
 // Pestaña "Historial" de Inventario: filtros + tabla de movimientos +
 // paginación. Extraído de InventarioPage.tsx sin cambiar props ni
@@ -13,11 +16,65 @@ function PanelHistorialInventario({
   cargarHistorial,
   errorHistorial,
   cargandoHistorial,
-  historial,
+  filasHistorial,
   bodegas,
   paginacionHistorial,
   setPaginaHistorial,
 }) {
+  // Filas de cotización (varios movimientos en una) que el usuario desplegó.
+  const [abiertas, setAbiertas] = useState(() => new Set());
+  const alternar = (clave) => setAbiertas((actual) => {
+    const nuevas = new Set(actual);
+    if (nuevas.has(clave)) nuevas.delete(clave); else nuevas.add(clave);
+    return nuevas;
+  });
+  const nombreBodega = (id) => bodegas.find((b) => b.id === id)?.nombre || "—";
+
+  const filaMovimiento = (m, { clave = m.id, esDetalle = false } = {}) => (
+    <tr key={clave} style={esDetalle ? { opacity: 0.8, fontSize: "0.92em" } : undefined}>
+      <td style={esDetalle ? { paddingLeft: "1.6rem" } : undefined}>{esDetalle ? "└" : m.cotizacion || "—"}</td>
+      <td>{formatearFechaColombia(m.fecha)}</td>
+      <td style={{ textTransform: "capitalize" }}>{m.tipo}</td>
+      <td style={{ textTransform: "capitalize" }}>
+        {(m.motivo || "—").replace("_", " ")}
+      </td>
+      <td>
+        {m.productoCodigo} — {m.productoDescripcion}
+      </td>
+      <td>{m.identificadorRollo || "—"}</td>
+      <td>{nombreBodega(m.bodegaOrigenId)}</td>
+      <td>{nombreBodega(m.bodegaDestinoId)}</td>
+      <td>{m.empresaExterna || "—"}</td>
+      <td>{m.cantidad}</td>
+      <td>{m.usuario}</td>
+      <td>{m.observaciones || "—"}</td>
+    </tr>
+  );
+
+  const filaCotizacion = ({ clave, movimiento: m, detalle, total }) => {
+    const abierta = abiertas.has(clave);
+    const productos = new Set(detalle.map((d) => `${d.productoCodigo} — ${d.productoDescripcion}`));
+    const nombre = m.motivo === "produccion" ? "producciones" : "movimientos";
+    return [
+      <tr key={clave} onClick={() => alternar(clave)} style={{ cursor: "pointer", fontWeight: 600 }}
+        title={abierta ? "Ocultar el detalle" : "Ver cada movimiento"}>
+        <td style={{ whiteSpace: "nowrap" }}>{abierta ? "▾" : "▸"} {m.cotizacion}</td>
+        <td>{formatearFechaColombia(m.fecha)}</td>
+        <td style={{ textTransform: "capitalize" }}>{m.tipo}</td>
+        <td style={{ textTransform: "capitalize" }}>{(m.motivo || "—").replace("_", " ")}</td>
+        <td>{productos.size === 1 ? [...productos][0] : `${productos.size} productos`}</td>
+        <td>{unicos(detalle.map((d) => d.identificadorRollo))}</td>
+        <td>{unicos(detalle.map((d) => bodegas.find((b) => b.id === d.bodegaOrigenId)?.nombre))}</td>
+        <td>{unicos(detalle.map((d) => bodegas.find((b) => b.id === d.bodegaDestinoId)?.nombre))}</td>
+        <td>{unicos(detalle.map((d) => d.empresaExterna))}</td>
+        <td>{total}</td>
+        <td>{unicos(detalle.map((d) => d.usuario))}</td>
+        <td>{detalle.length} {nombre}</td>
+      </tr>,
+      ...(abierta ? detalle.map((d) => filaMovimiento(d, { clave: `${clave}-${d.id}`, esDetalle: true })) : []),
+    ];
+  };
+
   return (
     <div>
       <h1 className="inventario-titulo" style={{ marginBottom: "1.5rem" }}>
@@ -107,33 +164,14 @@ function PanelHistorialInventario({
               </tr>
             </thead>
             <tbody>
-              {historial.length === 0 ? (
+              {filasHistorial.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="inventario-vacio">
                     No hay movimientos que coincidan con los filtros.
                   </td>
                 </tr>
               ) : (
-                historial.map((m) => (
-                  <tr key={m.id}>
-                    <td>{m.cotizacion || "—"}</td>
-                    <td>{formatearFechaColombia(m.fecha)}</td>
-                    <td style={{ textTransform: "capitalize" }}>{m.tipo}</td>
-                    <td style={{ textTransform: "capitalize" }}>
-                      {(m.motivo || "—").replace("_", " ")}
-                    </td>
-                    <td>
-                      {m.productoCodigo} — {m.productoDescripcion}
-                    </td>
-                    <td>{m.identificadorRollo || "—"}</td>
-                    <td>{bodegas.find((b) => b.id === m.bodegaOrigenId)?.nombre || "—"}</td>
-                    <td>{bodegas.find((b) => b.id === m.bodegaDestinoId)?.nombre || "—"}</td>
-                    <td>{m.empresaExterna || "—"}</td>
-                    <td>{m.cantidad}</td>
-                    <td>{m.usuario}</td>
-                    <td>{m.observaciones || "—"}</td>
-                  </tr>
-                ))
+                filasHistorial.map((fila) => (fila.detalle ? filaCotizacion(fila) : filaMovimiento(fila.movimiento)))
               )}
             </tbody>
           </table>

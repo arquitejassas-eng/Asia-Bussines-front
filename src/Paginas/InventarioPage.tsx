@@ -49,7 +49,7 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
     MOTIVOS_SALIDA,
 
     // Historial
-    historial,
+    filasHistorial,
     cargandoHistorial,
     errorHistorial,
     filtros,
@@ -193,7 +193,7 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
           cargarHistorial={cargarHistorial}
           errorHistorial={errorHistorial}
           cargandoHistorial={cargandoHistorial}
-          historial={historial}
+          filasHistorial={filasHistorial}
           bodegas={bodegas}
           paginacionHistorial={paginacionHistorial}
           setPaginaHistorial={setPaginaHistorial}
