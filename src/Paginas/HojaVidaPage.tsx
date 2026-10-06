@@ -14,6 +14,29 @@ type ProduccionRegistro = {
   codigoClasificacion: string; totalMetrosConsumidos: number; saldoCodigo: number; observaciones?: string;
 };
 
+const unicos = (valores: (string | number | undefined)[]) =>
+  [...new Set(valores.filter((v) => v !== undefined && v !== "").map(String))];
+const redondear = (n: number) => Math.round(n * 100) / 100;
+
+// Varias producciones de la misma cotización (y bodega) van en una sola fila
+// con los totales; `producciones` viene ordenada como la lista original, así
+// que la fila queda donde estaba la producción más reciente.
+type FilaHojaVida = { clave: string; producciones: ProduccionRegistro[] };
+function agruparPorCotizacion(lista: ProduccionRegistro[]): FilaHojaVida[] {
+  const grupos = new Map<string, FilaHojaVida>();
+  const filas: FilaHojaVida[] = [];
+  for (const prod of lista) {
+    if (!prod.cotizacion) { filas.push({ clave: `p-${prod.id}`, producciones: [prod] }); continue; }
+    const clave = `c-${prod.bodegaId}-${prod.cotizacion}`;
+    const grupo = grupos.get(clave);
+    if (grupo) { grupo.producciones.push(prod); continue; }
+    const nuevo = { clave, producciones: [prod] };
+    grupos.set(clave, nuevo);
+    filas.push(nuevo);
+  }
+  return filas;
+}
+
 export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal;
 }) {
@@ -30,6 +53,115 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   const notificaciones = contarNotificaciones(almacen, sesion);
 
   const totalProducciones = misProducciones.length;
+  const filas = agruparPorCotizacion(misProducciones);
+
+  // Cotizaciones que el usuario desplegó para ver cada producción.
+  const [abiertas, setAbiertas] = useState<Set<string>>(() => new Set());
+  const alternar = (clave: string) => setAbiertas((actual) => {
+    const nuevas = new Set(actual);
+    if (nuevas.has(clave)) nuevas.delete(clave); else nuevas.add(clave);
+    return nuevas;
+  });
+
+  const estiloDetalle = { opacity: 0.85, fontSize: "0.92em" };
+  const filasDeProduccion = (prod: ProduccionRegistro, esDetalle = false) => [
+    <tr key={prod.id} style={esDetalle ? estiloDetalle : undefined}>
+      {esAdminInventario && <td>{nombreBodega(prod.bodegaId)}</td>}
+      <td style={esDetalle ? { paddingLeft: "1.6rem" } : undefined}>
+        {esDetalle && "└ "}<span className="hv-codigo">{prod.codigoUnico}</span>
+      </td>
+
+      <td>{prod.cotizacion || "—"}</td>
+      <td>{prod.clienteApartado || "—"}</td>
+
+      <td className="hv-fecha">
+        {formatearFechaColombia(prod.fecha, false)}
+      </td>
+
+      <td>{prod.responsable}</td>
+      <td>{prod.productoFabricado}</td>
+      <td>{prod.modelo}</td>
+      <td>{prod.medidaProducto}</td>
+      <td className="num">{prod.cantidadProductos}</td>
+
+      <td>
+        <span className="hv-codigo-rollo">
+          {prod.rollosUtilizados.map((r) => r.identificadorRollo).join(", ")}
+        </span>
+      </td>
+
+      <td className="num hv-metros">{prod.totalMetrosConsumidos} m</td>
+      <td className="num hv-saldo">{prod.saldoCodigo} m</td>
+
+      <td className="hv-observaciones">{prod.observaciones || "—"}</td>
+    </tr>,
+    ...filasStockAdicional(prod).map((fila) => (
+      <tr key={fila.key} className="hv-fila-stock" style={esDetalle ? estiloDetalle : undefined}>
+        {esAdminInventario && <td>{nombreBodega(prod.bodegaId)}</td>}
+        <td style={esDetalle ? { paddingLeft: "1.6rem" } : undefined}>
+          <span className="hv-codigo">{fila.codigoProduccion}</span>
+        </td>
+
+        <td className="hv-cotizacion-stock">{fila.cotizacion}</td>
+        <td>{fila.cliente}</td>
+
+        <td className="hv-fecha">
+          {formatearFechaColombia(fila.fecha, false)}
+        </td>
+
+        <td>{fila.responsable}</td>
+        <td>{fila.productoFabricado}</td>
+        <td>{fila.modelo}</td>
+        <td>{fila.medida}</td>
+        <td className="num">{fila.cantidad}</td>
+
+        <td>
+          <span className="hv-codigo-rollo">{fila.referencia}</span>
+        </td>
+
+        <td className="num hv-metros">{fila.metrosConsumidos} m</td>
+        <td className="num hv-saldo">{fila.saldoRestante} m</td>
+
+        <td className="hv-observaciones">{fila.observaciones}</td>
+      </tr>
+    )),
+  ];
+
+  const filaDeCotizacion = ({ clave, producciones }: FilaHojaVida) => {
+    const abierta = abiertas.has(clave);
+    const reciente = producciones[0];
+    const lista = (valores: (string | number | undefined)[], plural: string) => {
+      const distintos = unicos(valores);
+      return distintos.length <= 2 ? distintos.join(", ") || "—" : `${distintos.length} ${plural}`;
+    };
+    // El saldo solo tiene sentido si todas salieron del mismo código: entonces
+    // el de la producción más reciente es lo que queda ahora.
+    const unSoloCodigo = unicos(producciones.map((x) => x.codigoClasificacion)).length === 1;
+    return [
+      <tr key={clave} onClick={() => alternar(clave)} style={{ cursor: "pointer", fontWeight: 600 }}
+        title={abierta ? "Ocultar el detalle" : "Ver cada producción"}>
+        {esAdminInventario && <td>{nombreBodega(reciente.bodegaId)}</td>}
+        <td style={{ whiteSpace: "nowrap" }}>{abierta ? "▾" : "▸"} {producciones.length} producciones</td>
+        <td>{reciente.cotizacion}</td>
+        <td>{reciente.clienteApartado || "—"}</td>
+        <td className="hv-fecha">{formatearFechaColombia(reciente.fecha, false)}</td>
+        <td>{lista(producciones.map((x) => x.responsable), "responsables")}</td>
+        <td>{lista(producciones.map((x) => x.productoFabricado), "productos")}</td>
+        <td>{lista(producciones.map((x) => x.modelo), "modelos")}</td>
+        <td>{lista(producciones.map((x) => x.medidaProducto), "medidas")}</td>
+        <td className="num">{redondear(producciones.reduce((s, x) => s + (Number(x.cantidadProductos) || 0), 0))}</td>
+        <td>
+          <span className="hv-codigo-rollo">
+            {lista(producciones.flatMap((x) => x.rollosUtilizados.map((r) => r.identificadorRollo)), "rollos")}
+          </span>
+        </td>
+        <td className="num hv-metros">{redondear(producciones.reduce((s, x) => s + (Number(x.totalMetrosConsumidos) || 0), 0))} m</td>
+        <td className="num hv-saldo">{unSoloCodigo ? `${reciente.saldoCodigo} m` : "—"}</td>
+        <td className="hv-observaciones">—</td>
+      </tr>,
+      ...(abierta ? producciones.flatMap((prod) => filasDeProduccion(prod, true)) : []),
+    ];
+  };
 
   return (
     <div className="layout-con-sidebar">
@@ -96,68 +228,9 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
                   </thead>
 
                   <tbody>
-                    {misProducciones.flatMap((prod) => [
-                      <tr key={prod.id}>
-                        {esAdminInventario && <td>{nombreBodega(prod.bodegaId)}</td>}
-                        <td>
-                          <span className="hv-codigo">{prod.codigoUnico}</span>
-                        </td>
-
-                        <td>{prod.cotizacion || "—"}</td>
-                        <td>{prod.clienteApartado || "—"}</td>
-
-                        <td className="hv-fecha">
-                          {formatearFechaColombia(prod.fecha, false)}
-                        </td>
-
-                        <td>{prod.responsable}</td>
-                        <td>{prod.productoFabricado}</td>
-                        <td>{prod.modelo}</td>
-                        <td>{prod.medidaProducto}</td>
-                        <td className="num">{prod.cantidadProductos}</td>
-
-                        <td>
-                          <span className="hv-codigo-rollo">
-                            {prod.rollosUtilizados.map((r) => r.identificadorRollo).join(", ")}
-                          </span>
-                        </td>
-
-                        <td className="num hv-metros">{prod.totalMetrosConsumidos} m</td>
-                        <td className="num hv-saldo">{prod.saldoCodigo} m</td>
-
-                        <td className="hv-observaciones">{prod.observaciones || "—"}</td>
-                      </tr>,
-                      ...filasStockAdicional(prod).map((fila) => (
-                        <tr key={fila.key} className="hv-fila-stock">
-                          {esAdminInventario && <td>{nombreBodega(prod.bodegaId)}</td>}
-                          <td>
-                            <span className="hv-codigo">{fila.codigoProduccion}</span>
-                          </td>
-
-                          <td className="hv-cotizacion-stock">{fila.cotizacion}</td>
-                          <td>{fila.cliente}</td>
-
-                          <td className="hv-fecha">
-                            {formatearFechaColombia(fila.fecha, false)}
-                          </td>
-
-                          <td>{fila.responsable}</td>
-                          <td>{fila.productoFabricado}</td>
-                          <td>{fila.modelo}</td>
-                          <td>{fila.medida}</td>
-                          <td className="num">{fila.cantidad}</td>
-
-                          <td>
-                            <span className="hv-codigo-rollo">{fila.referencia}</span>
-                          </td>
-
-                          <td className="num hv-metros">{fila.metrosConsumidos} m</td>
-                          <td className="num hv-saldo">{fila.saldoRestante} m</td>
-
-                          <td className="hv-observaciones">{fila.observaciones}</td>
-                        </tr>
-                      )),
-                    ])}
+                    {filas.flatMap((fila) => (fila.producciones.length > 1
+                      ? filaDeCotizacion(fila)
+                      : filasDeProduccion(fila.producciones[0])))}
                   </tbody>
                 </table>
               </div>
