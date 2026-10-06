@@ -16,6 +16,7 @@ function PanelDatosProductoProduccion({
   setMedidaProducto,
   cantidadProductos,
   setCantidadProductos,
+  ayudaCantidad,
   metrosPorUnidad,
   setMetrosPorUnidad,
   responsable,
@@ -114,11 +115,13 @@ function PanelDatosProductoProduccion({
             id="prod-cantidad"
             type="number"
             min="1"
+            step="1"
             className="produccion-input"
             placeholder="Ej. 50"
             value={cantidadProductos}
             onChange={(e) => setCantidadProductos(e.target.value)}
           />
+          {ayudaCantidad && <p className="produccion-texto-ayuda">{ayudaCantidad}</p>}
         </div>
         {SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && (
           <div>

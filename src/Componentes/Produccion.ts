@@ -234,8 +234,14 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     gestionandoStockRef.current = false; // arranca en blanco para esta nueva solicitud.
     setApartadoItemId(solicitud.itemId);
     setProductoFabricado(solicitud.descripcion || solicitud.codigoInterno);
-    setMedidaProducto(String(solicitud.medida));
-    setCantidadProductos(String(solicitud.cantidad));
+    // Las cotizaciones importadas guardan la línea en METROS (cantidad =
+    // metros de "SALE", medida = 1 -- ver importar_cotizaciones.py): copiar
+    // esa cantidad la volvía "83.7 tejas" y el backend la rechazaba. Solo se
+    // precarga cuando la solicitud trae unidades enteras con su medida real;
+    // si no, Planta escribe medida y unidades (ver ayudaCantidad).
+    const enUnidades = solicitud.medida != null && solicitud.medida !== 1 && Number.isInteger(solicitud.cantidad);
+    setMedidaProducto(enUnidades ? String(solicitud.medida) : "");
+    setCantidadProductos(enUnidades ? String(solicitud.cantidad) : "");
     setCodigoBusqueda(solicitud.codigoInterno); // llena la tabla de "rollos disponibles" con este código.
     setEmpresaFiltro(solicitud.empresa || ""); // y solo los rollos de la empresa de la cotización.
 
@@ -352,6 +358,22 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     return solicitud ? solicitud.metrosPendientes : 0;
   }, [apartadoItemId, solicitudesPendientes]);
 
+  // Teja ligada a una solicitud: la solicitud se mide en metros y la cantidad
+  // del formulario en unidades -- muestra la cuenta para que nadie escriba
+  // los metros en "Cantidad de productos obtenidos".
+  const ayudaCantidad = useMemo(() => {
+    if (!apartadoItemId || SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] || !(pendienteSolicitudElegida > 0)) return "";
+    const formato = (n) => n.toLocaleString("es-CO", { maximumFractionDigits: 2 });
+    const pide = `Esta solicitud pide ${formato(pendienteSolicitudElegida)} m`;
+    const medida = parseFloat(String(medidaProducto).replace(",", "."));
+    if (!(medida > 0)) return `${pide}. Escribe la medida de cada unidad y aquí verás cuántas salen.`;
+    const unidades = pendienteSolicitudElegida / medida;
+    if (Math.abs(unidades - Math.round(unidades)) < 0.01) {
+      return `${pide}: con unidades de ${formato(medida)} m son ${Math.round(unidades)}.`;
+    }
+    return `${pide}: con unidades de ${formato(medida)} m son ${formato(unidades)} (no da exacto — escribe las unidades que realmente salieron).`;
+  }, [apartadoItemId, tipoProducto, pendienteSolicitudElegida, medidaProducto]);
+
   useEffect(() => {
     // Caballetes/Flanches: el rollo lo elige Planta a mano (ver
     // alternarSeleccionRollo) -- el total EXACTO que exige el corte físico lo
@@ -432,6 +454,9 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     if (!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && !medidaProducto.trim()) return "Indica la medida del producto fabricado.";
     if (!cantidadProductos || Number(cantidadProductos) <= 0) {
       return "Indica cuántas unidades de producto se obtuvieron.";
+    }
+    if (!Number.isInteger(Number(cantidadProductos))) {
+      return "La cantidad son unidades enteras (ej. 18), no metros. La medida de cada unidad va en su propia casilla.";
     }
     if (!responsable.trim()) return "Indica quién es el responsable de esta producción.";
 
@@ -651,6 +676,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     setMedidaProducto,
     cantidadProductos,
     setCantidadProductos,
+    ayudaCantidad,
     responsable,
     setResponsable,
 
