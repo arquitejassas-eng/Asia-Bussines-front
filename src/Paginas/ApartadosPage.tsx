@@ -13,12 +13,6 @@ import { calcularSolicitudesPendientes } from "../Utils/produccion";
 import "../Style/Inventario.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
-// Flag temporal: la entrega física a cliente es responsabilidad del módulo
-// de Despachos, que todavía no existe -- mismo flag y motivo que
-// backend/app/services/apartados.py::DESPACHOS_INTEGRADO. Cuando Despachos
-// se integre, cambiar a true (o eliminar la condición) en ambos lados.
-const DESPACHOS_INTEGRADO = false;
-
 // Mismos estados que backend/app/services/apartados.py::ESTADOS_CANCELABLES:
 // se puede cancelar mientras la producción no haya terminado.
 const ESTADOS_CANCELABLES = ["apartado", "enviado_a_produccion", "en_produccion"];
@@ -631,8 +625,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                   ejecutar: () => a.marcarApartadoProduccionTerminada(ap.id),
                                 })}>Marcar producción terminada</button>
                               )}
-                              {DESPACHOS_INTEGRADO && ap.estado === "produccion_terminada" && (
-                                <button onClick={() => a.marcarApartadoEntregado(ap.id)}>Marcar entregado</button>
+                              {a.puedeMarcarEntregado && ap.estado === "produccion_terminada" && (
+                                <button onClick={() => setConfirmacion({
+                                  titulo: `¿Dar salida a la cotización ${ap.numeroCotizacion}?`,
+                                  mensaje: `Confirma que el pedido ya salió de la bodega y se entregó a ${ap.cliente || "el cliente"}. Queda como Entregado y no se puede deshacer.`,
+                                  textoConfirmar: "Sí, dar salida",
+                                  ejecutar: () => a.marcarApartadoEntregado(ap.id),
+                                })}>Salida</button>
                               )}
                             </td>
                           </tr>

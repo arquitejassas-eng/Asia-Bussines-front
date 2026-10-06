@@ -45,13 +45,6 @@ ESTADOS_RESERVA_ACTIVA = (
     EstadoApartado.EN_PRODUCCION,
 )
 
-# Flag temporal: la entrega física a cliente es responsabilidad del módulo
-# de Despachos, que todavía no existe -- mismo flag y motivo que
-# src/Paginas/ApartadosPage.tsx::DESPACHOS_INTEGRADO. Cuando Despachos se
-# integre, cambiar a True (o eliminar el chequeo de marcar_entregado) en
-# ambos lados.
-DESPACHOS_INTEGRADO = False
-
 
 def metros_reservados_codigo(db: Session, *, bodega_id: int, codigo_interno: str) -> float:
     total = (
@@ -738,11 +731,10 @@ def confirmar_separacion_stock(db: Session, apartado_id: int, usuario: Usuario) 
 
 
 def marcar_entregado(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
-    if not DESPACHOS_INTEGRADO:
-        raise HTTPException(
-            status_code=403,
-            detail="La entrega de material aún no está habilitada -- pendiente de integrar el módulo de Despachos.",
-        )
+    """La encargada de la bodega da la "Salida": el pedido ya salió de la
+    bodega y se entregó al cliente. No mueve inventario -- los metros del
+    rollo se descuentan al registrar cada producción y el stock al marcar la
+    producción terminada; esto solo cierra la cotización."""
     apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
     if apartado.estado != EstadoApartado.PRODUCCION_TERMINADA:
         raise HTTPException(status_code=400, detail="Este apartado todavía no tiene la producción terminada.")

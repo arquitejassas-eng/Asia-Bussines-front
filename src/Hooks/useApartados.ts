@@ -62,6 +62,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   const puedeCancelarApartados = sesion?.rol === "admin_inventario";
   const puedeEnviarAProduccion = sesion?.rol === "administrativo";
   const puedeMarcarTerminado = sesion?.rol === "jefe_planta";
+  // "Salida": la encargada de la bodega entrega al cliente lo ya producido.
+  const puedeMarcarEntregado = sesion?.rol === "administrativo";
 
   const [apartados, setApartados] = useState<Apartado[]>([]);
   const [cargandoApartados, setCargandoApartados] = useState(true);
@@ -396,12 +398,12 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       await api.patch(`/apartados/${id}/marcar-entregado`);
       await cargarApartados();
     } catch (err) {
-      setErrorAccionApartado(err instanceof ErrorApi ? err.message : "No se pudo marcar como entregado.");
+      setErrorAccionApartado(err instanceof ErrorApi ? err.message : "No se pudo registrar la salida.");
     }
   }
 
   return {
-    puedeCrearApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado,
+    puedeCrearApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
     apartados, cargandoApartados, errorApartados, cargarApartados,
     filtroEstado, setFiltroEstado,
 
