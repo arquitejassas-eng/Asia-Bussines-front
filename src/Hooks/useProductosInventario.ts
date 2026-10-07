@@ -284,9 +284,9 @@ export function useProductosInventario() {
         clave = `${familia}|${producto.descripcion}|${producto.calibre}|${longitud}`;
         tipoGrupo = "conversion";
       } else if (esTeja) {
-        referenciaGrupo = producto.referencia || "";
+        referenciaGrupo = (producto.referencia || "").trim().toUpperCase();
         longitud = null;
-        clave = `${familia}|${producto.referencia}`;
+        clave = `${familia}|${referenciaGrupo}`;
         tipoGrupo = "teja";
       } else {
         longitud = null;

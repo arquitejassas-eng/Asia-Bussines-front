@@ -252,6 +252,7 @@ function PanelProductosInventario({
                   <div className="inventario-grupo-info">
                     <span className="inventario-grupo-familia">
                       {grupo.familia}
+                      {esTeja && (grupo.referenciaGrupo ? ` ${grupo.referenciaGrupo}` : " (sin modelo)")}
                       {esConversion && (grupo.descripcion || grupo.calibre) && (
                         <span style={{ fontWeight: 400 }}>
                           {" — "}
@@ -260,7 +261,7 @@ function PanelProductosInventario({
                       )}
                     </span>
                   </div>
-                  {(esReferencia || (esTeja && grupo.referenciaGrupo)) && (
+                  {esReferencia && (
                     <div className="inventario-grupo-cantidad">
                       <span className="numero">{grupo.referenciaGrupo}</span>
                       <span>{esTeja ? "modelo" : "referencia"}</span>
