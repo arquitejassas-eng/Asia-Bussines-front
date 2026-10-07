@@ -298,7 +298,7 @@ ROLES_MERMA = (RolUsuario.JEFE_PLANTA, RolUsuario.ADMIN_INVENTARIO)
 
 
 def _con_merma(db: Session, rollo: Rollo) -> Rollo:
-    rollo.merma_metros = merma_rollo.merma_por_rollo(db, [rollo.id]).get(rollo.id, 0.0)
+    merma_rollo.asignar_merma_y_sobrante(db, [rollo])
     return rollo
 
 

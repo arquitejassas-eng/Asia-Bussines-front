@@ -88,9 +88,8 @@ export default function PanelMermaRollo({ bodegas = [], alCambiar }: { bodegas?:
             {bodega && ` · ${bodega}`} · {ESTADOS[rollo.estado] || rollo.estado}
             <br />
             Le quedan <strong>{rollo.metrosDisponibles} m</strong> en el sistema · consumidos {rollo.metrosConsumidos} m
-            {rollo.mermaMetros != null && rollo.mermaMetros !== 0 && (
-              <> · merma registrada <strong>{rollo.mermaMetros} m</strong>{rollo.mermaMetros < 0 && " (sobrante)"}</>
-            )}
+            <br />
+            Merma <strong>{rollo.mermaMetros || 0} m</strong> · metros de más <strong>{rollo.sobranteMetros || 0} m</strong>
           </p>
           <input
             className="produccion-input"
@@ -108,7 +107,7 @@ export default function PanelMermaRollo({ bodegas = [], alCambiar }: { bodegas?:
                 titulo: `¿Terminar el rollo ${rollo.identificadorRollo}?`,
                 mensaje: `Los ${rollo.metrosDisponibles} m que le quedan en el sistema se registran como MERMA y el rollo queda agotado. No se puede deshacer.`,
                 textoConfirmar: "Sí, terminar rollo",
-                ejecutar: () => ejecutar("terminar", { observaciones }, (r) => `Rollo ${r.identificadorRollo} terminado: ${r.mermaMetros} m de merma.`),
+                ejecutar: () => ejecutar("terminar", { observaciones }, (r) => `Rollo ${r.identificadorRollo} terminado: ${rollo.metrosDisponibles} m de merma.`),
               })}
             >
               Terminar rollo{rollo.metrosDisponibles > 0 ? ` (merma ${rollo.metrosDisponibles} m)` : ""}

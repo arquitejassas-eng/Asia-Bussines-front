@@ -61,6 +61,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
   }
 
   function exportarResumenRollos() {
+    // Mismas columnas por empresa en todas las filas (AR, ABG y, si hay, sin empresa).
+    const siglasEmpresa = [...new Set([...Object.keys(EMPRESAS), ...c.comparativo.rollos.flatMap((f) => Object.keys(f.porEmpresa))])];
     const filas = c.comparativo.rollos.map((f) => {
       const fila: Record<string, string | number> = {
         Código: f.codigo, Descripción: f.descripcion, Color: f.colorMaterial || "Sin color", Calibre: f.calibre,
@@ -74,11 +76,12 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
       fila["Total empresa (m)"] = f.total;
       fila["Apartado (m)"] = f.reservadoTotal;
       fila["Libre para vender (m)"] = f.libreTotal;
-      for (const [sigla, m] of Object.entries(f.porEmpresa)) {
+      for (const sigla of siglasEmpresa) {
         const nombre = sigla ? EMPRESAS[sigla] || sigla : "Sin empresa";
-        fila[`${nombre} físico (m)`] = m.fisico;
-        fila[`${nombre} apartado (m)`] = m.reservado;
-        fila[`${nombre} libre (m)`] = m.libre;
+        const m = f.porEmpresa[sigla];
+        fila[`${nombre} físico (m)`] = m?.fisico ?? 0;
+        fila[`${nombre} apartado (m)`] = m?.reservado ?? 0;
+        fila[`${nombre} libre (m)`] = m?.libre ?? 0;
       }
       fila["Total rollos"] = f.cantidadTotal;
       fila["Peso actual (t)"] = f.pesoActualTotal;
@@ -280,7 +283,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
             <>
               {/* ================== RESUMEN: TOTAL POR CÓDIGO EN TODA LA EMPRESA ================== */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Resumen — total por código en toda la empresa</h2>
+                <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Resumen — total por código en toda la empresa — Rollos</h2>
                 {c.comparativo.rollos.length > 0 && (
                   <button className="inventario-boton-cancelar" onClick={exportarResumenRollos}>
                     📥 Exportar a Excel
@@ -419,6 +422,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                               <th>Metros disponibles</th>
                                               <th>Metros consumidos</th>
                                               <th>Merma</th>
+                                              <th>Metros de más</th>
                                               <th>Ingreso</th>
                                               <th>Estado</th>
                                             </tr>
@@ -433,7 +437,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                                 <td>{rollo.pesoActualToneladas ?? "—"}</td>
                                                 <td>{rollo.metrosDisponibles}</td>
                                                 <td>{rollo.metrosConsumidos}</td>
-                                                <td>{rollo.mermaMetros ? `${rollo.mermaMetros} m${rollo.mermaMetros < 0 ? " (sobrante)" : ""}` : "—"}</td>
+                                                <td>{rollo.mermaMetros ? `${rollo.mermaMetros} m` : "—"}</td>
+                                                <td>{rollo.sobranteMetros ? `${rollo.sobranteMetros} m` : "—"}</td>
                                                 <td>{formatearFechaColombia(rollo.fechaIngreso, false)}</td>
                                                 <td>
                                                   <span className={`rollos-estado-badge estado-${rollo.estado}`}>
@@ -492,7 +497,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   )}
 
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Resumen — productos por código en toda la empresa</h2>
+                    <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Resumen — productos por código en toda la empresa — Unidades</h2>
                     {c.comparativo.productos.length > 0 && (
                       <button className="inventario-boton-cancelar" onClick={exportarResumenProductos}>
                         📥 Exportar a Excel

@@ -10,7 +10,8 @@ Planta es quien decide que un rollo se acabó:
   poder registrar la producción completa. Cuenta como merma negativa.
 
 No hay columna nueva: la merma de cada rollo es la suma de sus movimientos
-con motivo "merma" menos los de motivo "sobrante" (ver merma_por_rollo).
+con motivo "merma" y los metros de más, la de los de motivo "sobrante". Se
+muestran por separado (ver merma_y_sobrante_por_rollo).
 """
 
 from datetime import datetime, timezone
@@ -29,7 +30,9 @@ MOTIVO_SOBRANTE = "sobrante"
 
 
 def _puede_ver(usuario: Usuario, rollo: Rollo) -> bool:
-    return usuario.rol == RolUsuario.ADMIN_INVENTARIO or rollo.bodega_id == usuario.bodega_id
+    if usuario.rol == RolUsuario.ADMIN_INVENTARIO:
+        return True
+    return usuario.bodega_id is not None and rollo.bodega_id == usuario.bodega_id
 
 
 def rollo_por_referencia(db: Session, referencia: str, usuario: Usuario) -> Rollo:
@@ -96,18 +99,34 @@ def registrar_sobrante(db: Session, rollo_id: int, metros: float, observaciones:
     return rollo
 
 
-def merma_por_rollo(db: Session, rollo_ids: list[int]) -> dict[int, float]:
-    """Merma neta de cada rollo: merma registrada - sobrantes (puede ser negativa)."""
+def merma_y_sobrante_por_rollo(db: Session, rollo_ids: list[int]) -> dict[int, tuple[float, float]]:
+    """(merma, metros de más) de cada rollo, por separado."""
     if not rollo_ids:
         return {}
     filas = (
-        db.query(Movimiento.rollo_id, func.sum(case(
-            (Movimiento.motivo == MOTIVO_MERMA, Movimiento.cantidad),
-            (Movimiento.motivo == MOTIVO_SOBRANTE, -Movimiento.cantidad),
-            else_=0,
-        )))
+        db.query(
+            Movimiento.rollo_id,
+            func.sum(case((Movimiento.motivo == MOTIVO_MERMA, Movimiento.cantidad), else_=0)),
+            func.sum(case((Movimiento.motivo == MOTIVO_SOBRANTE, Movimiento.cantidad), else_=0)),
+        )
         .filter(Movimiento.rollo_id.in_(rollo_ids), Movimiento.motivo.in_((MOTIVO_MERMA, MOTIVO_SOBRANTE)))
         .group_by(Movimiento.rollo_id)
         .all()
     )
-    return {rollo_id: round(float(total or 0), 2) for rollo_id, total in filas}
+    return {rollo_id: (round(float(merma or 0), 2), round(float(sobrante or 0), 2)) for rollo_id, merma, sobrante in filas}
+
+
+def rollos_con_merma_o_sobrante(db: Session):
+    """Subconsulta: ids de los rollos con merma o metros de más registrados."""
+    return (
+        db.query(Movimiento.rollo_id)
+        .filter(Movimiento.rollo_id.isnot(None), Movimiento.motivo.in_((MOTIVO_MERMA, MOTIVO_SOBRANTE)))
+        .distinct()
+    )
+
+
+def asignar_merma_y_sobrante(db: Session, rollos: list[Rollo]) -> None:
+    """Llena merma_metros y sobrante_metros (atributos de respuesta) de cada rollo."""
+    datos = merma_y_sobrante_por_rollo(db, [r.id for r in rollos])
+    for rollo in rollos:
+        rollo.merma_metros, rollo.sobrante_metros = datos.get(rollo.id, (0.0, 0.0))
