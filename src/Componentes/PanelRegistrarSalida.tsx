@@ -12,9 +12,12 @@ type RolloUsado = { itemId: number; referencia: string; metros: string };
  * física: por cada línea de rollo, la referencia del rollo usado y los metros
  * (se puede usar más de un rollo por línea); las líneas de producto se
  * descuentan del stock. Todo se guarda junto o nada. */
-export default function PanelRegistrarSalida({ apartado, alTerminar, alCerrar }: {
+export default function PanelRegistrarSalida({ apartado: apartadoActual, alTerminar, alCerrar }: {
   apartado: Apartado; alTerminar: () => void; alCerrar: () => void;
 }) {
+  // La cotización tal como estaba al abrir el panel (la lista de Apartados se
+  // refresca sola cada pocos segundos); el backend valida contra lo actual.
+  const [apartado] = useState(apartadoActual);
   const lineasRollo = apartado.items.filter((it) => it.modalidad === "por_rollo" && (it.metrosPendientes ?? 0) > 0);
   const lineasStock = apartado.items.filter((it) => it.modalidad === "por_stock" && !it.stockDescontado);
   const [rollos, setRollos] = useState<RolloUsado[]>(
@@ -69,7 +72,8 @@ export default function PanelRegistrarSalida({ apartado, alTerminar, alCerrar }:
           <thead><tr><th>Línea</th><th>Pendiente</th><th>Referencia del rollo usado</th><th>Metros</th><th></th></tr></thead>
           <tbody>
             {rollos.map((r, indice) => {
-              const item = lineasRollo.find((it) => it.id === r.itemId)!;
+              const item = lineasRollo.find((it) => it.id === r.itemId);
+              if (!item) return null;
               const primera = rollos.findIndex((x) => x.itemId === r.itemId) === indice;
               return (
                 <tr key={indice}>

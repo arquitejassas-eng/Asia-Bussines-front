@@ -23,6 +23,7 @@ endpoint aparte), el stock de un ítem POR_STOCK se descuenta acá mismo, en
 `marcar_entregado` (que ya no vuelve a tocarlo).
 """
 
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -37,7 +38,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.services.material_en_camino import metros_en_camino_codigo, metros_por_repartir_codigo
-from app.schemas.apartados import ApartadoCrear, ApartadoEditar
+from app.schemas.apartados import SepararApartadoRequest, ApartadoCrear, ApartadoEditar
 
 ESTADOS_RESERVA_ACTIVA = (
     EstadoApartado.APARTADO,
@@ -314,6 +315,7 @@ def cantidad_reservada_producto(db: Session, *, bodega_id: int, producto_id: int
             Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
             ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
             ApartadoItem.producto_id == producto_id,
+            ApartadoItem.stock_descontado.is_(False),
         )
         .scalar()
     )
@@ -582,6 +584,134 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
 
 
 ESTADOS_CANCELABLES = (EstadoApartado.APARTADO, EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION)
+
+
+def _linea_completa(item: ApartadoItem) -> bool:
+    if item.modalidad == ModalidadApartado.POR_STOCK:
+        return bool(item.stock_descontado)
+    return (item.metros_requeridos or 0) - (item.metros_consumidos or 0) <= 0.005
+
+
+ESTADOS_SEPARABLES = (*ESTADOS_RESERVA_ACTIVA, EstadoApartado.PRODUCCION_TERMINADA)
+TOLERANCIA_CANTIDAD = 0.0001
+CANTIDAD_AL_INICIO = re.compile(r"^\s*(\d+(?:[.,]\d+)?)(?=\s)")
+
+
+def _cantidad_en_descripcion(descripcion: str, cantidad_actual: float, cantidad_nueva: float) -> str:
+    """ "18 TEJA ARQUI..." -> "9 TEJA ARQUI..." si el número del inicio es la cantidad de la línea."""
+    encontrado = CANTIDAD_AL_INICIO.match(descripcion or "")
+    if not encontrado or abs(float(encontrado.group(1).replace(",", ".")) - cantidad_actual) > TOLERANCIA_CANTIDAD:
+        return descripcion
+    return f"{cantidad_nueva:g}".replace(".", ",") + descripcion[encontrado.end(1):]
+
+
+def _partir_linea(item: ApartadoItem, cantidad: float, nueva_id: int) -> ApartadoItem:
+    """Saca `cantidad` de la línea hacia una línea nueva de la otra cotización,
+    repartiendo en proporción los metros pedidos y los ya producidos."""
+    proporcion = cantidad / item.cantidad
+    copia = ApartadoItem(
+        apartado_id=nueva_id, modalidad=item.modalidad, codigo_interno=item.codigo_interno,
+        descripcion=_cantidad_en_descripcion(item.descripcion, item.cantidad, cantidad),
+        cantidad=cantidad, medida=item.medida, producto_id=item.producto_id, stock_descontado=item.stock_descontado,
+    )
+    if item.metros_requeridos is not None:
+        copia.metros_requeridos = round(item.metros_requeridos * proporcion, 2)
+        item.metros_requeridos = round(item.metros_requeridos - copia.metros_requeridos, 2)
+    copia.metros_consumidos = round((item.metros_consumidos or 0) * proporcion, 2)
+    item.metros_consumidos = round((item.metros_consumidos or 0) - copia.metros_consumidos, 2)
+    item.descripcion = _cantidad_en_descripcion(item.descripcion, item.cantidad, item.cantidad - cantidad)
+    item.cantidad = round(item.cantidad - cantidad, 4)
+    return copia
+
+
+def separar_apartado(db: Session, apartado_id: int, datos: SepararApartadoRequest, usuario: Usuario) -> Apartado:
+    """Lo que el cliente no se lleva ahora pasa a una cotización NUEVA con el
+    número que se indique, en la misma bodega y empresa. Se puede pasar una
+    línea completa o solo parte (ej. 9 de las 18 tejas); el material o lo ya
+    producido se reparte en proporción, así que nada se pierde ni se reserva
+    de más.
+
+    - Cotización abierta (sin terminar): solo Admin Inventario, y solo
+      líneas sin salida ni producción. La nueva queda "Apartado".
+    - Producción terminada (ej. el carro solo se lleva una parte): Admin
+      Inventario o la encargada de la bodega; cualquier línea. La nueva queda
+      "Producción terminada", lista para darle Salida en otro viaje.
+
+    La nueva conserva la fecha de la original (mismo turno para cubrir
+    material esperado)."""
+    apartado_de_mi_bodega(db, apartado_id, usuario)
+    original = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
+    if original.estado not in ESTADOS_SEPARABLES:
+        raise HTTPException(status_code=400, detail="Esta cotización ya fue entregada o cancelada: no se puede separar.")
+    producida = original.estado == EstadoApartado.PRODUCCION_TERMINADA
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO and not producida:
+        raise HTTPException(status_code=403, detail="Solo Admin Inventario puede separar una cotización que no ha terminado su producción.")
+
+    por_id = {item.id: item for item in original.items}
+    pedido: dict[int, float] = {}
+    for linea in datos.lineas:
+        if linea.item_id not in por_id:
+            raise HTTPException(status_code=400, detail="Alguna de esas líneas no pertenece a esta cotización.")
+        pedido[linea.item_id] = pedido.get(linea.item_id, 0) + linea.cantidad
+    for item_id, cantidad in pedido.items():
+        item = por_id[item_id]
+        if cantidad > item.cantidad + TOLERANCIA_CANTIDAD:
+            raise HTTPException(status_code=400, detail=f"De \"{item.descripcion}\" solo hay {item.cantidad:g}: no se pueden pasar {cantidad:g}.")
+        if not producida and _tiene_salida(item):
+            raise HTTPException(
+                status_code=400,
+                detail=f"No se pueden pasar líneas que ya tienen salida o producción: {item.descripcion or item.codigo_interno}.",
+            )
+    completas = {item_id for item_id, cantidad in pedido.items() if cantidad >= por_id[item_id].cantidad - TOLERANCIA_CANTIDAD}
+    if len(completas) == len(original.items):
+        raise HTTPException(status_code=400, detail="Deja algo en la cotización original (si no se lleva nada, mejor cámbiale el número).")
+
+    numero = datos.numero_cotizacion.strip()
+    repetida = (
+        db.query(Apartado.id)
+        .filter(Apartado.bodega_id == original.bodega_id, Apartado.numero_cotizacion == numero,
+                Apartado.estado != EstadoApartado.CANCELADO)
+        .first()
+    )
+    if repetida:
+        raise HTTPException(status_code=400, detail=f"Ya existe un apartado con la cotización {numero} en esa bodega.")
+
+    ahora = datetime.now(timezone.utc)
+    hay_stock = any(por_id[item_id].modalidad == ModalidadApartado.POR_STOCK for item_id in pedido)
+    nueva = Apartado(
+        bodega_id=original.bodega_id,
+        numero_cotizacion=numero,
+        empresa=original.empresa,
+        cliente=(datos.cliente if datos.cliente is not None else original.cliente).strip(),
+        creado_por=usuario.correo,
+        fecha_creacion=original.fecha_creacion,
+        estado=EstadoApartado.PRODUCCION_TERMINADA if producida else EstadoApartado.APARTADO,
+        enviado_a_produccion_por=original.enviado_a_produccion_por if producida else "",
+        fecha_enviado_a_produccion=original.fecha_enviado_a_produccion if producida else None,
+        observaciones=f"Separada de la cotización {original.numero_cotizacion} el {ahora:%d/%m/%Y} por {usuario.correo}.",
+        stock_separado_confirmado=original.stock_separado_confirmado and hay_stock,
+        stock_separado_por=original.stock_separado_por if hay_stock else "",
+        stock_separado_en=original.stock_separado_en if hay_stock else None,
+    )
+    db.add(nueva)
+    db.flush()
+    for item_id, cantidad in pedido.items():
+        item = por_id[item_id]
+        if item_id in completas:
+            item.apartado_id = nueva.id
+        else:
+            db.add(_partir_linea(item, cantidad, nueva.id))
+    nota = f"Se pasaron {len(pedido)} línea(s) a la cotización {numero} el {ahora:%d/%m/%Y}."
+    original.observaciones = f"{original.observaciones}\n{nota}".strip() if original.observaciones else nota
+    db.flush()
+    db.expire(original, ["items"])
+
+    # Si lo que queda en la original ya salió completo, la original termina.
+    if original.estado in (EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION) and all(
+        _linea_completa(item) for item in original.items
+    ):
+        original.estado = EstadoApartado.PRODUCCION_TERMINADA
+    return nueva
 
 
 def cancelar_apartado(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:

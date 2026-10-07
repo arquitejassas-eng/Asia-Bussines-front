@@ -86,7 +86,7 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
         rollo.metros_disponibles = 0.0 if restante < TOLERANCIA else restante
         rollo.metros_consumidos = round(rollo.metros_consumidos + metros, 2)
         rollo.recalcular_estado()
-        item.metros_consumidos = round((item.metros_consumidos or 0) + metros, 2)
+        item.metros_consumidos = round((item.metros_consumidos or 0) + min(metros, pendiente), 2)
         db.add(HistorialConsumoRollo(rollo_id=rollo.id, fecha=ahora, cantidad=metros, usuario=usuario.correo,
                                      observaciones=f"{nota} {item.descripcion}".strip()))
         db.add(Movimiento(
@@ -103,7 +103,11 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
             raise HTTPException(status_code=400, detail="Esa línea no es de producto o no pertenece a esta cotización.")
         if item.stock_descontado:
             continue
-        producto = db.query(Producto).filter(Producto.id == item.producto_id).with_for_update().first()
+        producto = (
+            db.query(Producto)
+            .filter(Producto.id == item.producto_id, Producto.bodega_id == apartado.bodega_id)
+            .with_for_update().first()
+        )
         if producto is None:
             raise HTTPException(status_code=404, detail="El producto de esa línea ya no existe.")
         if float(producto.stock) + TOLERANCIA < item.cantidad:

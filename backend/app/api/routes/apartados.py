@@ -10,7 +10,7 @@ from app.schemas.apartados import (
     ApartadoCrear, ApartadoResponse, DisponibilidadCodigoResponse, DisponibilidadProductoResponse, ReservaCodigoResponse,
 )
 from app.core.config import settings
-from app.schemas.apartados import ApartadoEditar, RegistrarSalidaRequest
+from app.schemas.apartados import ApartadoEditar, RegistrarSalidaRequest, SepararApartadoRequest
 from app.schemas.inventario import ProductoResponse
 from app.services import apartados as srv
 from app.services import importar_cotizaciones
@@ -78,7 +78,7 @@ def listar_reservas_por_codigo(
 
 
 @router.post("/importar", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
-async def importar_desde_excel(
+def importar_desde_excel(
     archivo: UploadFile, confirmar: bool = False,
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> dict:
@@ -88,7 +88,7 @@ async def importar_desde_excel(
     nombre = archivo.filename or ""
     if not nombre.lower().endswith((".xlsx", ".xls", ".xlsm")):
         raise HTTPException(status_code=415, detail="Solo se aceptan archivos Excel (.xlsx o .xls).")
-    contenido = await archivo.read(settings.MAX_ARCHIVO_RECEPCION_BYTES + 1)
+    contenido = archivo.file.read(settings.MAX_ARCHIVO_RECEPCION_BYTES + 1)
     if len(contenido) > settings.MAX_ARCHIVO_RECEPCION_BYTES:
         limite_mb = settings.MAX_ARCHIVO_RECEPCION_BYTES // (1024 * 1024)
         raise HTTPException(status_code=413, detail=f"El archivo supera el límite de {limite_mb} MB.")
@@ -175,6 +175,20 @@ def editar_apartado(
     apartado = srv.editar_apartado(db, apartado_id, datos, usuario)
     db.commit(); db.refresh(apartado)
     return _con_faltantes(db, [apartado])[0]
+
+
+@router.post("/{apartado_id}/separar", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
+def separar_apartado(
+    apartado_id: int, datos: SepararApartadoRequest, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Apartado:
+    """El cliente no se lleva todo (o el carro solo se lleva una parte): lo
+    elegido pasa a una cotización nueva (ver srv.separar_apartado). La
+    encargada de la bodega solo puede con producción terminada. Devuelve la
+    cotización nueva."""
+    nueva = srv.separar_apartado(db, apartado_id, datos, usuario)
+    db.commit(); db.refresh(nueva)
+    return _con_faltantes(db, [nueva])[0]
 
 
 @router.patch("/{apartado_id}/cancelar", response_model=ApartadoResponse,

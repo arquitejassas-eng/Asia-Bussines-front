@@ -126,7 +126,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   function abrirEdicionApartado(ap: Apartado) {
     setEditandoId(ap.id);
     setFormulario({
-      bodegaId: String(ap.bodegaId), empresa: ap.empresa, materialEnCamino: false,
+      bodegaId: String(ap.bodegaId), empresa: ap.empresa, materialEnCamino: (ap.faltantes?.length ?? 0) > 0,
       numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, observaciones: ap.observaciones,
       items: ap.items.map((it) => ({
         ...ITEM_VACIO,

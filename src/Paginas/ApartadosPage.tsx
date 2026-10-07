@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
@@ -6,6 +6,7 @@ import { formatearFechaColombia } from "../Utils/fechas";
 import { EMPRESAS } from "../Utils/empresas";
 import PanelImportarCotizaciones from "../Componentes/PanelImportarCotizaciones";
 import PanelRegistrarSalida from "../Componentes/PanelRegistrarSalida";
+import PanelSepararCotizacion from "../Componentes/PanelSepararCotizacion";
 import Paginacion from "../Componentes/Paginacion";
 import { useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
@@ -28,6 +29,11 @@ function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number
   if (it.medida && it.medida !== 1) return `${it.cantidad} × ${it.medida} m = ${it.metrosRequeridos} m`;
   return `${it.metrosRequeridos ?? it.cantidad} m`;
 }
+
+// Pestañas de la lista: las abiertas, y aparte las entregadas y las canceladas.
+type Pestana = "cotizaciones" | "entregadas" | "canceladas";
+const PESTANAS: Record<Pestana, string> = { cotizaciones: "Cotizaciones", entregadas: "Entregadas", canceladas: "Canceladas" };
+const ESTADO_DE_PESTANA: Partial<Record<Pestana, string>> = { entregadas: "entregado", canceladas: "cancelado" };
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
   apartado: "Apartado",
@@ -80,6 +86,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   // Carga desde Excel y salida con hoja de vida (solo Admin Inventario).
   const [mostrarImportar, setMostrarImportar] = useState(false);
   const [salidaAbierta, setSalidaAbierta] = useState<number | null>(null);
+  // "Separar": el cliente no se lleva todo y parte pasa a una cotización nueva.
+  const [separarAbierta, setSepararAbierta] = useState<number | null>(null);
+  const cerrarSeparar = useCallback(() => setSepararAbierta(null), []);
   const [lineasExpandidas, setLineasExpandidas] = useState<Set<number>>(new Set());
   function alternarLineas(id: number) {
     setLineasExpandidas((actual) => {
@@ -94,6 +103,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const [filtroBodega, setFiltroBodega] = useState("");
   const [filtroEmpresa, setFiltroEmpresa] = useState("");
   const [soloPendientesSalida, setSoloPendientesSalida] = useState(false);
+  // Las entregadas (la bodega ya les dio "Salida") y las canceladas no se
+  // mezclan con las que siguen abiertas: cada una va en su pestaña.
+  const [pestana, setPestana] = useState<Pestana>("cotizaciones");
+  function cambiarPestana(nueva: Pestana) {
+    setPestana(nueva);
+    setSoloPendientesSalida(false);
+    a.setFiltroEstado("");
+  }
   const apartadosFiltrados = useMemo(() => {
     const texto = filtroTexto.trim().toLowerCase();
     // Lo más reciente primero (las cargadas desde Excel conservan el orden en
@@ -101,15 +118,20 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     return [...a.apartados].sort((x, y) =>
       y.fechaCreacion.localeCompare(x.fechaCreacion) || y.id - x.id,
     ).filter((ap) =>
-      (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
+      (ESTADO_DE_PESTANA[pestana] ? ap.estado === ESTADO_DE_PESTANA[pestana] : !Object.values(ESTADO_DE_PESTANA).includes(ap.estado))
+      && (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
       && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
       && (!filtroEmpresa || ap.empresa === filtroEmpresa)
       && (!soloPendientesSalida || ESTADOS_CANCELABLES.includes(ap.estado)));
-  }, [a.apartados, filtroTexto, filtroBodega, filtroEmpresa, soloPendientesSalida]);
+  }, [a.apartados, filtroTexto, filtroBodega, filtroEmpresa, soloPendientesSalida, pestana]);
 
   // Paginación en el navegador: con cientos de cotizaciones la tabla era eterna.
   const [paginaApartados, setPaginaApartados] = useState(1);
-  useEffect(() => { setPaginaApartados(1); }, [filtroTexto, filtroBodega, filtroEmpresa, soloPendientesSalida, a.filtroEstado]);
+  useEffect(() => { setPaginaApartados(1); }, [filtroTexto, filtroBodega, filtroEmpresa, soloPendientesSalida, a.filtroEstado, pestana]);
+  const hayFiltros = Boolean(filtroTexto || filtroBodega || filtroEmpresa || soloPendientesSalida || a.filtroEstado);
+  function limpiarFiltros() {
+    setFiltroTexto(""); setFiltroBodega(""); setFiltroEmpresa(""); setSoloPendientesSalida(false); a.setFiltroEstado("");
+  }
   const totalPaginas = Math.max(1, Math.ceil(apartadosFiltrados.length / APARTADOS_POR_PAGINA));
   const paginaSegura = Math.min(paginaApartados, totalPaginas);
   const apartadosPagina = apartadosFiltrados.slice((paginaSegura - 1) * APARTADOS_POR_PAGINA, paginaSegura * APARTADOS_POR_PAGINA);
@@ -268,6 +290,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       <label>Código de clasificación *</label>
                       <input
                         placeholder="Ej. LA50170,27"
+                        readOnly={Boolean(item.id && item.metrosConsumidos)}
+                        title={item.id && item.metrosConsumidos ? "Esta línea ya tiene salida: el código no se puede cambiar." : undefined}
                         value={item.codigoInterno}
                         onChange={(e) => a.actualizarItemApartado(indice, "codigoInterno", e.target.value)}
                         onBlur={(e) => a.consultarDisponibilidadItem(indice, e.target.value)}
@@ -319,9 +343,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       {item.productoId ? (
                         <div className="inventario-carga-ayuda" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <span>{item.productoCodigo && <strong>{item.productoCodigo} — </strong>}{item.productoDescripcion}</span>
-                          <button type="button" className="inventario-boton-cancelar" onClick={() => a.cambiarModalidadItem(indice, "por_stock")}>
-                            Cambiar
-                          </button>
+                          {!(item.id && item.stockDescontado) && (
+                            <button type="button" className="inventario-boton-cancelar" onClick={() => a.cambiarModalidadItem(indice, "por_stock")}>
+                              Cambiar
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <>
@@ -450,39 +476,71 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
           {!a.mostrarFormularioApartado && (
             <>
-              <div className="inventario-buscador" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-                <input
-                  type="text"
-                  placeholder="Buscar cotización o cliente..."
-                  value={filtroTexto}
-                  onChange={(e) => setFiltroTexto(e.target.value)}
-                  style={{ flex: "1 1 200px" }}
-                />
-                <select value={a.filtroEstado} onChange={(e) => a.setFiltroEstado(e.target.value)} aria-label="Estado">
-                  <option value="">Todos los estados</option>
-                  {Object.entries(ETIQUETAS_ESTADO).map(([valor, etiqueta]) => (
-                    <option key={valor} value={valor}>{etiqueta}</option>
-                  ))}
-                </select>
+              <div className="inventario-pestanas apartados-pestanas">
+                {(Object.entries(PESTANAS) as [Pestana, string][]).map(([clave, nombre]) => (
+                  <button
+                    key={clave}
+                    type="button"
+                    className={`inventario-pestana-boton ${pestana === clave ? "inventario-pestana-activa" : ""}`}
+                    onClick={() => cambiarPestana(clave)}
+                  >
+                    {nombre}
+                  </button>
+                ))}
+              </div>
+              <div className="apartados-filtros">
+                <div className="inventario-buscador apartados-buscador">
+                  <input
+                    type="text"
+                    placeholder="Buscar cotización o cliente..."
+                    value={filtroTexto}
+                    onChange={(e) => setFiltroTexto(e.target.value)}
+                  />
+                </div>
+                {pestana === "cotizaciones" && (
+                  <select
+                    className={`apartados-select ${a.filtroEstado ? `apartados-select-activo estado-${a.filtroEstado}` : ""}`}
+                    value={a.filtroEstado} onChange={(e) => a.setFiltroEstado(e.target.value)} aria-label="Estado"
+                  >
+                    <option value="">Todos los estados</option>
+                    {Object.entries(ETIQUETAS_ESTADO).filter(([valor]) => !Object.values(ESTADO_DE_PESTANA).includes(valor)).map(([valor, etiqueta]) => (
+                      <option key={valor} value={valor}>{etiqueta}</option>
+                    ))}
+                  </select>
+                )}
                 {esAdminInventario && (
-                  <select value={filtroBodega} onChange={(e) => setFiltroBodega(e.target.value)} aria-label="Bodega">
+                  <select
+                    className={`apartados-select ${filtroBodega ? "apartados-select-activo" : ""}`}
+                    value={filtroBodega} onChange={(e) => setFiltroBodega(e.target.value)} aria-label="Bodega"
+                  >
                     <option value="">Todas las bodegas</option>
                     {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                   </select>
                 )}
-                <select value={filtroEmpresa} onChange={(e) => setFiltroEmpresa(e.target.value)} aria-label="Empresa">
+                <select
+                  className={`apartados-select ${filtroEmpresa ? `apartados-select-activo empresa-${filtroEmpresa}` : ""}`}
+                  value={filtroEmpresa} onChange={(e) => setFiltroEmpresa(e.target.value)} aria-label="Empresa"
+                >
                   <option value="">Todas las empresas</option>
                   {Object.entries(EMPRESAS).map(([sigla, nombre]) => <option key={sigla} value={sigla}>{nombre}</option>)}
                 </select>
-                <label style={{ display: "flex", gap: "0.35rem", alignItems: "center", whiteSpace: "nowrap" }}>
-                  <input type="checkbox" style={{ width: "auto" }} checked={soloPendientesSalida}
+                {pestana === "cotizaciones" && <label className={`apartados-select apartados-check ${soloPendientesSalida ? "apartados-select-activo" : ""}`}>
+                  <input type="checkbox" checked={soloPendientesSalida}
                     onChange={(e) => setSoloPendientesSalida(e.target.checked)} />
                   Solo pendientes de salida
-                </label>
+                </label>}
+                {hayFiltros && (
+                  <button type="button" className="apartados-limpiar" onClick={limpiarFiltros}>Limpiar filtros</button>
+                )}
               </div>
               {!a.cargandoApartados && (
                 <p className="inventario-carga-ayuda" style={{ margin: "0 0 0.5rem" }}>
-                  Mostrando {apartadosFiltrados.length} de {a.apartados.length} cotizaciones.
+                  {pestana === "entregadas"
+                    ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización entregada" : "cotizaciones entregadas"} al cliente.`
+                    : pestana === "canceladas"
+                    ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización cancelada" : "cotizaciones canceladas"}.`
+                    : `Mostrando ${apartadosFiltrados.length} cotizaciones sin entregar`
+                      + `${a.filtroEstado ? ` en estado "${ETIQUETAS_ESTADO[a.filtroEstado] || a.filtroEstado}"` : ""}.`}
                 </p>
               )}
 
@@ -507,7 +565,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       {apartadosFiltrados.length === 0 ? (
                         <tr>
                           <td colSpan={esAdminInventario ? 8 : 7} className="inventario-vacio">
-                            {a.apartados.length === 0 ? "No hay apartados registrados." : "Ninguna cotización coincide con los filtros."}
+                            {pestana !== "cotizaciones" && !hayFiltros
+                              ? `Todavía no hay cotizaciones ${pestana}.`
+                              : a.apartados.length === 0 ? "No hay apartados registrados." : "Ninguna cotización coincide con los filtros."}
                           </td>
                         </tr>
                       ) : (
@@ -576,7 +636,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                 </div>
                               )}
                             </td>
-                            <td>{ETIQUETAS_ESTADO[ap.estado] || ap.estado}</td>
+                            <td><span className={`apartados-estado estado-${ap.estado}`}>{ETIQUETAS_ESTADO[ap.estado] || ap.estado}</span></td>
                             <td style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
                             <td className="inventario-acciones">
                               {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
@@ -610,9 +670,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                 </button>
                               )}
                               {esAdminInventario && ESTADOS_CANCELABLES.includes(ap.estado) && (
-                                <button onClick={() => setSalidaAbierta(salidaAbierta === ap.id ? null : ap.id)}>
+                                <button onClick={() => { setSepararAbierta(null); setSalidaAbierta(salidaAbierta === ap.id ? null : ap.id); }}>
                                   {salidaAbierta === ap.id ? "Cerrar salida" : "Registrar salida"}
                                 </button>
+                              )}
+                              {(ap.items.length > 1 || (ap.items[0]?.cantidad ?? 0) > 1)
+                                && ((esAdminInventario && (ESTADOS_CANCELABLES.includes(ap.estado) || ap.estado === "produccion_terminada"))
+                                  || (a.puedeMarcarEntregado && ap.estado === "produccion_terminada")) && (
+                                <button onClick={() => { setSalidaAbierta(null); setSepararAbierta(ap.id); }}>Separar</button>
                               )}
                               {tieneProduccionPendiente && !esAdminInventario && (
                                 <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>Iniciar Producción</button>
@@ -661,6 +726,17 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           )}
         </div>
       </div>
+      {separarAbierta !== null && a.apartados.some((ap) => ap.id === separarAbierta) && (
+        <PanelSepararCotizacion
+          apartado={a.apartados.find((ap) => ap.id === separarAbierta)!}
+          alTerminar={(numeroNueva) => {
+            setSepararAbierta(null);
+            setMensajeInformativo(`Listo: las líneas que el cliente no se lleva quedaron en la cotización ${numeroNueva}.`);
+            a.cargarApartados();
+          }}
+          alCerrar={cerrarSeparar}
+        />
+      )}
       {mensajeInformativo && (
         <ModalConfirmacion
           mensaje={mensajeInformativo}

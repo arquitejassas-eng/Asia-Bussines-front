@@ -48,6 +48,7 @@ from app.services.apartados import faltantes_apartado
 from app.services.empresas import sigla_empresa_desde_nombre
 
 # Las fechas del Excel son días de Colombia: 00:00 en UTC caía el día anterior.
+LARGO_MAXIMO_COTIZACION = 32  # = Apartado.numero_cotizacion (String(32))
 HORA_COLOMBIA = timezone(timedelta(hours=-5))
 HOJA_PREFERIDA = "SALIDA"
 COLUMNAS = {
@@ -198,8 +199,12 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
                 resultado.omitidas.append({"fila": propias[0][0], "cotizacion": numero, "codigo": "",
                                            "motivo": f"La cotización {numero} ya está cargada en {bodega.nombre}."})
                 continue
+            if len(numero) > LARGO_MAXIMO_COTIZACION:
+                resultado.omitidas.append({"fila": propias[0][0], "cotizacion": numero, "codigo": "",
+                                           "motivo": f"El número de cotización es muy largo (máximo {LARGO_MAXIMO_COTIZACION} caracteres)."})
+                continue
             primera = propias[0][1]["fila"]
-            fecha = pd.to_datetime(primera.get("fecha"), errors="coerce")
+            fecha = pd.to_datetime(primera.get("fecha"), errors="coerce", dayfirst=True)
             apartado = ApartadoImportado(
                 numero_cotizacion=numero, bodega_id=bodega_id, bodega_nombre=bodega.nombre, empresa=empresa,
                 cliente=_texto(primera.get("cliente"))[:150], vendedor=_texto(primera.get("vendedor")),

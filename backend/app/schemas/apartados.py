@@ -71,6 +71,19 @@ class RegistrarSalidaRequest(BaseModel):
     items_stock: list[int] = []
 
 
+class LineaSeparar(BaseModel):
+    """Una línea que pasa a la cotización nueva: completa o solo una parte."""
+    item_id: int
+    cantidad: float = Field(gt=0)
+
+
+class SepararApartadoRequest(BaseModel):
+    """Lo que pasa a una cotización nueva y el número de esa cotización."""
+    lineas: list[LineaSeparar] = Field(min_length=1)
+    numero_cotizacion: str = Field(min_length=1, max_length=32)
+    cliente: str | None = Field(default=None, max_length=150)
+
+
 class ApartadoItemEditar(ApartadoItemCrear):
     # Línea que ya existe (se modifica); sin id es una línea nueva.
     id: int | None = None

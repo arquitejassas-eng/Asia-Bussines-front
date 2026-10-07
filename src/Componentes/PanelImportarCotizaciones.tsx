@@ -63,6 +63,7 @@ export default function PanelImportarCotizaciones({ alTerminar, alCerrar }: { al
           disabled={cargando}
           onChange={(e) => {
             const elegido = e.target.files?.[0] || null;
+            e.target.value = "";
             setArchivo(elegido);
             if (elegido) enviar(false, elegido);
           }}
