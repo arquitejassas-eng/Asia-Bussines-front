@@ -274,3 +274,11 @@
   color: var(--at-green, #2E7D4F);
   font-weight: 600;
 }
+
+.produccion-aviso-apartados {
+  background: var(--at-amber-dim, rgba(184, 114, 10, 0.12));
+  border: 1px solid var(--at-border, rgba(0, 0, 0, 0.12));
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}

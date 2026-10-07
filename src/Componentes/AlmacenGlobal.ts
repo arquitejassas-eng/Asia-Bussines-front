@@ -107,7 +107,8 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
         `/apartados?${ESTADOS_PRODUCCION_PENDIENTE.map((e) => `estados=${e}`).join("&")}`
       ) || [];
       const apartadosPendientes = datos.map(apartadoDesdeApi).filter((ap) => ESTADOS_PRODUCCION_PENDIENTE.includes(ap.estado));
-      setProduccionPendienteCount(calcularSolicitudesPendientes(apartadosPendientes).length);
+      // Cuenta cotizaciones (no líneas), igual que el aviso de Registrar Producción.
+      setProduccionPendienteCount(new Set(calcularSolicitudesPendientes(apartadosPendientes).map((s) => s.apartadoId)).size);
     } catch {
       setProduccionPendienteCount(0);
     }

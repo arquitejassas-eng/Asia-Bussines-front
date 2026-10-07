@@ -7,32 +7,37 @@ import { EMPRESAS } from "../Utils/empresas";
 // props.
 function PanelSolicitudesPendientes({
   solicitudesPendientes,
-  cotizacionResaltada,
   errorSolicitudPendiente,
   apartadoItemId,
   limpiarSolicitud,
   seleccionarSolicitud,
   marcarProduccionTerminada,
 }) {
+  const primera = solicitudesPendientes[0];
   return (
     <section className="produccion-tarjeta">
-      <h2>Solicitudes de producción pendientes</h2>
-      <p className="produccion-vacio" style={{ marginBottom: "0.75rem" }}>
-        Vienen de apartados que la encargada de inventario ya envió a producción. Al elegir
-        "Iniciar producción" se completan los datos del producto y se muestran los rollos
-        disponibles de ese código en la sección de abajo, para que elijas cuál(es) usar y
-        cuántos metros consumir de cada uno. La cotización y el cliente quedan asociados
-        automáticamente.
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div>
+          <h2 style={{ marginBottom: "0.25rem" }}>Cotización {primera?.numeroCotizacion}</h2>
+          <p className="produccion-vacio" style={{ margin: 0 }}>
+            {primera?.cliente || "Sin cliente"} · Rollos de {EMPRESAS[primera?.empresa] || primera?.empresa || "—"}
+          </p>
+        </div>
+        <button type="button" className="produccion-boton-secundario" onClick={() => marcarProduccionTerminada(primera.apartadoId)}>
+          Marcar producción terminada
+        </button>
+      </div>
+      <p className="produccion-vacio" style={{ margin: "0.75rem 0" }}>
+        Elige la línea a producir con "Iniciar producción": se llenan los datos del producto y abajo
+        aparecen los rollos de ese código para que elijas cuál(es) usar.
       </p>
       {errorSolicitudPendiente && <p className="produccion-error">{errorSolicitudPendiente}</p>}
       <div className="produccion-tabla-wrap">
         <table className="produccion-tabla produccion-tabla-resultados">
           <thead>
             <tr>
-              <th>Cotización</th>
-              <th>Empresa</th>
-              <th>Cliente</th>
-              <th>Código de clasificación</th>
+              <th>Código</th>
+              <th>Producto</th>
               <th>Pendiente</th>
               <th></th>
             </tr>
@@ -41,14 +46,12 @@ function PanelSolicitudesPendientes({
             {solicitudesPendientes.map((s) => (
               <tr
                 key={s.itemId}
-                className={cotizacionResaltada && s.numeroCotizacion === cotizacionResaltada ? "produccion-fila-resaltada" : undefined}
+                className={apartadoItemId === s.itemId ? "produccion-fila-resaltada" : undefined}
                 style={apartadoItemId === s.itemId ? { fontWeight: 600 } : undefined}
               >
-                <td>{s.numeroCotizacion}</td>
-                <td title="Usa rollos de esta empresa">{EMPRESAS[s.empresa] || s.empresa || "—"}</td>
-                <td>{s.cliente || "—"}</td>
-                <td>{s.codigoInterno}{s.descripcion ? ` — ${s.descripcion}` : ""}</td>
-                <td>{s.metrosPendientes} m ({s.cantidad} × {s.medida} m)</td>
+                <td style={{ whiteSpace: "nowrap" }}>{s.codigoInterno}</td>
+                <td>{s.descripcion || "—"}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{s.metrosPendientes} m</td>
                 <td>
                   {apartadoItemId === s.itemId ? (
                     <button type="button" className="produccion-boton-secundario" onClick={limpiarSolicitud}>
@@ -59,9 +62,6 @@ function PanelSolicitudesPendientes({
                       Iniciar producción
                     </button>
                   )}
-                  <button type="button" className="produccion-boton-secundario" onClick={() => marcarProduccionTerminada(s.apartadoId)}>
-                    Marcar producción terminada
-                  </button>
                 </td>
               </tr>
             ))}

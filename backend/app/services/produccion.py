@@ -122,6 +122,31 @@ def _misma_longitud(a, b) -> bool:
     return abs(float(a) - float(b)) < 0.005
 
 
+def _numero(valor: float) -> str:
+    return f"{valor:g}".replace(".", ",")
+
+
+def _descripcion_stock(datos: ProduccionCrear, codigo_rollo_origen: str) -> str:
+    """Nombre estándar del stock que deja una producción, armado con sus datos
+    (ej. "TEJA ARQUI 4,65 m CAL 0,33 BLANCO (RAL 9002) - rollo LB90020,33").
+    No se usa el texto de la cotización: ese stock ya no es de ese cliente."""
+    partes = [NOMBRE_POR_TIPO_PRODUCTO.get(datos.tipo_producto, "teja").upper()]
+    if datos.tipo_producto == "teja" and datos.modelo.strip():
+        partes.append(datos.modelo.strip().upper())
+    if datos.metros_por_unidad:
+        partes.append(f"{_numero(datos.metros_por_unidad)} m")
+    if datos.calibre.strip():
+        partes.append(f"CAL {datos.calibre.strip()}")
+    if datos.color.strip():
+        partes.append(datos.color.strip().upper())
+    if datos.ral.strip():
+        partes.append(f"(RAL {datos.ral.strip()})")
+    descripcion = " ".join(partes)
+    if codigo_rollo_origen:
+        descripcion += f" - rollo {codigo_rollo_origen}"
+    return descripcion
+
+
 def _buscar_producto_existente(
     db: Session,
     usuario: Usuario,
@@ -419,7 +444,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         tipo_producto_stock = ""
         ancho_rollo_stock = None
 
-    descripcion_base = (datos.producto_fabricado or datos.modelo).strip()
+    descripcion_base = _descripcion_stock(datos, codigo_rollo_origen_stock)
     for indice, item_stock in enumerate(datos.stock_adicional, start=1):
         descripcion = descripcion_base + (" (Segunda)" if item_stock.calidad == "segunda" else "")
 

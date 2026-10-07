@@ -1,4 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
+import { useEffect } from "react";
+import { Link } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
 import { useControladorProduccion } from "../Componentes/Produccion";
@@ -18,6 +20,17 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
   const p = useControladorProduccion(sesion, almacen);
 
   const notificaciones = contarNotificacionesBarraLateral(almacen, sesion);
+  // La lista de cotizaciones vive en Apartados: aquí solo se ven las líneas de
+  // la cotización que se abrió con "Iniciar Producción" (?cotizacion=...), o
+  // la línea que ya quedó vinculada.
+  const solicitudesDeLaCotizacion = p.solicitudesPendientes.filter((s) =>
+    p.cotizacionResaltada ? s.numeroCotizacion === p.cotizacionResaltada : s.itemId === p.apartadoItemId
+  );
+  const lineaVinculada = p.solicitudesPendientes.find((s) => s.itemId === p.apartadoItemId);
+  const { limpiarSolicitud } = p;
+  useEffect(() => {
+    if (p.cotizacionResaltada && lineaVinculada && lineaVinculada.numeroCotizacion !== p.cotizacionResaltada) limpiarSolicitud();
+  }, [p.cotizacionResaltada, lineaVinculada, limpiarSolicitud]);
 
   return (
     <div className="layout-con-sidebar">
@@ -36,9 +49,18 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
 
           {p.puedeRegistrarProduccion && (
             <>
-          {!p.produccionConfirmada && p.solicitudesPendientes.length > 0 && (
+          {!p.produccionConfirmada && solicitudesDeLaCotizacion.length === 0 && (
+            <p className="produccion-aviso-apartados">
+              {p.cotizacionResaltada && <>La cotización <strong>{p.cotizacionResaltada}</strong> ya no tiene líneas pendientes de producir. </>}
+              {p.solicitudesPendientes.length > 0
+                ? <>Tienes {new Set(p.solicitudesPendientes.map((s) => s.apartadoId)).size} cotizaciones enviadas a producción. </>
+                : <>No tienes cotizaciones pendientes de producir. </>}
+              Para producir una, búscala en <Link to="/apartados">Apartados</Link> y presiona <strong>Iniciar Producción</strong>.
+            </p>
+          )}
+          {!p.produccionConfirmada && solicitudesDeLaCotizacion.length > 0 && (
             <PanelSolicitudesPendientes
-              solicitudesPendientes={p.solicitudesPendientes}
+              solicitudesPendientes={solicitudesDeLaCotizacion}
               cotizacionResaltada={p.cotizacionResaltada}
               errorSolicitudPendiente={p.errorSolicitudPendiente}
               apartadoItemId={p.apartadoItemId}
