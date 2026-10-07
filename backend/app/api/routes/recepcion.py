@@ -327,7 +327,10 @@ def _codigo_descripcion_metros(r: srv.RolloClasificado) -> tuple[str, str, float
         if r.clasificado
         else f"Sin clasificar ({r.tipo_material or 'tipo'} / {r.color_top or 'color'})"
     )
-    metros = round(r.metros_calculados if r.metros_calculados is not None else (r.coil_meters or 0), 2)
+    # Se trabaja con los metros que reporta el proveedor; los calculados por
+    # peso solo sirven para verificar (columna "Diferencia") o si el proveedor
+    # no reportó metros.
+    metros = round(r.coil_meters if r.coil_meters else (r.metros_calculados or 0), 2)
     return codigo_interno, descripcion, metros
 
 
