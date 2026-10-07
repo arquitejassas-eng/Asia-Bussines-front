@@ -1,6 +1,6 @@
-"""Cliente del asistente de IA: habla con Groq (inferencia alojada sobre
-modelos open-source, corre en hardware especializado y responde en segundos)
-y le da acceso a los datos reales de la bodega mediante "herramientas"
+"""Cliente del asistente de IA: habla con Gemini (Google) y, si Gemini llega
+a su límite o falla, con Groq de respaldo -- los dos gratis dentro de su
+límite de uso -- y le da acceso a los datos reales de la bodega mediante "herramientas"
 (function calling) — el modelo nunca inventa cifras, las consulta.
 """
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass
 
 import httpx
 from sqlalchemy.orm import Session
@@ -18,9 +19,12 @@ from app.services.ia_herramientas import HERRAMIENTAS, ejecutar_herramienta
 logger = logging.getLogger("arquitejas.ia")
 
 MAX_RONDAS_HERRAMIENTAS = 5
-TIMEOUT_SEGUNDOS = 30.0  # Groq responde en segundos incluso con herramientas de por medio.
-REINTENTOS_CONEXION = 2  # cubre blips de DNS/red pasajeros, no una caída real de Groq.
+TIMEOUT_SEGUNDOS = 30.0
+REINTENTOS_CONEXION = 2  # cubre blips de DNS/red pasajeros, no una caída real del proveedor.
+REINTENTOS_SATURADO = 2  # un 503 "mucha demanda" de Gemini suele pasar en segundos.
+ESPERA_SATURADO_SEGUNDOS = 2.0
 
+GEMINI_CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 SYSTEM_PROMPT = (
@@ -46,22 +50,57 @@ SYSTEM_PROMPT_EXTRA_ADMIN_INVENTARIO = (
 
 
 class ErrorAsistenteIa(Exception):
-    """Groq no está disponible, falta la API key, o respondió con un error."""
+    """Ningún proveedor está disponible, faltan las API keys, o respondieron con error."""
 
 
-def _llamar_groq(cliente: httpx.Client, mensajes: list[dict]) -> dict:
-    if not settings.GROQ_API_KEY:
-        raise ErrorAsistenteIa(
-            "Falta configurar GROQ_API_KEY en el backend. Consigue una gratis en "
-            "https://console.groq.com/keys"
-        )
+@dataclass(frozen=True)
+class Proveedor:
+    nombre: str
+    url: str
+    api_key: str
+    modelo: str
+
+
+def proveedores_configurados() -> list[Proveedor]:
+    """Gemini primero (mejor calidad en su plan gratis) y Groq de respaldo:
+    si uno llega a su límite o falla, el chat sigue con el otro. Solo entran
+    los que tienen API key; ambos hablan el formato de OpenAI."""
+    candidatos = [
+        Proveedor("Gemini", GEMINI_CHAT_URL, settings.GEMINI_API_KEY or "", settings.GEMINI_MODEL),
+        Proveedor("Groq", GROQ_CHAT_URL, settings.GROQ_API_KEY or "", settings.GROQ_MODEL),
+    ]
+    return [p for p in candidatos if p.api_key]
+
+
+class _ProveedorNoDisponible(Exception):
+    """Este proveedor falló de forma que vale la pena probar con el siguiente."""
+
+
+def _llamar(cliente: httpx.Client, proveedor: Proveedor, mensajes: list[dict]) -> dict:
+    for intento in range(REINTENTOS_SATURADO + 1):
+        respuesta = _enviar(cliente, proveedor, mensajes)
+        if respuesta.status_code not in (500, 502, 503) or intento == REINTENTOS_SATURADO:
+            break
+        logger.warning("ia_saturado proveedor=%s intento=%s", proveedor.nombre, intento + 1)
+        time.sleep(ESPERA_SATURADO_SEGUNDOS)
+
+    if respuesta.status_code in (401, 403):
+        raise _ProveedorNoDisponible(f"La API key de {proveedor.nombre} es inválida.")
+    if respuesta.status_code == 429:
+        raise _ProveedorNoDisponible(f"{proveedor.nombre} llegó a su límite de uso.")
+    if respuesta.status_code != 200:
+        raise _ProveedorNoDisponible(f"{proveedor.nombre} respondió con error {respuesta.status_code}: {respuesta.text[:200]}")
+    return respuesta.json()
+
+
+def _enviar(cliente: httpx.Client, proveedor: Proveedor, mensajes: list[dict]) -> httpx.Response:
     for intento in range(REINTENTOS_CONEXION + 1):
         try:
-            respuesta = cliente.post(
-                GROQ_CHAT_URL,
-                headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
+            return cliente.post(
+                proveedor.url,
+                headers={"Authorization": f"Bearer {proveedor.api_key}"},
                 json={
-                    "model": settings.GROQ_MODEL,
+                    "model": proveedor.modelo,
                     "messages": mensajes,
                     "tools": HERRAMIENTAS,
                     "tool_choice": "auto",
@@ -69,23 +108,30 @@ def _llamar_groq(cliente: httpx.Client, mensajes: list[dict]) -> dict:
                 },
                 timeout=TIMEOUT_SEGUNDOS,
             )
-            break
         except httpx.ConnectError as exc:
             if intento == REINTENTOS_CONEXION:
-                raise ErrorAsistenteIa("No se pudo conectar con Groq. Revisa la conexión a internet del servidor.") from exc
-            logger.warning("ia_groq_reintento intento=%s error=%s", intento + 1, exc)
+                raise _ProveedorNoDisponible(f"No se pudo conectar con {proveedor.nombre}.") from exc
+            logger.warning("ia_reintento proveedor=%s intento=%s error=%s", proveedor.nombre, intento + 1, exc)
             time.sleep(0.5)
         except httpx.TimeoutException as exc:
-            raise ErrorAsistenteIa("Groq tardó demasiado en responder. Intenta de nuevo.") from exc
+            raise _ProveedorNoDisponible(f"{proveedor.nombre} tardó demasiado en responder.") from exc
+    raise AssertionError("inalcanzable")
 
-    if respuesta.status_code == 401:
-        raise ErrorAsistenteIa("La API key de Groq es inválida. Revisa GROQ_API_KEY.")
-    if respuesta.status_code == 429:
-        raise ErrorAsistenteIa("Se alcanzó el límite de solicitudes de Groq. Intenta de nuevo en unos segundos.")
-    if respuesta.status_code != 200:
-        raise ErrorAsistenteIa(f"Groq respondió con error {respuesta.status_code}: {respuesta.text[:200]}")
 
-    return respuesta.json()
+def _limpiar_para_otro_proveedor(mensajes: list[dict]) -> None:
+    for mensaje in mensajes:
+        for llamada in mensaje.get("tool_calls") or []:
+            llamada.pop("extra_content", None)
+
+
+def _mensaje_para_historial(mensaje_modelo: dict) -> dict:
+    """Solo los campos estándar: si a mitad de la conversación se cambia de
+    proveedor, el otro no debe recibir campos propios del primero (p. ej. el
+    "reasoning" de Groq)."""
+    mensaje = {"role": "assistant", "content": mensaje_modelo.get("content") or ""}
+    if mensaje_modelo.get("tool_calls"):
+        mensaje["tool_calls"] = mensaje_modelo["tool_calls"]
+    return mensaje
 
 
 def chat_con_herramientas(
@@ -105,16 +151,32 @@ def chat_con_herramientas(
         mensajes.append({"role": rol, "content": turno.get("texto", "")})
     mensajes.append({"role": "user", "content": mensaje_usuario})
 
+    proveedores = proveedores_configurados()
+    if not proveedores:
+        raise ErrorAsistenteIa(
+            "Falta configurar GEMINI_API_KEY o GROQ_API_KEY en el backend. Consigue una gratis en "
+            "https://aistudio.google.com/apikey o https://console.groq.com/keys"
+        )
+    actual = 0  # una vez que un proveedor falla, el resto de la conversación sigue con el siguiente.
     with httpx.Client() as cliente:
         for _ in range(MAX_RONDAS_HERRAMIENTAS):
-            datos = _llamar_groq(cliente, mensajes)
+            while True:
+                try:
+                    datos = _llamar(cliente, proveedores[actual], mensajes)
+                    break
+                except _ProveedorNoDisponible as exc:
+                    logger.warning("ia_proveedor_fallo proveedor=%s error=%s", proveedores[actual].nombre, exc)
+                    actual += 1
+                    _limpiar_para_otro_proveedor(mensajes)
+                    if actual == len(proveedores):
+                        raise ErrorAsistenteIa(f"El asistente no está disponible ahora: {exc} Intenta de nuevo en unos minutos.") from exc
             mensaje_modelo = datos["choices"][0]["message"]
             llamadas = mensaje_modelo.get("tool_calls") or []
 
             if not llamadas:
                 return (mensaje_modelo.get("content") or "").strip() or "No obtuve una respuesta del modelo."
 
-            mensajes.append(mensaje_modelo)
+            mensajes.append(_mensaje_para_historial(mensaje_modelo))
             for llamada in llamadas:
                 funcion = llamada.get("function", {})
                 nombre = funcion.get("name", "")

@@ -40,10 +40,12 @@ class Settings(BaseSettings):
     # DSN opcional de Sentry para reportar errores no controlados en producción.
     SENTRY_DSN: str | None = None
 
-    # Asistente de IA — Groq (inferencia alojada, muy rápida, no depende de
-    # que el servidor tenga GPU ni de un proceso corriendo aparte). Si falta
-    # la API key o Groq no responde, el chat avisa el error en vez de fallar
-    # silenciosamente con una respuesta falsa.
+    # Asistente de IA — Gemini (Google) como principal y Groq de respaldo,
+    # los dos gratis dentro de su límite de uso. Basta con una de las dos
+    # API keys; con las dos, si uno llega a su límite el chat sigue con el
+    # otro. Si ninguno responde, el chat avisa el error en vez de inventar.
+    GEMINI_API_KEY: str | None = None
+    GEMINI_MODEL: str = "gemini-flash-latest"
     GROQ_API_KEY: str | None = None
     GROQ_MODEL: str = "openai/gpt-oss-120b"
 
