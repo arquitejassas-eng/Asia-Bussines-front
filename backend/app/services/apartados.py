@@ -161,26 +161,67 @@ def cobertura_producto(db: Session, *, producto: Producto) -> dict[int, float]:
 def faltantes_apartado(db: Session, apartado: Apartado) -> list[str]:
     """Lo que todavía no está físicamente en la bodega para este apartado
     (material comprado que viene en camino). Vacío = todo su material ya está."""
-    if apartado.estado not in ESTADOS_RESERVA_ACTIVA:
-        return []
-    faltantes: list[str] = []
-    coberturas: dict[str, dict[int, float]] = {}
-    for item in apartado.items:
-        if item.modalidad == ModalidadApartado.POR_STOCK:
-            producto = db.get(Producto, item.producto_id)
-            if producto is None or item.stock_descontado:
-                continue
-            falta = round(item.cantidad - cobertura_producto(db, producto=producto).get(item.id, 0), 2)
-            if falta > 0.005:
-                faltantes.append(f"faltan {falta:g} de {producto.codigo}")
-        else:
-            if item.codigo_interno not in coberturas:
-                coberturas[item.codigo_interno] = cobertura_rollo(db, bodega_id=apartado.bodega_id, codigo_interno=item.codigo_interno)
-            pendiente = (item.metros_requeridos or 0) - (item.metros_consumidos or 0)
-            falta = round(pendiente - coberturas[item.codigo_interno].get(item.id, 0), 2)
-            if falta > 0.005:
-                faltantes.append(f"faltan {falta:g} m de {item.codigo_interno}")
-    return faltantes
+    return faltantes_de_apartados(db, [apartado]).get(apartado.id, [])
+
+
+def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, list[str]]:
+    """Lo mismo que faltantes_apartado, pero para una lista entera con pocas
+    consultas: la cobertura de cada (bodega, código) se calcula UNA vez (una
+    consulta para los metros físicos y otra para las reservas activas), no por
+    cada cotización. Con la base remota (Supabase) cada consulta cuesta, y la
+    lista de Apartados se volvía eterna con unas decenas de cotizaciones."""
+    activos = [a for a in apartados if a.estado in ESTADOS_RESERVA_ACTIVA]
+    resultado: dict[int, list[str]] = {}
+    if not activos:
+        return resultado
+    claves = {(a.bodega_id, it.codigo_interno) for a in activos for it in a.items
+              if it.modalidad != ModalidadApartado.POR_STOCK and it.codigo_interno}
+    coberturas: dict[tuple, dict[int, float]] = {}
+    if claves:
+        bodegas = {b for b, _ in claves}
+        codigos = {c for _, c in claves}
+        fisicos = {
+            (b, c): float(total or 0)
+            for b, c, total in db.query(Rollo.bodega_id, Rollo.codigo_interno, func.sum(Rollo.metros_disponibles))
+            .filter(Rollo.bodega_id.in_(bodegas), Rollo.codigo_interno.in_(codigos))
+            .group_by(Rollo.bodega_id, Rollo.codigo_interno)
+        }
+        en_orden: dict[tuple, list[ApartadoItem]] = {}
+        for item, bodega_id in (
+            db.query(ApartadoItem, Apartado.bodega_id)
+            .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+            .filter(Apartado.bodega_id.in_(bodegas), Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+                    ApartadoItem.codigo_interno.in_(codigos))
+            .order_by(Apartado.fecha_creacion, Apartado.id, ApartadoItem.id)
+        ):
+            en_orden.setdefault((bodega_id, item.codigo_interno), []).append(item)
+        for clave in claves:
+            coberturas[clave] = _repartir_en_orden(
+                en_orden.get(clave, []), lambda it: (it.metros_requeridos or 0) - (it.metros_consumidos or 0),
+                fisicos.get(clave, 0.0),
+            )
+    coberturas_producto: dict[int, dict[int, float]] = {}
+    for apartado in activos:
+        faltantes: list[str] = []
+        for item in apartado.items:
+            if item.modalidad == ModalidadApartado.POR_STOCK:
+                if item.stock_descontado:
+                    continue
+                producto = db.get(Producto, item.producto_id)
+                if producto is None:
+                    continue
+                if producto.id not in coberturas_producto:
+                    coberturas_producto[producto.id] = cobertura_producto(db, producto=producto)
+                falta = round(item.cantidad - coberturas_producto[producto.id].get(item.id, 0), 2)
+                if falta > 0.005:
+                    faltantes.append(f"faltan {falta:g} de {producto.codigo}")
+            else:
+                pendiente = (item.metros_requeridos or 0) - (item.metros_consumidos or 0)
+                falta = round(pendiente - coberturas.get((apartado.bodega_id, item.codigo_interno), {}).get(item.id, 0), 2)
+                if falta > 0.005:
+                    faltantes.append(f"faltan {falta:g} m de {item.codigo_interno}")
+        resultado[apartado.id] = faltantes
+    return resultado
 
 
 def validar_reserva_rollos(
