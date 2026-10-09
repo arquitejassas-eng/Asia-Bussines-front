@@ -95,11 +95,12 @@ def importar_desde_excel(
     resultado = importar_cotizaciones.analizar(db, contenido)
     respuesta = importar_cotizaciones.resumen(resultado)
     if confirmar:
-        if not resultado.apartados:
-            raise HTTPException(status_code=400, detail="No hay cotizaciones nuevas para cargar en este archivo.")
+        if not resultado.apartados and not resultado.mermas:
+            raise HTTPException(status_code=400, detail="No hay cotizaciones ni mermas nuevas para cargar en este archivo.")
         creados = importar_cotizaciones.crear(db, resultado, usuario, nombre)
         db.commit()
         respuesta["creados"] = len(creados)
+        respuesta["mermas_registradas"] = resultado.mermas_registradas
         respuesta["esperando_material"] = importar_cotizaciones.cuantos_esperan_material(db, creados)
     return respuesta
 

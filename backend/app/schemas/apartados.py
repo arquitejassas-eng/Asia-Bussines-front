@@ -149,6 +149,7 @@ class DisponibilidadProductoResponse(BaseModel):
 class ApartadoResponse(ModeloConFechasUtc):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    salida_pendiente: bool = False
     bodega_id: int
     bodega_nombre: str = ""
     numero_cotizacion: str

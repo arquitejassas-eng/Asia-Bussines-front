@@ -130,7 +130,11 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
          else (it.metros_requeridos or 0) - (it.metros_consumidos or 0) <= TOLERANCIA)
         for it in apartado.items
     )
-    if completa:
+    if completa and apartado.salida_pendiente:
+        # El material ya se había entregado: solo faltaba saber de qué rollo.
+        apartado.estado = EstadoApartado.ENTREGADO
+        apartado.fecha_entregado = ahora
+    elif completa:
         apartado.estado = EstadoApartado.PRODUCCION_TERMINADA
     elif apartado.estado != EstadoApartado.EN_PRODUCCION:
         apartado.estado = EstadoApartado.EN_PRODUCCION

@@ -65,11 +65,28 @@ def terminar_rollo(db: Session, rollo_id: int, observaciones: str, usuario: Usua
     merma = round(rollo.metros_disponibles, 2)
     if merma <= 0:
         raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} ya está agotado: no le quedan metros.")
+    return _sacar_merma(db, rollo, merma, f"Merma al terminar el rollo ({merma:g} m).", observaciones, usuario), merma
+
+
+def registrar_merma(db: Session, rollo_id: int, metros: float, observaciones: str, usuario: Usuario) -> tuple[Rollo, float]:
+    """Merma de una cantidad dada (ej. la que viene anotada en el Excel). Nunca
+    deja el rollo en negativo: si pide más de lo que le queda, sale lo que
+    queda. Devuelve los metros que realmente salieron (0 si ya no tenía)."""
+    rollo = _bloquear(db, rollo_id, usuario)
+    merma = round(min(metros, rollo.metros_disponibles), 2)
+    if merma <= 0:
+        return rollo, 0.0
+    return _sacar_merma(db, rollo, merma, f"Merma de {merma:g} m.", observaciones, usuario), merma
+
+
+def _sacar_merma(db: Session, rollo: Rollo, merma: float, texto: str, observaciones: str, usuario: Usuario) -> Rollo:
     ahora = datetime.now(timezone.utc)
     rollo.metros_consumidos = round(rollo.metros_consumidos + merma, 2)
-    rollo.metros_disponibles = 0
+    rollo.metros_disponibles = round(rollo.metros_disponibles - merma, 2)
+    if rollo.metros_disponibles < 0.005:
+        rollo.metros_disponibles = 0
     rollo.recalcular_estado()
-    nota = f"Merma al terminar el rollo ({merma:g} m)." + (f" {observaciones.strip()}" if observaciones.strip() else "")
+    nota = texto + (f" {observaciones.strip()}" if observaciones.strip() else "")
     db.add(HistorialConsumoRollo(rollo_id=rollo.id, fecha=ahora, cantidad=merma, usuario=usuario.correo, observaciones=nota))
     db.add(Movimiento(
         fecha=ahora, tipo=TipoMovimiento.SALIDA, motivo=MOTIVO_MERMA, producto_codigo=rollo.codigo_interno,
@@ -77,7 +94,7 @@ def terminar_rollo(db: Session, rollo_id: int, observaciones: str, usuario: Usua
         rollo_id=rollo.id, identificador_rollo=rollo.identificador_rollo, bodega_origen_id=rollo.bodega_id,
         bodega_destino_id=None, cantidad=merma, usuario=usuario.correo, observaciones=nota,
     ))
-    return rollo, merma
+    return rollo
 
 
 def registrar_sobrante(db: Session, rollo_id: int, metros: float, observaciones: str, usuario: Usuario) -> Rollo:

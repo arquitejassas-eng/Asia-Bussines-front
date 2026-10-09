@@ -25,7 +25,8 @@ export type SolicitudProduccionPendiente = {
  * POR_STOCK). Compartido entre el panel de "Registrar Producción" y el
  * botón "Iniciar Producción" de Apartados, para no duplicar el criterio. */
 export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[]): SolicitudProduccionPendiente[] {
-  return apartados.flatMap((ap) =>
+  // Las "pendientes por dar salida" ya salieron de la bodega: no se producen.
+  return apartados.filter((ap) => !(ap as { salidaPendiente?: boolean }).salidaPendiente).flatMap((ap) =>
     ap.items
       .filter((it) => it.modalidad === "por_rollo" && (it.metrosPendientes ?? 0) > 0)
       .map((it) => ({

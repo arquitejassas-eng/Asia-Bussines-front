@@ -5,15 +5,20 @@ import { EMPRESAS } from "../Utils/empresas";
 type Linea = { fila: number; codigo: string; descripcion: string; cantidad: number; modalidad: string; producto_nuevo: boolean };
 type ApartadoPrevio = {
   numero_cotizacion: string; bodega_nombre: string; empresa: string; cliente: string; fecha: string; lineas: Linea[];
+  salida_pendiente?: boolean;
 };
 type Omitida = { fila: number; cotizacion: string; codigo: string; motivo: string };
 type Previa = {
   apartados: ApartadoPrevio[]; omitidas: Omitida[]; lineas_producidas: number; lineas_stock_ajuste: number; lineas_traslado?: number; lineas_producto?: number;
   total_apartados: number; total_lineas: number; productos_nuevos: number; creados?: number; esperando_material?: number;
+  total_salida_pendiente?: number;
+  mermas?: { fila: number; referencia: string; metros: number }[]; mermas_ya_registradas?: number; mermas_sin_rollo?: number;
+  mermas_registradas?: number;
 };
 
 /** Carga las cotizaciones que siguen apartadas en el Excel de control (hoja
- * SALIDA, REFERENCIA vacía). Primero muestra qué se va a crear y qué líneas
+ * SALIDA, REFERENCIA vacía o "NO") y las mermas anotadas (filas MERMA, con el
+ * rollo en INFORMACION SIIGO). Primero muestra qué se va a crear y qué líneas
  * se omiten; solo al confirmar se crean (ver backend importar_cotizaciones). */
 export default function PanelImportarCotizaciones({ alTerminar, alCerrar }: { alTerminar: () => void; alCerrar: () => void }) {
   const [archivo, setArchivo] = useState<File | null>(null);
@@ -34,7 +39,7 @@ export default function PanelImportarCotizaciones({ alTerminar, alCerrar }: { al
       if (confirmar) {
         setResultado(`Se cargaron ${respuesta.creados} cotizaciones, todas "enviadas a producción".${respuesta.esperando_material
           ? ` ${respuesta.esperando_material} esperan material (en la lista dice cuánto les falta; se cubre solo cuando le des ingreso).`
-          : ""}`);
+          : ""}${respuesta.mermas_registradas ? ` Se registró la merma de ${respuesta.mermas_registradas} rollos.` : ""}`);
         setPrevia(null);
         alTerminar();
       } else {
@@ -76,10 +81,18 @@ export default function PanelImportarCotizaciones({ alTerminar, alCerrar }: { al
       {previa && (
         <>
           <p className="inventario-exito" style={{ display: "block" }}>
-            Se van a cargar <strong>{previa.total_apartados} cotizaciones</strong> ({previa.total_lineas} líneas).
+            Se van a cargar <strong>{previa.total_apartados} cotizaciones</strong> ({previa.total_lineas} líneas)
+            {(previa.mermas?.length ?? 0) > 0 && <> y la <strong>merma de {previa.mermas?.length} rollos</strong></>}.
+            {(previa.total_salida_pendiente ?? 0) > 0 && (
+              <> De esas cotizaciones, <strong>{previa.total_salida_pendiente}</strong> son de material que ya salió pero falta saber
+              de qué rollo (REFERENCIA "SI"): quedan en "Pendientes por dar salida".</>
+            )}
             <br />
             <span style={{ fontWeight: 400 }}>
-              No se cargan: {previa.lineas_producidas} líneas que ya tienen REFERENCIA (ya salieron), {previa.lineas_stock_ajuste} de STOCK/AJUSTE, {previa.lineas_traslado ?? 0} traslados entre bodegas y {previa.lineas_producto ?? 0} de productos de stock (tornillos, caballetes, perfiles…).
+              No se cargan: {previa.lineas_producidas} líneas que ya salieron (REFERENCIA con el rollo o "SI"), {previa.lineas_stock_ajuste} de STOCK/AJUSTE, {previa.lineas_traslado ?? 0} traslados entre bodegas y {previa.lineas_producto ?? 0} de productos de stock (tornillos, caballetes, perfiles…).
+              {((previa.mermas_ya_registradas ?? 0) > 0 || (previa.mermas_sin_rollo ?? 0) > 0) && (
+                <> Mermas: {previa.mermas_ya_registradas ?? 0} ya estaban registradas y {previa.mermas_sin_rollo ?? 0} son de rollos que no están en la app (agotados).</>
+              )}
             </span>
           </p>
           {previa.omitidas.length > 0 && (

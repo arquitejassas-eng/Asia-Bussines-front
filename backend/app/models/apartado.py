@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text, text
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text, text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -51,6 +51,11 @@ class Apartado(Base):
     # Business), mismas siglas que Rollo.empresa. Informativo: le dice a la
     # bodega y a Planta de qué empresa tomar los rollos.
     empresa: Mapped[str] = mapped_column(String(10), default="")
+    # "Pendiente por dar salida": el material ya salió (en el Excel,
+    # REFERENCIA = "SI") pero no se sabe de qué rollo. Sigue apartado (así
+    # nadie lo vende) hasta que se registre la salida con la hoja de vida;
+    # no va a Planta. Al completar la salida queda Entregado.
+    salida_pendiente: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     creado_por: Mapped[str] = mapped_column(String(150), default="")
     fecha_creacion: Mapped[DateTime] = mapped_column(DateTime(timezone=True))

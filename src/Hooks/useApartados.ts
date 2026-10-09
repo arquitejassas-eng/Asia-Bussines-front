@@ -33,7 +33,7 @@ type ApartadoItem = {
   metrosPendientes: number | null; tieneProduccionRegistrada: boolean;
 };
 type Apartado = {
-  id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; cliente: string; creadoPor: string;
+  id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; salidaPendiente: boolean; cliente: string; creadoPor: string;
   fechaCreacion: string; estado: string; enviadoAProduccionPor: string; fechaEnviadoAProduccion: string | null;
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;

@@ -2,9 +2,17 @@
 
 Se usó para pasar a la app las cotizaciones que ya estaban apartadas en el
 Excel cuando se empezó a usar la app. Una línea de SALIDA sigue apartada
-mientras su REFERENCIA (el rollo del que salió) está vacía: la producción no
-ha salido o no se ha revisado su hoja de vida física. Reglas acordadas con el
-negocio:
+mientras su REFERENCIA (el rollo del que salió) está vacía o dice "NO": la
+producción no ha salido. "SI" = ya salió pero no se sabe de qué rollo: se
+carga como "pendiente por dar salida" (el material sigue apartado y no va a
+Planta) hasta que, con la hoja de vida, se registre la salida con el rollo.
+Reglas acordadas con el negocio:
+
+- Filas de MERMA ("# DE COT" o REFERENCIA = MERMA): el rollo está en
+  INFORMACION SIIGO y los metros en SALE. Se registran como merma de ese
+  rollo (negativo = sobrante), una sola vez: volver a cargar el Excel no la
+  repite. En el Excel la merma no se resta en las hojas IMPORT (para ver
+  cuánta dejó cada rollo), por eso la app la descuenta al cargar.
 
 - Solo cotizaciones de clientes: "# DE COT" = STOCK / AJUSTE se omiten, y
   los traslados entre bodegas (CODIGO "TRAS R-S", "TRAN R-F"...) también:
@@ -37,13 +45,16 @@ from io import BytesIO
 
 import pandas as pd
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.apartado import Apartado, ApartadoItem, EstadoApartado, ModalidadApartado
 from app.models.bodega import Bodega
 from app.models.material_en_camino import CargamentoRollo
+from app.models.movimiento import Movimiento
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
+from app.services import merma_rollo
 from app.services.apartados import faltantes_apartado
 from app.services.empresas import sigla_empresa_desde_nombre
 
@@ -66,6 +77,10 @@ COLUMNAS = {
 }
 OBLIGATORIAS = ("empresa", "cotizacion", "codigo", "referencia", "sale", "bodega")
 NO_SON_DE_CLIENTE = {"STOCK", "AJUSTE"}
+PENDIENTE = "NO"  # REFERENCIA "NO" = todavía no ha salido (igual que vacía)
+SALIO_SIN_ROLLO = "SI"  # REFERENCIA "SI" = ya salió, falta saber de qué rollo
+SUFIJO_SALIDA_PENDIENTE = "SAL"
+MERMA = "MERMA"
 CODIGO_LAMINA = re.compile(r"^L[A-Z]\d{5},\d{2}$")
 CODIGO_TRASLADO = re.compile(r"^TRA[SN]\b", re.IGNORECASE)
 
@@ -108,12 +123,25 @@ class ApartadoImportado:
     cliente: str
     vendedor: str
     fecha: datetime
+    salida_pendiente: bool = False
     lineas: list[LineaImportada] = field(default_factory=list)
+
+
+@dataclass
+class MermaImportada:
+    fila: int
+    referencia: str
+    metros: float  # negativo = el rollo rindió de más (sobrante)
+    rollo_id: int
 
 
 @dataclass
 class ResultadoImportacion:
     apartados: list[ApartadoImportado] = field(default_factory=list)
+    mermas: list[MermaImportada] = field(default_factory=list)
+    mermas_ya_registradas: int = 0
+    mermas_sin_rollo: int = 0
+    mermas_registradas: int = 0
     omitidas: list[dict] = field(default_factory=list)
     lineas_producidas: int = 0
     lineas_stock_ajuste: int = 0
@@ -143,7 +171,7 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
     bodegas = {_normalizar(b.nombre): b for b in db.query(Bodega).all()}
     codigos_rollo = {c for (c,) in db.query(Rollo.codigo_interno).distinct()} | {c for (c,) in db.query(CargamentoRollo.codigo_interno).distinct()}
 
-    grupos: dict[tuple[str, int], list[tuple[int, str, dict]]] = {}
+    grupos: dict[tuple[str, int, bool], list[tuple[int, str, dict]]] = {}
     for indice, fila in df.iterrows():
         numero_fila = int(indice) + 2
         codigo = _texto(fila.get("codigo"))
@@ -152,10 +180,15 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
         if CODIGO_TRASLADO.match(codigo):
             resultado.lineas_traslado += 1
             continue
-        if _texto(fila.get("referencia")):
+        referencia = _texto(fila.get("referencia"))
+        cotizacion = _cotizacion(fila.get("cotizacion"))
+        if MERMA in (_normalizar(referencia), _normalizar(cotizacion)):
+            _anotar_merma(db, resultado, numero_fila, fila)
+            continue
+        salida_pendiente = _normalizar(referencia) == SALIO_SIN_ROLLO
+        if referencia and _normalizar(referencia) != PENDIENTE and not salida_pendiente:
             resultado.lineas_producidas += 1
             continue
-        cotizacion = _cotizacion(fila.get("cotizacion"))
         if not cotizacion or _normalizar(cotizacion) in NO_SON_DE_CLIENTE:
             resultado.lineas_stock_ajuste += 1
             continue
@@ -178,16 +211,20 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
             resultado.omitidas.append({"fila": numero_fila, "cotizacion": cotizacion, "codigo": codigo,
                                        "motivo": "La columna SALE está vacía o en 0."})
             continue
-        grupos.setdefault((cotizacion, bodega.id), []).append((numero_fila, empresa, {
+        grupos.setdefault((cotizacion, bodega.id, salida_pendiente), []).append((numero_fila, empresa, {
             "codigo": codigo, "cantidad": round(float(cantidad), 2), "fila": fila,
             "descripcion": _texto(fila.get("descripcion")) or _texto(fila.get("producto")) or codigo,
         }))
 
-    for (cotizacion, bodega_id), filas in grupos.items():
+    for (cotizacion, bodega_id, salida_pendiente), filas in grupos.items():
         bodega = db.get(Bodega, bodega_id)
         empresas = sorted({empresa for _, empresa, _ in filas})
         for empresa in empresas:
             numero = cotizacion if len(empresas) == 1 else f"{cotizacion}-{empresa}"
+            if salida_pendiente and (cotizacion, bodega_id, False) in grupos:
+                # La misma cotización tiene líneas pendientes por producir: lo que
+                # ya salió va aparte (ej. "3776-SAL") para no repetir el número.
+                numero = f"{numero}-{SUFIJO_SALIDA_PENDIENTE}"
             ya_existe = (
                 db.query(Apartado.id)
                 .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == numero,
@@ -208,6 +245,7 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
             apartado = ApartadoImportado(
                 numero_cotizacion=numero, bodega_id=bodega_id, bodega_nombre=bodega.nombre, empresa=empresa,
                 cliente=_texto(primera.get("cliente"))[:150], vendedor=_texto(primera.get("vendedor")),
+                salida_pendiente=salida_pendiente,
                 fecha=((fecha.to_pydatetime().replace(tzinfo=HORA_COLOMBIA) + timedelta(seconds=propias[0][0])).astimezone(timezone.utc)
                       if not pd.isna(fecha) else datetime.now(timezone.utc)),
             )
@@ -219,17 +257,57 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
     return resultado
 
 
+def _marca_merma(fila: int) -> str:
+    return f"Merma del Excel (SALIDA fila {fila})."
+
+
+def _anotar_merma(db: Session, resultado: ResultadoImportacion, numero_fila: int, fila) -> None:
+    referencia = _texto(fila.get("descripcion"))
+    metros = pd.to_numeric(fila.get("sale"), errors="coerce")
+    rollo = (
+        db.query(Rollo).filter(func.upper(func.trim(Rollo.identificador_rollo)) == referencia.upper()).first()
+        if referencia else None
+    )
+    if rollo is None or pd.isna(metros) or float(metros) == 0:
+        # Rollo ya agotado en el Excel (no se cargó) o fila sin datos: no hay nada que descontar.
+        resultado.mermas_sin_rollo += 1
+        return
+    ya = (
+        db.query(Movimiento.id)
+        .filter(Movimiento.rollo_id == rollo.id, Movimiento.observaciones.contains(_marca_merma(numero_fila)))
+        .first()
+    )
+    if ya:
+        resultado.mermas_ya_registradas += 1
+        return
+    resultado.mermas.append(MermaImportada(numero_fila, rollo.identificador_rollo, round(float(metros), 2), rollo.id))
+
+
+def registrar_mermas(db: Session, resultado: ResultadoImportacion, usuario: Usuario) -> None:
+    """Registra en cada rollo la merma (o el sobrante) anotada en el Excel."""
+    for merma in resultado.mermas:
+        if merma.metros > 0:
+            _, salio = merma_rollo.registrar_merma(db, merma.rollo_id, merma.metros, _marca_merma(merma.fila), usuario)
+            resultado.mermas_registradas += salio > 0
+        else:
+            merma_rollo.registrar_sobrante(db, merma.rollo_id, -merma.metros, _marca_merma(merma.fila), usuario)
+            resultado.mermas_registradas += 1
+
+
 def crear(db: Session, resultado: ResultadoImportacion, usuario: Usuario, nombre_archivo: str) -> list[Apartado]:
-    """Crea los apartados analizados (sin confirmar la transacción)."""
+    """Crea los apartados analizados y registra las mermas (sin confirmar la transacción)."""
+    registrar_mermas(db, resultado, usuario)
     ahora = datetime.now(timezone.utc)
     creados: list[Apartado] = []
     for importado in resultado.apartados:
         apartado = Apartado(
             bodega_id=importado.bodega_id, numero_cotizacion=importado.numero_cotizacion, empresa=importado.empresa,
             cliente=importado.cliente, creado_por=usuario.correo, fecha_creacion=importado.fecha,
-            estado=EstadoApartado.ENVIADO_A_PRODUCCION, enviado_a_produccion_por=usuario.correo,
-            fecha_enviado_a_produccion=ahora,
+            estado=EstadoApartado.EN_PRODUCCION if importado.salida_pendiente else EstadoApartado.ENVIADO_A_PRODUCCION,
+            enviado_a_produccion_por=usuario.correo, fecha_enviado_a_produccion=ahora,
+            salida_pendiente=importado.salida_pendiente,
             observaciones=f'Cargada desde el Excel "{nombre_archivo}" (hoja SALIDA).'
+            + (" El material ya salió (REFERENCIA \"SI\"): falta registrar de qué rollo." if importado.salida_pendiente else "")
             + (f" Vendedor: {importado.vendedor}." if importado.vendedor else ""),
         )
         db.add(apartado)
@@ -259,6 +337,7 @@ def resumen(resultado: ResultadoImportacion) -> dict:
             {
                 "numero_cotizacion": a.numero_cotizacion, "bodega_id": a.bodega_id, "bodega_nombre": a.bodega_nombre,
                 "empresa": a.empresa, "cliente": a.cliente, "fecha": a.fecha.date().isoformat(),
+                "salida_pendiente": a.salida_pendiente,
                 "lineas": [
                     {"fila": ln.fila, "codigo": ln.codigo, "descripcion": ln.descripcion, "cantidad": ln.cantidad,
                      "modalidad": ln.modalidad.value, "producto_nuevo": ln.producto_nuevo}
@@ -272,7 +351,11 @@ def resumen(resultado: ResultadoImportacion) -> dict:
         "lineas_stock_ajuste": resultado.lineas_stock_ajuste,
         "lineas_traslado": resultado.lineas_traslado,
         "lineas_producto": resultado.lineas_producto,
+        "mermas": [{"fila": m.fila, "referencia": m.referencia, "metros": m.metros} for m in resultado.mermas],
+        "mermas_ya_registradas": resultado.mermas_ya_registradas,
+        "mermas_sin_rollo": resultado.mermas_sin_rollo,
         "total_apartados": len(resultado.apartados),
+        "total_salida_pendiente": sum(a.salida_pendiente for a in resultado.apartados),
         "total_lineas": sum(len(a.lineas) for a in resultado.apartados),
         "productos_nuevos": 0,
     }
