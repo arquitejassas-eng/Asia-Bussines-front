@@ -26,13 +26,13 @@ function PanelBusquedaRollosProduccion({
 }) {
   return (
     <section className="produccion-tarjeta">
-      <h2>3. Buscar por código de clasificación o de rollo</h2>
+      <h2>3. Buscar por código de clasificación, rollo o kilos</h2>
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         <input
           type="text"
           className="produccion-input"
           style={{ flex: "1 1 220px" }}
-          placeholder="Ej. LA50030,25 ó R-0042"
+          placeholder="Código, rollo o kilos. Ej. LA50030,25 · R-0042 · 4466"
           value={codigoBusqueda}
           onChange={(e) => setCodigoBusqueda(e.target.value)}
         />
@@ -68,6 +68,7 @@ function PanelBusquedaRollosProduccion({
                     <th>Empresa</th>
                     <th>Color</th>
                     <th>Calibre</th>
+                    <th>Kilos</th>
                     <th>Disponibles</th>
                     <th>Estado</th>
                     <th>Metros a consumir</th>
@@ -100,6 +101,7 @@ function PanelBusquedaRollosProduccion({
                           </span>
                         </td>
                         <td data-etiqueta="Calibre">{formatearCalibre(rollo.calibre)}</td>
+                        <td data-etiqueta="Kilos">{rollo.pesoNeto != null ? `${Math.round(rollo.pesoNeto).toLocaleString("es-CO")} kg` : "—"}</td>
                         <td data-etiqueta="Disponibles">{rollo.metrosDisponibles}</td>
                         <td data-etiqueta="Estado">
                           <span className={`produccion-estado-badge estado-${rollo.estado}`}>
