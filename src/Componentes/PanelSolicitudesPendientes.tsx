@@ -33,7 +33,7 @@ function PanelSolicitudesPendientes({
       </p>
       {errorSolicitudPendiente && <p className="produccion-error">{errorSolicitudPendiente}</p>}
       <div className="produccion-tabla-wrap">
-        <table className="produccion-tabla produccion-tabla-resultados">
+        <table className="produccion-tabla produccion-tabla-tarjetas produccion-tarjetas-solicitudes produccion-tabla-resultados">
           <thead>
             <tr>
               <th>Código</th>
@@ -49,9 +49,9 @@ function PanelSolicitudesPendientes({
                 className={apartadoItemId === s.itemId ? "produccion-fila-resaltada" : undefined}
                 style={apartadoItemId === s.itemId ? { fontWeight: 600 } : undefined}
               >
-                <td style={{ whiteSpace: "nowrap" }}>{s.codigoInterno}</td>
+                <td data-etiqueta="Código" style={{ whiteSpace: "nowrap" }}>{s.codigoInterno}</td>
                 <td>{s.descripcion || "—"}</td>
-                <td style={{ whiteSpace: "nowrap" }}>{s.metrosPendientes} m</td>
+                <td data-etiqueta="Pendiente" style={{ whiteSpace: "nowrap" }}>{s.metrosPendientes} m</td>
                 <td>
                   {apartadoItemId === s.itemId ? (
                     <button type="button" className="produccion-boton-secundario" onClick={limpiarSolicitud}>

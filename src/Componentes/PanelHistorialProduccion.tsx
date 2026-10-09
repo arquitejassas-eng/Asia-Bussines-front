@@ -14,7 +14,7 @@ function PanelHistorialProduccion({ misProducciones }) {
   return (
     <section className="produccion-tarjeta produccion-tabla-wrap">
       <h2>Producciones registradas</h2>
-      <table className="produccion-tabla produccion-tabla-historial">
+      <table className="produccion-tabla produccion-tabla-tarjetas produccion-tarjetas-historial produccion-tabla-historial">
         <thead>
           <tr>
             <th>Código único</th>
@@ -35,35 +35,35 @@ function PanelHistorialProduccion({ misProducciones }) {
         <tbody>
           {misProducciones.flatMap((prod) => [
             <tr key={prod.id}>
-              <td>{prod.codigoUnico}</td>
-              <td>{prod.cotizacion || "—"}</td>
-              <td>{prod.clienteApartado || "—"}</td>
-              <td>{formatearFechaColombia(prod.fecha)}</td>
-              <td>{prod.modelo || "—"}</td>
-              <td>{prod.cantidadProductos}</td>
-              <td>{prod.medidaProducto || "—"}</td>
-              <td>{prod.codigoClasificacion}</td>
-              <td>{prod.rollosUtilizados.map((r) => r.identificadorRollo).join(", ")}</td>
-              <td>{prod.totalMetrosConsumidos}</td>
-              <td>{prod.saldoCodigo}</td>
-              <td>{prod.responsable}</td>
-              <td>{prod.observaciones || "—"}</td>
+              <td data-etiqueta="Código">{prod.codigoUnico}</td>
+              <td data-etiqueta="Cotización">{prod.cotizacion || "—"}</td>
+              <td data-etiqueta="Cliente">{prod.clienteApartado || "—"}</td>
+              <td data-etiqueta="Fecha">{formatearFechaColombia(prod.fecha)}</td>
+              <td data-etiqueta="Modelo">{prod.modelo || "—"}</td>
+              <td data-etiqueta="Cantidad">{prod.cantidadProductos}</td>
+              <td data-etiqueta="Medida">{prod.medidaProducto || "—"}</td>
+              <td data-etiqueta="Código clasificación">{prod.codigoClasificacion}</td>
+              <td data-etiqueta="Rollo">{prod.rollosUtilizados.map((r) => r.identificadorRollo).join(", ")}</td>
+              <td data-etiqueta="Metros usados">{prod.totalMetrosConsumidos}</td>
+              <td data-etiqueta="Saldo del rollo">{prod.saldoCodigo}</td>
+              <td data-etiqueta="Responsable">{prod.responsable}</td>
+              <td data-etiqueta="Observación">{prod.observaciones || "—"}</td>
             </tr>,
             ...filasStockAdicional(prod).map((fila) => (
               <tr key={fila.key} className="produccion-fila-stock">
-                <td>{fila.codigoProduccion}</td>
-                <td className="produccion-cotizacion-stock">{fila.cotizacion}</td>
-                <td>{fila.cliente}</td>
-                <td>{formatearFechaColombia(fila.fecha)}</td>
-                <td>{fila.modelo || "—"}</td>
-                <td>{fila.cantidad}</td>
-                <td>{fila.medida || "—"}</td>
-                <td>{fila.codigoClasificacion}</td>
-                <td>{fila.referencia}</td>
-                <td>{fila.metrosConsumidos}</td>
-                <td>{fila.saldoRestante}</td>
-                <td>{fila.responsable}</td>
-                <td>{fila.observaciones}</td>
+                <td data-etiqueta="Código">{fila.codigoProduccion}</td>
+                <td data-etiqueta="Cotización" className="produccion-cotizacion-stock">{fila.cotizacion}</td>
+                <td data-etiqueta="Cliente">{fila.cliente}</td>
+                <td data-etiqueta="Fecha">{formatearFechaColombia(fila.fecha)}</td>
+                <td data-etiqueta="Modelo">{fila.modelo || "—"}</td>
+                <td data-etiqueta="Cantidad">{fila.cantidad}</td>
+                <td data-etiqueta="Medida">{fila.medida || "—"}</td>
+                <td data-etiqueta="Código clasificación">{fila.codigoClasificacion}</td>
+                <td data-etiqueta="Rollo">{fila.referencia}</td>
+                <td data-etiqueta="Metros usados">{fila.metrosConsumidos}</td>
+                <td data-etiqueta="Saldo del rollo">{fila.saldoRestante}</td>
+                <td data-etiqueta="Responsable">{fila.responsable}</td>
+                <td data-etiqueta="Observación">{fila.observaciones}</td>
               </tr>
             )),
           ])}

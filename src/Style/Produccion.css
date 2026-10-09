@@ -282,3 +282,57 @@
   padding: 0.75rem 1rem;
   margin: 0 0 1rem;
 }
+/* ── Producción en celular: cada fila de tabla es una tarjeta ─────────── */
+@media (max-width: 640px) {
+  .produccion-tabla-tarjetas,
+  .produccion-tabla-tarjetas tbody { display: block; width: 100%; }
+  .produccion-tabla-tarjetas thead { display: none; }
+  .produccion-tabla-tarjetas tbody tr {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.6rem;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid var(--at-border, #E1D5C0);
+    border-radius: var(--at-r-md, 12px);
+    background: var(--at-surface, #FFFFFF);
+  }
+  .produccion-tabla-tarjetas tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0;
+    border: none;
+    white-space: normal !important;
+    text-align: right;
+  }
+  .produccion-tabla-tarjetas tbody td:not([data-etiqueta]) { text-align: left; }
+  .produccion-tabla-tarjetas td[data-etiqueta]::before {
+    content: attr(data-etiqueta);
+    flex: none;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--at-caption, #9C8A74);
+    text-align: left;
+  }
+  .produccion-tabla-tarjetas tbody td:empty { display: none; }
+
+  /* Líneas de la cotización: producto arriba y el botón a todo lo ancho. */
+  .produccion-tarjetas-solicitudes tbody td:nth-child(2) { order: -1; font-weight: 600; color: var(--at-text, #251C14); }
+  .produccion-tarjetas-solicitudes tbody td:last-child button { width: 100%; min-height: 2.75rem; }
+
+  /* Rollos: casilla y referencia en la primera fila, metros grandes. */
+  .produccion-tarjetas-rollos tbody tr { display: grid; grid-template-columns: auto 1fr; column-gap: 0.75rem; }
+  .produccion-tarjetas-rollos tbody td:nth-child(1) { grid-row: 1; grid-column: 1; }
+  .produccion-tarjetas-rollos tbody td:nth-child(1) input { width: 1.4rem; height: 1.4rem; }
+  .produccion-tarjetas-rollos tbody td:nth-child(2) { grid-row: 1; grid-column: 2; font-weight: 700; font-size: 0.95rem; }
+  .produccion-tarjetas-rollos tbody td:nth-child(n + 3) { grid-column: 1 / -1; }
+  .produccion-tarjetas-rollos .produccion-input-metros { width: 8rem; font-size: 1rem; padding: 0.5rem 0.6rem; }
+
+  /* Historial: código y cotización destacados. */
+  .produccion-tarjetas-historial tbody td:first-child { font-weight: 700; }
+  .produccion-tabla-wrap { overflow-x: visible; }
+}

@@ -1,17 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ErrorApi } from "./Api";
 
 type Item = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string; cantidad: number;
   metrosPendientes: number | null; stockDescontado: boolean;
 };
-type Apartado = { id: number; numeroCotizacion: string; bodegaNombre: string; items: Item[] };
+type Apartado = { id: number; numeroCotizacion: string; cliente: string; bodegaNombre: string; items: Item[] };
 type RolloUsado = { itemId: number; referencia: string; metros: string };
 
 /** Admin Inventario registra la salida de una cotización con la hoja de vida
  * física: por cada línea de rollo, la referencia del rollo usado y los metros
  * (se puede usar más de un rollo por línea); las líneas de producto se
- * descuentan del stock. Todo se guarda junto o nada. */
+ * descuentan del stock. Todo se guarda junto o nada.
+ * Se abre encima de la lista: pantalla completa en celular, ventana en PC
+ * (mismos estilos que Separar cotización). */
 export default function PanelRegistrarSalida({ apartado: apartadoActual, alTerminar, alCerrar }: {
   apartado: Apartado; alTerminar: () => void; alCerrar: () => void;
 }) {
@@ -27,14 +29,35 @@ export default function PanelRegistrarSalida({ apartado: apartadoActual, alTermi
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
+  // Mientras está abierto, la página de atrás no se desplaza y Esc lo cierra.
+  useEffect(() => {
+    const anterior = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const alPresionar = (evento: KeyboardEvent) => { if (evento.key === "Escape") alCerrar(); };
+    window.addEventListener("keydown", alPresionar);
+    return () => { document.body.style.overflow = anterior; window.removeEventListener("keydown", alPresionar); };
+  }, [alCerrar]);
+
   function cambiar(indice: number, campo: "referencia" | "metros", valor: string) {
+    setError("");
     setRollos((actual) => actual.map((r, i) => (i === indice ? { ...r, [campo]: valor } : r)));
   }
-  function otroRollo(itemId: number, indice: number) {
-    setRollos((actual) => [...actual.slice(0, indice + 1), { itemId, referencia: "", metros: "" }, ...actual.slice(indice + 1)]);
+  function otroRollo(itemId: number) {
+    setRollos((actual) => {
+      const ultimo = actual.map((r) => r.itemId).lastIndexOf(itemId);
+      return [...actual.slice(0, ultimo + 1), { itemId, referencia: "", metros: "" }, ...actual.slice(ultimo + 1)];
+    });
   }
   function quitar(indice: number) {
     setRollos((actual) => actual.filter((_, i) => i !== indice));
+  }
+  function alternarStock(id: number) {
+    setError("");
+    setStock((actual) => {
+      const nueva = new Set(actual);
+      if (nueva.has(id)) nueva.delete(id); else nueva.add(id);
+      return nueva;
+    });
   }
 
   const aEnviar = rollos.filter((r) => r.referencia.trim() && Number(r.metros) > 0);
@@ -58,72 +81,98 @@ export default function PanelRegistrarSalida({ apartado: apartadoActual, alTermi
     }
   }
 
+  const titulo = `salida-titulo-${apartado.id}`;
   return (
-    <div className="inventario-form" style={{ margin: "0.5rem 0" }}>
-      <h3 className="inventario-form-subtitulo" style={{ marginTop: 0 }}>
-        Registrar salida — cotización {apartado.numeroCotizacion} ({apartado.bodegaNombre})
-      </h3>
-      <p className="inventario-carga-ayuda">
-        Con la hoja de vida física: escribe la referencia del rollo que se usó y los metros. Puedes dejar líneas en
-        blanco y registrarlas después; la cotización se cierra sola cuando todas sus líneas tienen salida.
-      </p>
-      {rollos.length > 0 && (
-        <table className="inventario-tabla">
-          <thead><tr><th>Línea</th><th>Pendiente</th><th>Referencia del rollo usado</th><th>Metros</th><th></th></tr></thead>
-          <tbody>
-            {rollos.map((r, indice) => {
-              const item = lineasRollo.find((it) => it.id === r.itemId);
-              if (!item) return null;
-              const primera = rollos.findIndex((x) => x.itemId === r.itemId) === indice;
-              return (
-                <tr key={indice}>
-                  <td>{primera ? <><strong>{item.codigoInterno}</strong> — {item.descripcion}</> : "↳ otro rollo"}</td>
-                  <td>{primera ? `${item.metrosPendientes} m` : ""}</td>
-                  <td>
-                    <input
-                      aria-label={`Referencia ${item.codigoInterno} ${indice}`}
-                      placeholder={`Ej. ${item.codigoInterno}-05`}
-                      value={r.referencia}
-                      onChange={(e) => cambiar(indice, "referencia", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input type="number" min="0" step="0.01" style={{ maxWidth: 110 }}
-                      aria-label={`Metros ${item.codigoInterno} ${indice}`}
-                      value={r.metros} onChange={(e) => cambiar(indice, "metros", e.target.value)} />
-                  </td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <button type="button" className="inventario-boton-cancelar" onClick={() => otroRollo(r.itemId, indice)}>+ otro rollo</button>
-                    {!primera && <button type="button" className="inventario-boton-cancelar" onClick={() => quitar(indice)}>Quitar</button>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-      {lineasStock.length > 0 && (
-        <div style={{ marginTop: "0.75rem" }}>
-          <strong>Productos de stock</strong>
-          {lineasStock.map((it) => (
-            <label key={it.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center", margin: "0.25rem 0" }}>
-              <input type="checkbox" style={{ width: "auto" }} checked={stock.has(it.id)}
-                onChange={() => setStock((actual) => {
-                  const nueva = new Set(actual);
-                  if (nueva.has(it.id)) nueva.delete(it.id); else nueva.add(it.id);
-                  return nueva;
-                })} />
-              Descontar {it.cantidad} × {it.descripcion}
-            </label>
-          ))}
+    <div className="separar-fondo" onClick={alCerrar}>
+      <div className="separar-panel" role="dialog" aria-modal="true" aria-labelledby={titulo} onClick={(e) => e.stopPropagation()}>
+        <header className="separar-encabezado">
+          <div>
+            <h3 id={titulo}>Registrar salida {apartado.numeroCotizacion}</h3>
+            <p>{apartado.cliente || "Sin cliente"} · {apartado.bodegaNombre}</p>
+          </div>
+          <button type="button" className="separar-cerrar" aria-label="Cerrar" onClick={alCerrar}>×</button>
+        </header>
+
+        <div className="separar-cuerpo">
+          <p className="separar-ayuda">
+            Con la hoja de vida física: escribe la <strong>referencia del rollo</strong> que se usó y los metros. Puedes
+            dejar líneas en blanco y registrarlas después; la cotización se cierra sola cuando todas tienen salida.
+          </p>
+
+          {lineasRollo.length > 0 && (
+            <ul className="separar-lineas">
+              {lineasRollo.map((it) => {
+                const filas = rollos.map((r, indice) => ({ r, indice })).filter(({ r }) => r.itemId === it.id);
+                return (
+                  <li key={it.id} className="salida-linea">
+                    <div className="salida-linea-cabeza">
+                      <span className="separar-linea-texto">
+                        <span className="separar-linea-codigo">{it.codigoInterno}</span>
+                        <span>{it.descripcion}</span>
+                      </span>
+                      <span className="separar-linea-cantidad">{it.metrosPendientes} m<small>pendientes</small></span>
+                    </div>
+                    {filas.map(({ r, indice }, n) => (
+                      <div key={indice} className="salida-rollo">
+                        <label className="salida-campo salida-campo-referencia">
+                          <span>{n === 0 ? "Rollo usado (referencia)" : "Otro rollo"}</span>
+                          <input
+                            autoCapitalize="characters" autoCorrect="off" spellCheck={false}
+                            placeholder={`Ej. ${it.codigoInterno}-05`} value={r.referencia}
+                            onChange={(e) => cambiar(indice, "referencia", e.target.value)}
+                          />
+                        </label>
+                        <label className="salida-campo salida-campo-metros">
+                          <span>Metros</span>
+                          <input type="number" inputMode="decimal" min="0" step="0.01" value={r.metros}
+                            onChange={(e) => cambiar(indice, "metros", e.target.value)} />
+                        </label>
+                        {n > 0 && (
+                          <button type="button" className="salida-quitar" aria-label="Quitar este rollo" onClick={() => quitar(indice)}>×</button>
+                        )}
+                      </div>
+                    ))}
+                    <button type="button" className="salida-otro" onClick={() => otroRollo(it.id)}>+ Se usó otro rollo</button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {lineasStock.length > 0 && (
+            <>
+              <h4 className="salida-subtitulo">Productos de stock</h4>
+              <ul className="separar-lineas">
+                {lineasStock.map((it) => (
+                  <li key={it.id}>
+                    <label className={`separar-linea ${stock.has(it.id) ? "separar-linea-elegida" : ""}`}>
+                      <input type="checkbox" checked={stock.has(it.id)} onChange={() => alternarStock(it.id)}
+                        aria-label={`Descontar ${it.descripcion}`} />
+                      <span className="separar-linea-texto">
+                        <span className="separar-linea-codigo">Descontar del stock</span>
+                        <span>{it.descripcion}</span>
+                      </span>
+                      <span className="separar-linea-cantidad">{it.cantidad} und</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
-      )}
-      {error && <p className="inventario-error">{error}</p>}
-      <div className="inventario-form-botones">
-        <button type="button" className="inventario-boton" disabled={guardando} onClick={guardar}>
-          {guardando ? "Guardando..." : "Registrar salida"}
-        </button>
-        <button type="button" className="inventario-boton-cancelar" onClick={alCerrar}>Cancelar</button>
+
+        <footer className="separar-pie">
+          <p className="separar-resumen">
+            <strong>{aEnviar.length}</strong> rollo{aEnviar.length === 1 ? "" : "s"} y <strong>{stock.size}</strong> producto{stock.size === 1 ? "" : "s"} para registrar
+          </p>
+          {error && <p className="inventario-error separar-error">{error}</p>}
+          <div className="separar-botones">
+            <button type="button" className="inventario-boton-cancelar" onClick={alCerrar}>Cancelar</button>
+            <button type="button" className="inventario-boton" disabled={guardando} onClick={guardar}>
+              {guardando ? "Guardando..." : "Registrar salida"}
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );

@@ -1028,3 +1028,156 @@
   box-shadow: 0 0 0 3px var(--at-terra-dim, rgba(183, 69, 31, 0.12));
 }
 .separar-cantidad-nota { width: 100%; color: var(--at-muted, #7C6A56); }
+/* ── Registrar salida (misma ventana que Separar) ─────────────────────── */
+.salida-linea {
+  border: 1.5px solid var(--at-border, #E1D5C0);
+  border-radius: var(--at-r-md, 12px);
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.salida-linea-cabeza { display: flex; align-items: flex-start; gap: 0.8rem; }
+.salida-linea-cabeza .separar-linea-cantidad { display: flex; flex-direction: column; align-items: flex-end; }
+.salida-linea-cabeza small { font-weight: 400; font-size: 0.72rem; color: var(--at-muted, #7C6A56); }
+.salida-rollo { display: flex; gap: 0.5rem; align-items: flex-end; }
+.salida-campo { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.salida-campo-referencia { flex: 1; }
+.salida-campo-metros { width: 6.5rem; flex: none; }
+.salida-campo > span {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--at-muted, #7C6A56);
+}
+.salida-campo input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-radius: var(--at-r-sm, 8px);
+  background: var(--at-surface, #FFFFFF);
+  color: var(--at-text, #251C14);
+  font: inherit;
+  font-size: 1rem;
+}
+.salida-campo input:focus {
+  outline: none;
+  border-color: var(--at-terra-light, #D9642F);
+  box-shadow: 0 0 0 3px var(--at-terra-dim, rgba(183, 69, 31, 0.12));
+}
+.salida-quitar {
+  flex: none;
+  width: 2.6rem;
+  height: 2.6rem;
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-radius: var(--at-r-sm, 8px);
+  background: var(--at-surface-2, #F1E9DC);
+  color: var(--at-text-2, #4A392C);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.salida-otro {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0.2rem 0;
+  color: var(--at-terra, #B7451F);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.salida-subtitulo {
+  margin: 1.1rem 0 0.5rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--at-muted, #7C6A56);
+}
+
+/* ── Apartados en celular ─────────────────────────────────────────────── */
+.apartados-pestanas {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-wrap: nowrap;
+}
+.apartados-pestanas::-webkit-scrollbar { display: none; }
+.apartados-pestanas .inventario-pestana-boton { white-space: nowrap; flex: none; }
+
+@media (max-width: 760px) {
+  .apartados-tabla { border-collapse: separate; }
+  .apartados-tabla thead { display: none; }
+  .apartados-tabla,
+  .apartados-tabla tbody { display: block; width: 100%; }
+  .apartados-tabla tbody tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "cot estado"
+      "cliente cliente"
+      "bodega empresa"
+      "productos productos"
+      "fecha fecha"
+      "acciones acciones";
+    gap: 0.35rem 0.75rem;
+    padding: 0.9rem 1rem;
+    border-bottom: 8px solid var(--at-bg, #F7F2EA);
+    background: var(--at-surface, #FFFFFF) !important;
+  }
+  .apartados-tabla tbody td {
+    display: block;
+    padding: 0;
+    border: none;
+    min-width: 0 !important;
+    background: transparent !important;
+  }
+  .apartados-tabla td[data-etiqueta]::before {
+    content: attr(data-etiqueta);
+    display: block;
+    font-family: var(--at-font-sans, "Inter", sans-serif);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--at-caption, #9C8A74);
+  }
+  .apartados-tabla .ap-col-cotizacion { grid-area: cot; font-size: 1.05rem; font-weight: 700; }
+  .apartados-tabla .ap-col-estado { grid-area: estado; justify-self: end; }
+  .apartados-tabla .ap-col-cliente { grid-area: cliente; color: var(--at-text-2, #4A392C); }
+  .apartados-tabla .ap-col-bodega { grid-area: bodega; }
+  .apartados-tabla .ap-col-empresa { grid-area: empresa; text-align: right; }
+  .apartados-tabla .ap-col-productos {
+    grid-area: productos;
+    margin-top: 0.35rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--at-border-soft, #EBE2D2);
+  }
+  .apartados-tabla .ap-col-fecha { grid-area: fecha; }
+  .apartados-tabla .ap-col-acciones {
+    grid-area: acciones;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.35rem;
+  }
+  .apartados-tabla .ap-col-acciones button {
+    flex: 1 1 calc(50% - 0.4rem);
+    height: auto;
+    min-height: 2.6rem;
+    margin: 0;
+    padding: 0.55rem 0.7rem;
+  }
+  .apartados-tabla tbody tr td.inventario-vacio { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .salida-rollo { flex-wrap: wrap; }
+  .salida-campo-referencia { flex: 1 1 100%; }
+  .salida-campo-metros { flex: 1; width: auto; }
+}
+
+/* Cotización que ya salió pero falta saber de qué rollo. */
+.apartados-estado.estado-por_dar_salida { --chip: #7a4fa3; }

@@ -31,9 +31,20 @@ function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number
 }
 
 // Pestañas de la lista: las abiertas, y aparte las entregadas y las canceladas.
-type Pestana = "cotizaciones" | "entregadas" | "canceladas";
-const PESTANAS: Record<Pestana, string> = { cotizaciones: "Cotizaciones", entregadas: "Entregadas", canceladas: "Canceladas" };
+// "Pendientes por dar salida": ya salieron pero falta saber de qué rollo
+// (REFERENCIA "SI" en el Excel); se cierran con Registrar salida.
+type Pestana = "cotizaciones" | "pendientes_salida" | "entregadas" | "canceladas";
+const PESTANAS: Record<Pestana, string> = {
+  cotizaciones: "Cotizaciones", pendientes_salida: "Pendientes por dar salida", entregadas: "Entregadas", canceladas: "Canceladas",
+};
 const ESTADO_DE_PESTANA: Partial<Record<Pestana, string>> = { entregadas: "entregado", canceladas: "cancelado" };
+const CERRADAS = Object.values(ESTADO_DE_PESTANA);
+function vaEnPestana(ap: { estado: string; salidaPendiente: boolean }, pestana: Pestana) {
+  const estadoPropio = ESTADO_DE_PESTANA[pestana];
+  if (estadoPropio) return ap.estado === estadoPropio;
+  if (CERRADAS.includes(ap.estado)) return false;
+  return ap.salidaPendiente === (pestana === "pendientes_salida");
+}
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
   apartado: "Apartado",
@@ -89,6 +100,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   // "Separar": el cliente no se lleva todo y parte pasa a una cotización nueva.
   const [separarAbierta, setSepararAbierta] = useState<number | null>(null);
   const cerrarSeparar = useCallback(() => setSepararAbierta(null), []);
+  const cerrarSalida = useCallback(() => setSalidaAbierta(null), []);
   const [lineasExpandidas, setLineasExpandidas] = useState<Set<number>>(new Set());
   function alternarLineas(id: number) {
     setLineasExpandidas((actual) => {
@@ -118,7 +130,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     return [...a.apartados].sort((x, y) =>
       y.fechaCreacion.localeCompare(x.fechaCreacion) || y.id - x.id,
     ).filter((ap) =>
-      (ESTADO_DE_PESTANA[pestana] ? ap.estado === ESTADO_DE_PESTANA[pestana] : !Object.values(ESTADO_DE_PESTANA).includes(ap.estado))
+      vaEnPestana(ap, pestana)
       && (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
       && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
       && (!filtroEmpresa || ap.empresa === filtroEmpresa)
@@ -535,7 +547,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               </div>
               {!a.cargandoApartados && (
                 <p className="inventario-carga-ayuda" style={{ margin: "0 0 0.5rem" }}>
-                  {pestana === "entregadas"
+                  {pestana === "pendientes_salida"
+                    ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización" : "cotizaciones"} con material que ya salió, pero falta saber de qué rollo. Cuando revisen la hoja de vida, usa "Registrar salida" con la referencia del rollo.`
+                    : pestana === "entregadas"
                     ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización entregada" : "cotizaciones entregadas"} al cliente.`
                     : pestana === "canceladas"
                     ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización cancelada" : "cotizaciones canceladas"}.`
@@ -580,15 +594,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           // puede mezclar ítems de stock y de rollo -- se ven en la misma
                           // fila, no en pantallas separadas.
                           const tieneProduccionPendiente = (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion")
-                            && calcularSolicitudesPendientes([ap]).length > 0;
+                            && !ap.salidaPendiente && calcularSolicitudesPendientes([ap]).length > 0;
                           return (
                           <Fragment key={ap.id}>
                           <tr>
-                            {esAdminInventario && <td>{ap.bodegaNombre || "—"}</td>}
-                            <td>{ap.numeroCotizacion}</td>
-                            <td>{EMPRESAS[ap.empresa] || ap.empresa || "—"}</td>
-                            <td>{ap.cliente || "—"}</td>
-                            <td style={{ minWidth: 340 }}>
+                            {esAdminInventario && <td className="ap-col-bodega" data-etiqueta="Bodega">{ap.bodegaNombre || "—"}</td>}
+                            <td className="ap-col-cotizacion">{ap.numeroCotizacion}</td>
+                            <td className="ap-col-empresa" data-etiqueta="Empresa">{EMPRESAS[ap.empresa] || ap.empresa || "—"}</td>
+                            <td className="ap-col-cliente">{ap.cliente || "—"}</td>
+                            <td className="ap-col-productos" style={{ minWidth: 340 }}>
                               <ul className="apartado-lineas">
                                 {(lineasExpandidas.has(ap.id) ? ap.items : ap.items.slice(0, LINEAS_VISIBLES)).map((it) => {
                                   const lista = it.modalidad === "por_stock" ? it.stockDescontado : (it.metrosPendientes ?? 0) <= 0;
@@ -636,9 +650,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                 </div>
                               )}
                             </td>
-                            <td><span className={`apartados-estado estado-${ap.estado}`}>{ETIQUETAS_ESTADO[ap.estado] || ap.estado}</span></td>
-                            <td style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
-                            <td className="inventario-acciones">
+                            <td className="ap-col-estado">
+                              {ap.salidaPendiente && !CERRADAS.includes(ap.estado)
+                                ? <span className="apartados-estado estado-por_dar_salida">Por dar salida</span>
+                                : <span className={`apartados-estado estado-${ap.estado}`}>{ETIQUETAS_ESTADO[ap.estado] || ap.estado}</span>}
+                            </td>
+                            <td className="ap-col-fecha" data-etiqueta="Creado" style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
+                            <td className="inventario-acciones ap-col-acciones">
                               {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
                                 <button
                                   disabled={ap.faltantes.length > 0}
@@ -670,9 +688,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                 </button>
                               )}
                               {esAdminInventario && ESTADOS_CANCELABLES.includes(ap.estado) && (
-                                <button onClick={() => { setSepararAbierta(null); setSalidaAbierta(salidaAbierta === ap.id ? null : ap.id); }}>
-                                  {salidaAbierta === ap.id ? "Cerrar salida" : "Registrar salida"}
-                                </button>
+                                <button onClick={() => { setSepararAbierta(null); setSalidaAbierta(ap.id); }}>Registrar salida</button>
                               )}
                               {(ap.items.length > 1 || (ap.items[0]?.cantidad ?? 0) > 1)
                                 && ((esAdminInventario && (ESTADOS_CANCELABLES.includes(ap.estado) || ap.estado === "produccion_terminada"))
@@ -682,7 +698,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               {tieneProduccionPendiente && !esAdminInventario && (
                                 <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>Iniciar Producción</button>
                               )}
-                              {a.puedeMarcarTerminado && (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion") && (
+                              {a.puedeMarcarTerminado && !ap.salidaPendiente && (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion") && (
                                 <button onClick={() => setConfirmacion({
                                   titulo: `¿Marcar como terminada la producción de ${ap.numeroCotizacion}?`,
                                   mensaje: "Se cierra la producción de esta cotización y se descuenta el stock de sus productos apartados. No se puede deshacer.",
@@ -700,17 +716,6 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               )}
                             </td>
                           </tr>
-                          {salidaAbierta === ap.id && (
-                            <tr>
-                              <td colSpan={esAdminInventario ? 8 : 7}>
-                                <PanelRegistrarSalida
-                                  apartado={ap}
-                                  alTerminar={() => { setSalidaAbierta(null); a.cargarApartados(); }}
-                                  alCerrar={() => setSalidaAbierta(null)}
-                                />
-                              </td>
-                            </tr>
-                          )}
                           </Fragment>
                           );
                         })
@@ -726,6 +731,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           )}
         </div>
       </div>
+      {salidaAbierta !== null && a.apartados.some((ap) => ap.id === salidaAbierta) && (
+        <PanelRegistrarSalida
+          apartado={a.apartados.find((ap) => ap.id === salidaAbierta)!}
+          alTerminar={() => { setSalidaAbierta(null); a.cargarApartados(); }}
+          alCerrar={cerrarSalida}
+        />
+      )}
       {separarAbierta !== null && a.apartados.some((ap) => ap.id === separarAbierta) && (
         <PanelSepararCotizacion
           apartado={a.apartados.find((ap) => ap.id === separarAbierta)!}

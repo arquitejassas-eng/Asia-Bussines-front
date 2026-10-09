@@ -60,7 +60,7 @@ function PanelBusquedaRollosProduccion({
             </p>
           ) : (
             <div className="produccion-tabla-wrap">
-              <table className="produccion-tabla produccion-tabla-resultados">
+              <table className="produccion-tabla produccion-tabla-tarjetas produccion-tarjetas-rollos produccion-tabla-resultados">
                 <thead>
                   <tr>
                     <th></th>
@@ -92,21 +92,21 @@ function PanelBusquedaRollosProduccion({
                           />
                         </td>
                         <td>{rollo.identificadorRollo}</td>
-                        <td>{nombreEmpresa(rollo.empresa)}</td>
-                        <td>
+                        <td data-etiqueta="Empresa">{nombreEmpresa(rollo.empresa)}</td>
+                        <td data-etiqueta="Color">
                           <span className={`rollos-color-etiqueta color-${colorClase}`}>
                             <span className="rollos-color-muestra" aria-hidden="true" />
                             {rollo.colorMaterial || "Sin color"}
                           </span>
                         </td>
-                        <td>{formatearCalibre(rollo.calibre)}</td>
-                        <td>{rollo.metrosDisponibles}</td>
-                        <td>
+                        <td data-etiqueta="Calibre">{formatearCalibre(rollo.calibre)}</td>
+                        <td data-etiqueta="Disponibles">{rollo.metrosDisponibles}</td>
+                        <td data-etiqueta="Estado">
                           <span className={`produccion-estado-badge estado-${rollo.estado}`}>
                             {ETIQUETAS_ESTADO[rollo.estado]}
                           </span>
                         </td>
-                        <td>
+                        <td data-etiqueta="Metros a consumir">
                           {seleccionado && (
                             <input
                               type="number"
