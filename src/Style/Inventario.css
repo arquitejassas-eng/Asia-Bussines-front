@@ -1227,7 +1227,7 @@
 .rollo-completo-elegido span, .rollo-completo-opciones button { display: flex; flex-direction: column; min-width: 0; }
 .rollo-completo-elegido small, .rollo-completo-opciones small { color: #555; font-size: 0.8rem; }
 .rollo-completo-opciones {
-  margin-top: 0.3rem; border: 1px solid #ddd; border-radius: 8px; max-height: 240px; overflow-y: auto; background: #fff;
+  margin-top: 0.3rem; border: 1px solid #ddd; border-radius: 8px; max-height: 300px; overflow-y: auto; background: #fff; -webkit-overflow-scrolling: touch;
 }
 .rollo-completo-opciones button {
   width: 100%; text-align: left; padding: 0.45rem 0.6rem; border: 0; border-bottom: 1px solid #eee;

@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { RolloParaApartar } from "../Hooks/useApartados";
 import { coincideKilos, kilosBuscados, kilosDelRollo } from "../Utils/kilos";
 
-const MAXIMO_OPCIONES = 8;
 
 function normalizar(texto: unknown) {
   return String(texto ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -46,19 +45,26 @@ export default function ElegirRolloCompleto({ rollos, rolloId, rolloResumen, ocu
     );
   }
 
+  // Cada palabra tiene que coincidir con algo del rollo: texto (referencia,
+  // código, color...) o, si son números, sus kilos o sus metros. Así
+  // "LR30020,27 4484" o "4484 1810" encuentran el rollo exacto.
   const termino = normalizar(busqueda);
-  const kilos = kilosBuscados(busqueda);
+  const palabras = termino.split(/\s+/).filter(Boolean);
   const libres = lista.filter((r) => !ocupados.includes(r.id));
-  const encontrados = termino
-    ? libres.filter((r) => normalizar(r.identificadorRollo).includes(termino) || normalizar(r.codigoInterno).includes(termino)
-      || normalizar(r.descripcion).includes(termino) || normalizar(r.colorMaterial).includes(termino) || coincideKilos(r.pesoNeto, kilos))
-    : [];
+  const coincide = (r: RolloParaApartar, palabra: string) => {
+    const digitos = kilosBuscados(palabra);
+    return normalizar(r.identificadorRollo).includes(palabra) || normalizar(r.codigoInterno).includes(palabra)
+      || normalizar(r.descripcion).includes(palabra) || normalizar(r.colorMaterial).includes(palabra)
+      || coincideKilos(r.pesoNeto, digitos)
+      || (Boolean(digitos) && String(Math.round(r.metrosDisponibles)).startsWith(digitos));
+  };
+  const encontrados = palabras.length ? libres.filter((r) => palabras.every((p) => coincide(r, p))) : [];
 
   return (
     <div className="rollo-completo">
       <label>Rollo *</label>
       <input
-        placeholder={sinBodega ? "Elige primero la bodega" : "Buscar rollo: referencia, código o kilos (ej. 4386)"}
+        placeholder={sinBodega ? "Elige primero la bodega" : "Buscar rollo: referencia, código, kilos o metros (ej. 4484 1810)"}
         disabled={sinBodega} value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
       />
       {rollos === "cargando" && <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>Cargando rollos...</p>}
@@ -76,16 +82,18 @@ export default function ElegirRolloCompleto({ rollos, rolloId, rolloResumen, ocu
         <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>Ningún rollo libre coincide en esta bodega.</p>
       )}
       {encontrados.length > 0 && (
+        <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>
+          {encontrados.length} rollo{encontrados.length === 1 ? "" : "s"}{encontrados.length > 4 ? " (desliza la lista para ver todos)" : ""}
+        </p>
+      )}
+      {encontrados.length > 0 && (
         <div className="rollo-completo-opciones">
-          {encontrados.slice(0, MAXIMO_OPCIONES).map((r) => (
+          {encontrados.map((r) => (
             <button type="button" key={r.id} onClick={() => { setBusqueda(""); alElegir(r); }}>
               <strong>{r.identificadorRollo}</strong>
               <small>{resumen(r)}</small>
             </button>
           ))}
-          {encontrados.length > MAXIMO_OPCIONES && (
-            <p className="inventario-carga-ayuda">y {encontrados.length - MAXIMO_OPCIONES} más: escribe más para afinar.</p>
-          )}
         </div>
       )}
     </div>
