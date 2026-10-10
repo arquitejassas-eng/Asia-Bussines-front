@@ -5,6 +5,7 @@ import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, produccionDesdeApi, rolloDesdeApi } from "./Mapeo";
 import { calcularSolicitudesPendientes, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/produccion";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
+import { coincideKilos, kilosBuscados } from "../Utils/kilos";
 
 // Refresco automático de solicitudes pendientes / historial de producción.
 // Más espaciado que el resto de pantallas (10 s): el historial completo de
@@ -279,15 +280,15 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     const termino = normalizarTexto(codigoBusqueda);
     if (!termino) return [];
     // También por los kilos de la etiqueta del rollo (peso neto): "4466",
-    // "4.466" o "4466 kg" encuentran el rollo de 4466 kg.
-    const kilos = /^[\d.,\s]+(kg|kgs|kilos)?$/.test(termino) ? termino.replace(/\D/g, "") : "";
+    // "4.466" o "4466 kg" encuentran el rollo de 4466 kg (ver Utils/kilos).
+    const kilos = kilosBuscados(termino);
     return rollosDeMiBodega.filter(
       (r) =>
         r.metrosDisponibles > 0 &&
         (!empresaFiltro || r.empresa === empresaFiltro) &&
         (normalizarTexto(r.codigoInterno).includes(termino) ||
           normalizarTexto(r.identificadorRollo).includes(termino) ||
-          (kilos.length >= 3 && r.pesoNeto != null && String(Math.round(r.pesoNeto)).startsWith(kilos)))
+          coincideKilos(r.pesoNeto, kilos))
     );
   }, [rollosDeMiBodega, codigoBusqueda, empresaFiltro]);
 

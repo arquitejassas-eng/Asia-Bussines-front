@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, literal, or_
 from sqlalchemy.orm import Session
 
@@ -8,7 +8,7 @@ from app.models.apartado import Apartado, ApartadoItem, ModalidadApartado
 from app.models.bodega import Bodega
 from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.producto import Producto
-from app.models.rollo import Rollo
+from app.models.rollo import EstadoRollo, Rollo
 from app.models.usuario import RolUsuario
 from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComparativoResponse
 from app.schemas.rollos import RolloResponse
@@ -246,6 +246,28 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
         "totales_por_empresa": totales_por_empresa,
         "calibres_sin_equivalencia": calibres_sin_equivalencia,
     }
+
+
+@router.get("/rollos", response_model=list[RolloResponse])
+def buscar_rollos_todas_las_bodegas(
+    estado: str = "", db: Session = Depends(get_db),
+) -> list[Rollo]:
+    """Rollos de TODAS las bodegas (uno por uno) para la búsqueda de
+    Inventario total: por código, referencia o kilos se filtra en pantalla.
+    Sin estado = los que están en bodega (cerrados y abiertos); los agotados
+    solo si se piden (estado=agotado), para que no hagan bulto."""
+    consulta = db.query(Rollo).filter(Rollo.bodega_id.isnot(None))
+    if estado:
+        try:
+            consulta = consulta.filter(Rollo.estado == EstadoRollo(estado))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Estado no válido: usa cerrado, abierto o agotado.")
+    else:
+        consulta = consulta.filter(Rollo.estado != EstadoRollo.AGOTADO)
+    rollos = consulta.order_by(Rollo.codigo_interno.asc(), Rollo.bodega_id.asc(), Rollo.identificador_rollo.asc()).all()
+    asignar_peso_actual(db, rollos)
+    asignar_merma_y_sobrante(db, rollos)
+    return rollos
 
 
 @router.get("/rollos-por-codigo", response_model=list[RolloResponse])

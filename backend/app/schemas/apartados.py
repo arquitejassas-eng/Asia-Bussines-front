@@ -22,6 +22,11 @@ class ApartadoItemCrear(BaseModel):
     # Solo para POR_STOCK.
     producto_id: int | None = None
 
+    # Solo al crear: bodega de donde sale ESTA línea, si es distinta a la de la
+    # cotización. Una cotización con material de varias bodegas se guarda como
+    # una cotización por bodega, con el mismo número (ver crear_apartado).
+    bodega_id: int | None = None
+
     @model_validator(mode="after")
     def _exigir_campos_segun_modalidad(self) -> "ApartadoItemCrear":
         if self.modalidad == ModalidadApartado.POR_ROLLO:

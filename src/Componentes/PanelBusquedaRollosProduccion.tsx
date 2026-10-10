@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { claseColorMaterial } from "../Utils/colorRollo";
+import { kilosDelRollo } from "../Utils/kilos";
 import { formatearCalibre } from "../Utils/calibre";
 import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
 
@@ -101,7 +102,7 @@ function PanelBusquedaRollosProduccion({
                           </span>
                         </td>
                         <td data-etiqueta="Calibre">{formatearCalibre(rollo.calibre)}</td>
-                        <td data-etiqueta="Kilos">{rollo.pesoNeto != null ? `${Math.round(rollo.pesoNeto).toLocaleString("es-CO")} kg` : "—"}</td>
+                        <td data-etiqueta="Kilos">{kilosDelRollo(rollo.pesoNeto) != null ? `${kilosDelRollo(rollo.pesoNeto)!.toLocaleString("es-CO")} kg` : "—"}</td>
                         <td data-etiqueta="Disponibles">{rollo.metrosDisponibles}</td>
                         <td data-etiqueta="Estado">
                           <span className={`produccion-estado-badge estado-${rollo.estado}`}>

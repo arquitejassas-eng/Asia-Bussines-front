@@ -6,6 +6,7 @@ import { ESTADOS_ROLLO } from "../Componentes/Rollos";
 import { claseColorMaterial } from "../Utils/colorRollo";
 import Paginacion from "../Componentes/Paginacion";
 import PanelMermaRollo from "../Componentes/PanelMermaRollo";
+import PanelBuscarRollos from "../Componentes/PanelBuscarRollos";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
@@ -290,21 +291,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   </button>
                 )}
               </div>
-              <div className="inventario-buscador" style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                <label htmlFor="resumen-empresa" style={{ margin: 0 }}>Empresa</label>
-                <select
-                  id="resumen-empresa"
-                  value={c.empresaResumen}
-                  onChange={(e) => c.setEmpresaResumen(e.target.value)}
-                  style={{ maxWidth: 260 }}
-                >
-                  <option value="">Todas</option>
-                  {Object.keys(EMPRESAS).map((sigla) => (
-                    <option key={sigla} value={sigla}>{nombreEmpresa(sigla)}</option>
-                  ))}
-                  <option value={FILTRO_SIN_EMPRESA}>Sin empresa</option>
-                </select>
-              </div>
+              <PanelBuscarRollos bodegas={bodegas} empresa={c.empresaResumen} setEmpresa={c.setEmpresaResumen} />
               {c.errorComparativo && <p className="inventario-error">{c.errorComparativo}</p>}
               {c.cargandoComparativo ? (
                 <p className="inventario-cargando">Cargando...</p>

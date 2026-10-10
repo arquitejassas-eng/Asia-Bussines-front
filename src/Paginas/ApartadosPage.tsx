@@ -277,6 +277,25 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       {item.stockDescontado ? " No se puede cambiar." : " Puedes subirla, pero no quitarla ni bajarla de lo que ya salió."}
                     </p>
                   ) : null}
+                  {indice > 0 && !item.id && !a.editandoId && almacen.bodegas.length > 1 && (
+                    <div className="apartado-linea-cabecera">
+                      <strong>Producto {indice + 1}</strong>
+                      <select
+                        aria-label="Bodega de donde sale este producto"
+                        title="Si sale de otra bodega, al guardar se crea la misma cotización también en esa bodega."
+                        className={`apartados-select ${item.bodegaId ? "apartados-select-activo" : ""}`}
+                        value={item.bodegaId || ""}
+                        onChange={(e) => a.cambiarBodegaItem(indice, e.target.value)}
+                      >
+                        <option value="">
+                          Sale de {almacen.bodegas.find((b) => String(b.id) === String(a.formulario.bodegaId))?.nombre || "la bodega de la cotización"}
+                        </option>
+                        {almacen.bodegas.filter((b) => String(b.id) !== String(a.formulario.bodegaId)).map((b) => (
+                          <option key={b.id} value={b.id}>Sale de {b.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div style={{ gridColumn: "1 / -1", display: item.id ? "none" : undefined }}>
                     <label>Tipo de material</label>
                     <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -364,8 +383,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       ) : (
                         <>
                           <input
-                            placeholder={a.formulario.bodegaId ? "Buscar por código o descripción..." : "Elige primero la bodega"}
-                            disabled={!a.formulario.bodegaId}
+                            placeholder={(item.bodegaId || a.formulario.bodegaId) ? "Buscar por código o descripción..." : "Elige primero la bodega"}
+                            disabled={!(item.bodegaId || a.formulario.bodegaId)}
                             value={item.busquedaProducto}
                             onChange={(e) => a.buscarProductoParaItem(indice, e.target.value)}
                           />

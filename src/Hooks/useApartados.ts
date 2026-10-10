@@ -12,6 +12,8 @@ const ITEM_VACIO = {
   codigoInterno: "", medida: "",
   productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
   descripcion: "", cantidad: "",
+  // "" = sale de la bodega de la cotización; si no, de esta otra bodega.
+  bodegaId: "",
 };
 const FORMULARIO_VACIO = { bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
 
@@ -20,6 +22,8 @@ type ItemFormulario = {
   codigoInterno: string; medida: string | number;
   productoId: number | null; productoCodigo: string; productoDescripcion: string; busquedaProducto: string;
   descripcion: string; cantidad: string | number;
+  // Bodega de esta línea si es distinta a la de la cotización ("" = la misma).
+  bodegaId?: string;
   // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
   id?: number; metrosConsumidos?: number; stockDescontado?: boolean;
 };
@@ -169,6 +173,34 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     setResultadosBusquedaProducto({});
   }
 
+  // Bodega de donde sale una línea: la suya o, si no tiene, la de la cotización.
+  function bodegaDeItem(indice: number) {
+    return formulario.items[indice]?.bodegaId || formulario.bodegaId;
+  }
+
+  // Cambiar la bodega de UNA línea: su producto de stock y su disponibilidad
+  // eran de la otra bodega; la de rollo se vuelve a consultar en la nueva.
+  function cambiarBodegaItem(indice: number, bodegaId: string) {
+    const item = formulario.items[indice];
+    setFormulario((actual) => ({
+      ...actual,
+      items: actual.items.map((it, i) => (i === indice
+        ? { ...it, bodegaId, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "" }
+        : it)),
+    }));
+    setDisponibilidadItems((actual) => {
+      const { [indice]: _quitado, ...resto } = actual;
+      return resto;
+    });
+    setResultadosBusquedaProducto((actual) => {
+      const { [indice]: _quitado, ...resto } = actual;
+      return resto;
+    });
+    if (item?.modalidad === "por_rollo" && item.codigoInterno) {
+      consultarDisponibilidadItem(indice, item.codigoInterno, bodegaId || formulario.bodegaId);
+    }
+  }
+
   function agregarItemApartado() {
     setFormulario((actual) => ({ ...actual, items: [...actual.items, { ...ITEM_VACIO }] }));
   }
@@ -215,7 +247,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   const [disponibilidadItems, setDisponibilidadItems] = useState<Record<number, Record<string, unknown>>>({});
 
   // POR_ROLLO: disponibilidad por código de clasificación (comportamiento original).
-  async function consultarDisponibilidadItem(indice: number, codigoInterno: string) {
+  async function consultarDisponibilidadItem(indice: number, codigoInterno: string, bodegaElegida?: string) {
+    const bodega = bodegaElegida ?? bodegaDeItem(indice);
     const codigo = codigoInterno.trim();
     if (!codigo) {
       setDisponibilidadItems((actual) => {
@@ -224,13 +257,13 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       });
       return;
     }
-    if (!formulario.bodegaId) {
+    if (!bodega) {
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, sinBodega: true } }));
       return;
     }
     setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: true } }));
     try {
-      const datos = await api.get(`/apartados/disponibilidad?codigo_interno=${encodeURIComponent(codigo)}&bodega_id=${formulario.bodegaId}`);
+      const datos = await api.get(`/apartados/disponibilidad?codigo_interno=${encodeURIComponent(codigo)}&bodega_id=${bodega}`);
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, datos: disponibilidadCodigoDesdeApi(datos as Record<string, unknown>) } }));
     } catch {
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, error: true } }));
@@ -241,7 +274,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   async function consultarDisponibilidadProductoItem(indice: number, productoId: number) {
     setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: true } }));
     try {
-      const datos = await api.get(`/apartados/disponibilidad-producto?producto_id=${productoId}&bodega_id=${formulario.bodegaId}`);
+      const datos = await api.get(`/apartados/disponibilidad-producto?producto_id=${productoId}&bodega_id=${bodegaDeItem(indice)}`);
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, datos: disponibilidadProductoDesdeApi(datos as Record<string, unknown>) } }));
     } catch {
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, error: true } }));
@@ -255,7 +288,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   async function buscarProductoParaItem(indice: number, texto: string) {
     actualizarItemApartado(indice, "busquedaProducto", texto);
     const consulta = texto.trim();
-    if (!consulta || !formulario.bodegaId) {
+    if (!consulta || !bodegaDeItem(indice)) {
       setResultadosBusquedaProducto((actual) => {
         const { [indice]: _quitado, ...resto } = actual;
         return resto;
@@ -263,7 +296,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       return;
     }
     try {
-      const datos = await api.get(`/apartados/productos?busqueda=${encodeURIComponent(consulta)}&bodega_id=${formulario.bodegaId}`);
+      const datos = await api.get(`/apartados/productos?busqueda=${encodeURIComponent(consulta)}&bodega_id=${bodegaDeItem(indice)}`);
       setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: datos as Record<string, unknown>[] }));
     } catch {
       setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: [] }));
@@ -334,11 +367,14 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         empresa: formulario.empresa,
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
-        items: formulario.items.map((i) => (
-          i.modalidad === "por_stock"
-            ? { id: i.id, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad) }
-            : { id: i.id, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida) }
-        )),
+        items: formulario.items.map((i) => {
+          // Solo al crear: una línea de otra bodega hace que se guarde una
+          // cotización por bodega (mismo número), ver backend crear_apartado.
+          const bodega_id = !editandoId && i.bodegaId ? Number(i.bodegaId) : undefined;
+          return i.modalidad === "por_stock"
+            ? { id: i.id, bodega_id, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad) }
+            : { id: i.id, bodega_id, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida) };
+        }),
       });
       await cargarApartados();
       setMostrarFormularioApartado(false);
@@ -409,7 +445,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
     editandoId, abrirEdicionApartado,
-    actualizarCampoApartado, cambiarBodegaApartado, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
+    actualizarCampoApartado, cambiarBodegaApartado, cambiarBodegaItem, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
     cambiarModalidadItem,
     guardandoApartado, errorFormularioApartado, crearApartado,
     disponibilidadItems, consultarDisponibilidadItem,

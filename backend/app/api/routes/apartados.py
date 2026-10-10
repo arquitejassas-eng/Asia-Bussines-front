@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
 from app.models.apartado import Apartado, ApartadoItem, EstadoApartado
+from app.models.bodega import Bodega
 from app.models.producto import Producto
 from app.services.productos import FAMILIA_ROLLOS
 from app.models.usuario import RolUsuario, Usuario
@@ -124,9 +125,40 @@ def registrar_salida_con_hoja_de_vida(
 @router.post("", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
-    apartado = srv.crear_apartado(db, datos, usuario)
-    db.commit(); db.refresh(apartado)
-    return _con_faltantes(db, [apartado])[0]
+    """Si las líneas salen de varias bodegas, se crea una cotización por
+    bodega con el mismo número (cada bodega despacha su parte), todo junto o
+    nada. Devuelve la de la bodega principal."""
+    por_bodega: dict[int | None, list] = {}
+    for item in datos.items:
+        por_bodega.setdefault(item.bodega_id or datos.bodega_id, []).append(item)
+    if len(por_bodega) == 1:
+        partes = [datos.model_copy(update={"bodega_id": next(iter(por_bodega))})]
+    else:
+        nombres = {b.id: b.nombre for b in db.query(Bodega).filter(Bodega.id.in_([b for b in por_bodega if b]))}
+        principal = datos.bodega_id if datos.bodega_id in por_bodega else next(iter(por_bodega))
+        orden = [principal] + [b for b in por_bodega if b != principal]
+        todas = ", ".join(nombres.get(b, str(b)) for b in orden)
+        partes = [
+            datos.model_copy(update={
+                "bodega_id": b, "items": por_bodega[b],
+                "observaciones": (f"{datos.observaciones} · " if datos.observaciones else "")
+                + f"Cotización con material de varias bodegas ({todas}): esta es la parte de {nombres.get(b, b)}.",
+            })
+            for b in orden
+        ]
+    creados = []
+    for parte in partes:
+        try:
+            creados.append(srv.crear_apartado(db, parte, usuario))
+        except HTTPException as exc:
+            if len(partes) > 1:  # que se sepa de cuál bodega es el problema
+                nombre = db.get(Bodega, parte.bodega_id).nombre if parte.bodega_id else ""
+                raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
+            raise
+    db.commit()
+    for apartado in creados:
+        db.refresh(apartado)
+    return _con_faltantes(db, creados)[0]
 
 
 @router.get("", response_model=list[ApartadoResponse])
