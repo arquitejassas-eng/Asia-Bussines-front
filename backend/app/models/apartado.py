@@ -126,6 +126,17 @@ class ApartadoItem(Base):
     producto_id: Mapped[int | None] = mapped_column(ForeignKey("productos.id"), nullable=True)  # solo POR_STOCK
     stock_descontado: Mapped[bool] = mapped_column(default=False)  # solo POR_STOCK
 
+    # "Rollo completo": la línea vende un rollo entero y ESE rollo queda
+    # apartado solo para esta cotización (nadie más lo puede consumir,
+    # producir ni trasladar). Sigue siendo POR_ROLLO: código, metros
+    # requeridos y consumidos funcionan igual que siempre. No va a Planta:
+    # se le da salida al rollo entero desde Apartados.
+    rollo_id: Mapped[int | None] = mapped_column(ForeignKey("rollos.id"), nullable=True, index=True)
+
+    @property
+    def rollo_referencia(self) -> str | None:
+        return self.rollo.identificador_rollo if self.rollo is not None else None
+
     @property
     def metros_pendientes(self) -> float | None:
         """Solo tiene sentido para POR_ROLLO -- None para POR_STOCK."""
@@ -140,3 +151,4 @@ class ApartadoItem(Base):
     apartado = relationship("Apartado", back_populates="items")
     producciones = relationship("Produccion", back_populates="apartado_item")
     producto = relationship("Producto")
+    rollo = relationship("Rollo")

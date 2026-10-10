@@ -28,7 +28,8 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
   // Las "pendientes por dar salida" ya salieron de la bodega: no se producen.
   return apartados.filter((ap) => !(ap as { salidaPendiente?: boolean }).salidaPendiente).flatMap((ap) =>
     ap.items
-      .filter((it) => it.modalidad === "por_rollo" && (it.metrosPendientes ?? 0) > 0)
+      // Un rollo completo no se produce: se le da salida desde Apartados.
+      .filter((it) => it.modalidad === "por_rollo" && !(it as { rolloId?: number | null }).rolloId && (it.metrosPendientes ?? 0) > 0)
       .map((it) => ({
         itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, empresa: ap.empresa || "",
         codigoInterno: it.codigoInterno, descripcion: it.descripcion, cantidad: it.cantidad, medida: it.medida,

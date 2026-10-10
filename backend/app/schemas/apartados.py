@@ -27,8 +27,14 @@ class ApartadoItemCrear(BaseModel):
     # una cotización por bodega, con el mismo número (ver crear_apartado).
     bodega_id: int | None = None
 
+    # "Rollo completo" (POR_ROLLO): el rollo entero que se vende. El código,
+    # la cantidad (1) y la medida (sus metros) los pone el backend.
+    rollo_id: int | None = None
+
     @model_validator(mode="after")
     def _exigir_campos_segun_modalidad(self) -> "ApartadoItemCrear":
+        if self.modalidad == ModalidadApartado.POR_ROLLO and self.rollo_id:
+            return self
         if self.modalidad == ModalidadApartado.POR_ROLLO:
             if not self.codigo_interno or not self.codigo_interno.strip():
                 raise ValueError("Indica el código de clasificación (codigo_interno) para un ítem POR_ROLLO.")
@@ -112,6 +118,22 @@ class ApartadoItemResponse(BaseModel):
     stock_descontado: bool
     metros_pendientes: float | None = None
     tiene_produccion_registrada: bool = False
+    rollo_id: int | None = None
+    rollo_referencia: str | None = None
+
+
+class RolloParaApartarResponse(BaseModel):
+    """Un rollo que se puede vender completo en una cotización."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    identificador_rollo: str
+    codigo_interno: str
+    descripcion: str = ""
+    color_material: str = ""
+    calibre: float = 0
+    empresa: str = ""
+    peso_neto: float | None = None
+    metros_disponibles: float
 
 
 class DisponibilidadCodigoResponse(BaseModel):

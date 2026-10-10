@@ -14,7 +14,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.schemas.produccion import ProduccionCrear, StockAdicionalItemCrear
-from app.services.apartados import bloquear_rollos_codigo, validar_reserva_rollos
+from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
 
 # Regla física de los productos "seccionados": el ancho del rollo se divide
 # siempre en N partes iguales según el tipo (3 para caballetes, 5 para
@@ -239,6 +239,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     for item, rollo in zip(datos.rollos, bloqueados, strict=True):
         if rollo.estado == "agotado" or item.metros > rollo.metros_disponibles:
             raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} no tiene metros suficientes.")
+        exigir_rollo_libre(db, rollo)
 
     apartado_item = _apartado_item_para_produccion(db, datos.apartado_item_id, usuario) if datos.apartado_item_id else None
     if apartado_item is not None:
@@ -248,6 +249,8 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         # se daba por atendida la reserva del apartado, que quedaba liberada
         # para otros. Un ítem de stock no tiene metros (esa reserva se
         # descuenta al marcar la producción terminada) y terminaba en 500.
+        if apartado_item.rollo_id:
+            raise HTTPException(status_code=400, detail="Esa línea es un rollo completo: no se produce, se le da salida desde Apartados.")
         if apartado_item.modalidad != ModalidadApartado.POR_ROLLO:
             raise HTTPException(
                 status_code=400,

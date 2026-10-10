@@ -7,9 +7,12 @@ import { apartadoDesdeApi, disponibilidadCodigoDesdeApi, disponibilidadProductoD
 // puede mezclar líneas POR_ROLLO y POR_STOCK (ver backend/app/models/apartado.py::ModalidadApartado).
 // POR_ROLLO usa codigoInterno/medida (comportamiento original, sin cambios);
 // POR_STOCK usa productoId (seleccionado por búsqueda) — nunca los dos a la vez.
+// "rollo_completo" solo existe en el formulario: se guarda como POR_ROLLO con
+// rollo_id (el backend pone código, 1 rollo y sus metros).
 const ITEM_VACIO = {
   modalidad: "por_rollo",
   codigoInterno: "", medida: "",
+  rolloId: null, rolloResumen: "", busquedaRollo: "",
   productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
   descripcion: "", cantidad: "",
   // "" = sale de la bodega de la cotización; si no, de esta otra bodega.
@@ -20,6 +23,7 @@ const FORMULARIO_VACIO = { bodegaId: "", empresa: "", materialEnCamino: false, n
 type ItemFormulario = {
   modalidad: string;
   codigoInterno: string; medida: string | number;
+  rolloId: number | null; rolloResumen: string; busquedaRollo: string;
   productoId: number | null; productoCodigo: string; productoDescripcion: string; busquedaProducto: string;
   descripcion: string; cantidad: string | number;
   // Bodega de esta línea si es distinta a la de la cotización ("" = la misma).
@@ -35,6 +39,11 @@ type ApartadoItem = {
   medida: number | null; metrosRequeridos: number | null; metrosConsumidos: number;
   productoId: number | null; stockDescontado: boolean;
   metrosPendientes: number | null; tieneProduccionRegistrada: boolean;
+  rolloId: number | null; rolloReferencia: string;
+};
+export type RolloParaApartar = {
+  id: number; identificadorRollo: string; codigoInterno: string; descripcion: string;
+  colorMaterial: string; empresa: string; pesoNeto: number | null; metrosDisponibles: number;
 };
 type Apartado = {
   id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; salidaPendiente: boolean; cliente: string; creadoPor: string;
@@ -134,7 +143,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, observaciones: ap.observaciones,
       items: ap.items.map((it) => ({
         ...ITEM_VACIO,
-        id: it.id, modalidad: it.modalidad, descripcion: it.descripcion, cantidad: String(it.cantidad),
+        id: it.id, modalidad: it.rolloId ? "rollo_completo" : it.modalidad, descripcion: it.descripcion, cantidad: String(it.cantidad),
+        rolloId: it.rolloId, rolloResumen: it.rolloReferencia,
         codigoInterno: it.codigoInterno || "", medida: it.medida == null ? "" : String(it.medida),
         productoId: it.productoId, productoDescripcion: it.modalidad === "por_stock" ? it.descripcion : "",
         metrosConsumidos: it.metrosConsumidos, stockDescontado: it.stockDescontado,
@@ -167,10 +177,15 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   function cambiarBodegaApartado(bodegaId: string) {
     setFormulario((actual) => ({
       ...actual, bodegaId,
-      items: actual.items.map((item) => ({ ...item, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "" })),
+      items: actual.items.map((item) => ({
+        ...item, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
+        // Un rollo completo es de UNA bodega: si la línea sale de la de la cotización, se vuelve a elegir.
+        ...(item.id || item.bodegaId ? {} : { rolloId: null, rolloResumen: "", busquedaRollo: "" }),
+      })),
     }));
     setDisponibilidadItems({});
     setResultadosBusquedaProducto({});
+    if (formulario.items.some((it) => it.modalidad === "rollo_completo" && !it.bodegaId)) cargarRollosParaApartar(bodegaId);
   }
 
   // Bodega de donde sale una línea: la suya o, si no tiene, la de la cotización.
@@ -185,7 +200,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     setFormulario((actual) => ({
       ...actual,
       items: actual.items.map((it, i) => (i === indice
-        ? { ...it, bodegaId, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "" }
+        ? { ...it, bodegaId, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "", rolloId: null, rolloResumen: "", busquedaRollo: "" }
         : it)),
     }));
     setDisponibilidadItems((actual) => {
@@ -199,6 +214,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     if (item?.modalidad === "por_rollo" && item.codigoInterno) {
       consultarDisponibilidadItem(indice, item.codigoInterno, bodegaId || formulario.bodegaId);
     }
+    if (item?.modalidad === "rollo_completo") cargarRollosParaApartar(bodegaId || formulario.bodegaId);
   }
 
   function agregarItemApartado() {
@@ -232,8 +248,11 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         ...item, modalidad,
         codigoInterno: "", medida: "",
         productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
+        rolloId: null, rolloResumen: "", busquedaRollo: "",
+        cantidad: modalidad === "rollo_completo" ? "1" : (item.modalidad === "rollo_completo" ? "" : item.cantidad),
       } : item)),
     }));
+    if (modalidad === "rollo_completo") cargarRollosParaApartar(formulario.items[indice]?.bodegaId || formulario.bodegaId);
     setDisponibilidadItems((actual) => {
       const { [indice]: _quitado, ...resto } = actual;
       return resto;
@@ -245,6 +264,33 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   }
 
   const [disponibilidadItems, setDisponibilidadItems] = useState<Record<number, Record<string, unknown>>>({});
+
+  // Rollo completo: rollos de cada bodega que se pueden vender enteros.
+  const [rollosParaApartar, setRollosParaApartar] = useState<Record<string, RolloParaApartar[] | "cargando" | "error">>({});
+  async function cargarRollosParaApartar(bodegaId: string, forzar = false) {
+    if (!bodegaId || (!forzar && rollosParaApartar[bodegaId] && rollosParaApartar[bodegaId] !== "error")) return;
+    setRollosParaApartar((actual) => ({ ...actual, [bodegaId]: "cargando" }));
+    try {
+      const datos = await api.get<Record<string, unknown>[]>(`/apartados/rollos-para-apartar?bodega_id=${bodegaId}`) || [];
+      setRollosParaApartar((actual) => ({ ...actual, [bodegaId]: datos.map((r) => ({
+        id: Number(r.id), identificadorRollo: String(r.identificador_rollo ?? ""), codigoInterno: String(r.codigo_interno ?? ""),
+        descripcion: String(r.descripcion ?? ""), colorMaterial: String(r.color_material ?? ""), empresa: String(r.empresa ?? ""),
+        pesoNeto: r.peso_neto == null ? null : Number(r.peso_neto), metrosDisponibles: Number(r.metros_disponibles ?? 0),
+      })) }));
+    } catch {
+      setRollosParaApartar((actual) => ({ ...actual, [bodegaId]: "error" }));
+    }
+  }
+  function seleccionarRolloCompleto(indice: number, rollo: RolloParaApartar | null, descripcion = "") {
+    setFormulario((actual) => ({
+      ...actual,
+      items: actual.items.map((it, i) => (i === indice ? {
+        ...it, rolloId: rollo?.id ?? null, rolloResumen: rollo?.identificadorRollo ?? "", busquedaRollo: "",
+        codigoInterno: rollo?.codigoInterno ?? "", medida: rollo ? String(rollo.metrosDisponibles) : "", cantidad: "1",
+        descripcion: rollo ? (it.descripcion.trim() ? it.descripcion : descripcion) : "",
+      } : it)),
+    }));
+  }
 
   // POR_ROLLO: disponibilidad por código de clasificación (comportamiento original).
   async function consultarDisponibilidadItem(indice: number, codigoInterno: string, bodegaElegida?: string) {
@@ -346,6 +392,13 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         setErrorFormularioApartado("Cada producto solicitado necesita una cantidad mayor a cero.");
         return;
       }
+      if (item.modalidad === "rollo_completo") {
+        if (!item.rolloId) {
+          setErrorFormularioApartado("Elige el rollo de cada línea de rollo completo.");
+          return;
+        }
+        continue;
+      }
       if (item.modalidad === "por_stock") {
         if (!item.productoId) {
           setErrorFormularioApartado("Selecciona un producto para cada línea de stock.");
@@ -371,6 +424,10 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
           // Solo al crear: una línea de otra bodega hace que se guarde una
           // cotización por bodega (mismo número), ver backend crear_apartado.
           const bodega_id = !editandoId && i.bodegaId ? Number(i.bodegaId) : undefined;
+          if (i.modalidad === "rollo_completo") {
+            return { id: i.id, bodega_id, modalidad: "por_rollo", rollo_id: i.rolloId, descripcion: i.descripcion, cantidad: 1,
+              codigo_interno: i.codigoInterno || undefined, medida: Number(i.medida) || undefined };
+          }
           return i.modalidad === "por_stock"
             ? { id: i.id, bodega_id, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad) }
             : { id: i.id, bodega_id, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida) };
@@ -446,7 +503,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
     editandoId, abrirEdicionApartado,
     actualizarCampoApartado, cambiarBodegaApartado, cambiarBodegaItem, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
-    cambiarModalidadItem,
+    cambiarModalidadItem, rollosParaApartar, cargarRollosParaApartar, seleccionarRolloCompleto,
     guardandoApartado, errorFormularioApartado, crearApartado,
     disponibilidadItems, consultarDisponibilidadItem,
     resultadosBusquedaProducto, buscarProductoParaItem, seleccionarProductoParaItem,

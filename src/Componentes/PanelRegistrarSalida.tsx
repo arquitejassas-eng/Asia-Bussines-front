@@ -4,6 +4,7 @@ import { api, ErrorApi } from "./Api";
 type Item = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string; cantidad: number;
   metrosPendientes: number | null; stockDescontado: boolean;
+  rolloId?: number | null; rolloReferencia?: string;
 };
 type Apartado = { id: number; numeroCotizacion: string; cliente: string; bodegaNombre: string; items: Item[] };
 type RolloUsado = { itemId: number; referencia: string; metros: string };
@@ -23,7 +24,7 @@ export default function PanelRegistrarSalida({ apartado: apartadoActual, alTermi
   const lineasRollo = apartado.items.filter((it) => it.modalidad === "por_rollo" && (it.metrosPendientes ?? 0) > 0);
   const lineasStock = apartado.items.filter((it) => it.modalidad === "por_stock" && !it.stockDescontado);
   const [rollos, setRollos] = useState<RolloUsado[]>(
-    lineasRollo.map((it) => ({ itemId: it.id, referencia: "", metros: String(it.metrosPendientes ?? "") })),
+    lineasRollo.map((it) => ({ itemId: it.id, referencia: it.rolloId ? it.rolloReferencia || "" : "", metros: String(it.metrosPendientes ?? "") })),
   );
   const [stock, setStock] = useState<Set<number>>(new Set());
   const [guardando, setGuardando] = useState(false);
@@ -112,7 +113,11 @@ export default function PanelRegistrarSalida({ apartado: apartadoActual, alTermi
                       </span>
                       <span className="separar-linea-cantidad">{it.metrosPendientes} m<small>pendientes</small></span>
                     </div>
-                    {filas.map(({ r, indice }, n) => (
+                    {it.rolloId ? (
+                      <p className="salida-rollo-completo">
+                        Rollo completo <strong>{it.rolloReferencia}</strong>: sale entero ({it.metrosPendientes} m).
+                      </p>
+                    ) : filas.map(({ r, indice }, n) => (
                       <div key={indice} className="salida-rollo">
                         <label className="salida-campo salida-campo-referencia">
                           <span>{n === 0 ? "Rollo usado (referencia)" : "Otro rollo"}</span>
@@ -132,7 +137,7 @@ export default function PanelRegistrarSalida({ apartado: apartadoActual, alTermi
                         )}
                       </div>
                     ))}
-                    <button type="button" className="salida-otro" onClick={() => otroRollo(it.id)}>+ Se usó otro rollo</button>
+                    {!it.rolloId && <button type="button" className="salida-otro" onClick={() => otroRollo(it.id)}>+ Se usó otro rollo</button>}
                   </li>
                 );
               })}

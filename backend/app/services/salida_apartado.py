@@ -22,7 +22,7 @@ from app.models.producto import Producto
 from app.models.rollo import HistorialConsumoRollo, Rollo
 from app.models.usuario import Usuario
 from app.schemas.apartados import RegistrarSalidaRequest
-from app.services.apartados import ESTADOS_RESERVA_ACTIVA, bloquear_rollos_codigo, validar_reserva_rollos
+from app.services.apartados import ESTADOS_RESERVA_ACTIVA, bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
 from app.services.envios import envio_pendiente_del_rollo
 
 TOLERANCIA = 0.005
@@ -56,12 +56,24 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
     items = {item.id: item for item in apartado.items}
     ahora = datetime.now(timezone.utc)
     nota = f"Salida de la cotización {apartado.numero_cotizacion} registrada con la hoja de vida física."
+    # Si solo salen rollos completos no se está produciendo nada: la cotización
+    # no "entra a producción" por eso.
+    solo_rollos_completos = not datos.items_stock and all(
+        items.get(linea.item_id) is not None and items[linea.item_id].rollo_id for linea in datos.rollos
+    )
 
     for linea in datos.rollos:
         item = items.get(linea.item_id)
         if item is None or item.modalidad != ModalidadApartado.POR_ROLLO:
             raise HTTPException(status_code=400, detail="Esa línea no es de rollo o no pertenece a esta cotización.")
         rollo = _rollo_por_referencia(db, apartado, linea.referencia)
+        if item.rollo_id and rollo.id != item.rollo_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Esta línea es el rollo completo {item.rollo_referencia}: la salida tiene que ser de ese rollo.",
+            )
+        if not item.rollo_id:
+            exigir_rollo_libre(db, rollo)
         if rollo.codigo_interno != item.codigo_interno:
             raise HTTPException(
                 status_code=400,
@@ -74,6 +86,9 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
             raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} va en el envío #{envio.id}, pendiente de confirmar.")
         metros = round(linea.metros, 2)
         disponibles = round(rollo.metros_disponibles, 2)
+        if item.rollo_id:
+            # Rollo completo: sale entero, sin importar lo que se escriba.
+            metros = disponibles
         if metros > disponibles + TOLERANCIA:
             raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} solo tiene {disponibles:g} m disponibles.")
         metros = min(metros, disponibles)
@@ -136,7 +151,7 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
         apartado.fecha_entregado = ahora
     elif completa:
         apartado.estado = EstadoApartado.PRODUCCION_TERMINADA
-    elif apartado.estado != EstadoApartado.EN_PRODUCCION:
+    elif apartado.estado != EstadoApartado.EN_PRODUCCION and not solo_rollos_completos:
         apartado.estado = EstadoApartado.EN_PRODUCCION
         if not apartado.enviado_a_produccion_por:
             apartado.enviado_a_produccion_por, apartado.fecha_enviado_a_produccion = usuario.correo, ahora

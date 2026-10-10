@@ -9,7 +9,9 @@ from app.services.productos import FAMILIA_ROLLOS
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.apartados import (
     ApartadoCrear, ApartadoResponse, DisponibilidadCodigoResponse, DisponibilidadProductoResponse, ReservaCodigoResponse,
+    RolloParaApartarResponse,
 )
+from app.models.rollo import Rollo
 from app.core.config import settings
 from app.schemas.apartados import ApartadoEditar, RegistrarSalidaRequest, SepararApartadoRequest
 from app.schemas.inventario import ProductoResponse
@@ -37,6 +39,26 @@ def consultar_disponibilidad(
     de apartarlo: rollos, metros disponibles, reservados y consumidos."""
     bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
     return srv.disponibilidad_por_codigo(db, bodega_id=bodega, codigo_interno=codigo_interno)
+
+
+@router.get("/rollos-para-apartar", response_model=list[RolloParaApartarResponse])
+def rollos_para_apartar(
+    bodega_id: int | None = None,
+    db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> list[Rollo]:
+    """Rollos de la bodega que se pueden vender completos: con metros, sin
+    otra cotización que los tenga apartados completos (un rollo en un envío
+    pendiente todavía no está en ninguna bodega).
+    La búsqueda (código, referencia, kilos) se hace en la pantalla."""
+    bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
+    rollos = (
+        db.query(Rollo)
+        .filter(Rollo.bodega_id == bodega, Rollo.metros_disponibles > 0.005)
+        .order_by(Rollo.codigo_interno, Rollo.identificador_rollo)
+        .all()
+    )
+    ocupados = srv.rollos_apartados_completos(db, (r.id for r in rollos))
+    return [r for r in rollos if r.id not in ocupados]
 
 
 @router.get("/disponibilidad-producto", response_model=DisponibilidadProductoResponse)
@@ -174,7 +196,8 @@ def listar_apartados(
 ) -> list[Apartado]:
     consulta = (
         db.query(Apartado)
-        .options(joinedload(Apartado.items).joinedload(ApartadoItem.producciones), joinedload(Apartado.bodega))
+        .options(joinedload(Apartado.items).joinedload(ApartadoItem.producciones), joinedload(Apartado.items).joinedload(ApartadoItem.rollo),
+                 joinedload(Apartado.bodega))
     )
     # Admin Inventario ve los de todas las bodegas (puede filtrar por una);
     # los demás roles, solo los de la suya.

@@ -9,7 +9,7 @@ from app.api.deps import coincide_bodega
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.rollo import HistorialConsumoRollo, Rollo
 from app.models.usuario import Usuario
-from app.services.apartados import bloquear_rollos_codigo, validar_reserva_rollos
+from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
 from app.services.envios import envio_pendiente_del_rollo
 
 
@@ -49,6 +49,7 @@ def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int, usuario: Usuario)
             detail=f"El rollo {rollo.identificador_rollo} va en camino en el envío #{envio.id}: "
             "no se puede consumir ni sacar hasta que la sede responda si llegó.",
         )
+    exigir_rollo_libre(db, rollo)
     return rollo, rollos_codigo
 
 

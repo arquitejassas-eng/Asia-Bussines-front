@@ -10,7 +10,7 @@ from app.models.rollo import Rollo
 from app.models.solicitud import EstadoSolicitud, Solicitud
 from app.models.usuario import Usuario
 from app.schemas.bodegas import SolicitudCrear
-from app.services.apartados import bloquear_rollos_codigo, validar_reserva_producto, validar_reserva_rollos
+from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_producto, validar_reserva_rollos
 from app.services.productos import nuevo_producto_en_bodega
 
 
@@ -29,6 +29,7 @@ def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int) -> tuple[Rollo, l
     rollo = next((r for r in rollos_codigo if r.id == rollo_id), None)
     if rollo is None:
         raise HTTPException(status_code=409, detail="El rollo acaba de cambiar. Recarga e intenta de nuevo.")
+    exigir_rollo_libre(db, rollo)
     return rollo, rollos_codigo
 
 

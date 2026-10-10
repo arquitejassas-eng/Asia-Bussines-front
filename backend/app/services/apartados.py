@@ -47,6 +47,87 @@ ESTADOS_RESERVA_ACTIVA = (
 )
 
 
+def item_que_aparta_rollo(db: Session, rollo_id: int) -> ApartadoItem | None:
+    """La línea de "rollo completo" de una cotización activa que tiene ese rollo apartado."""
+    return (
+        db.query(ApartadoItem)
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(ApartadoItem.rollo_id == rollo_id, Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+                ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos > 0.005)
+        .first()
+    )
+
+
+def exigir_rollo_libre(db: Session, rollo: Rollo, *, item_id: int | None = None) -> None:
+    """Un rollo vendido completo en una cotización solo sale por esa línea:
+    nadie más lo consume, lo produce ni lo traslada."""
+    item = item_que_aparta_rollo(db, rollo.id)
+    if item is not None and item.id != item_id:
+        ap = item.apartado
+        raise HTTPException(
+            status_code=400,
+            detail=f"El rollo {rollo.identificador_rollo} está apartado completo para la cotización "
+            f"{ap.numero_cotizacion}{f' ({ap.cliente})' if ap.cliente else ''}: no se puede usar para otra cosa.",
+        )
+
+
+def rollos_apartados_completos(db: Session, rollo_ids) -> set[int]:
+    ids = list(rollo_ids)
+    if not ids:
+        return set()
+    filas = (
+        db.query(ApartadoItem.rollo_id)
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(ApartadoItem.rollo_id.in_(ids), Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+                ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos > 0.005)
+        .all()
+    )
+    return {f[0] for f in filas}
+
+
+def kilos_rollo(peso_neto: float | None) -> int | None:
+    """Mismo criterio que la pantalla: por debajo de 100 viene en toneladas."""
+    if not peso_neto or peso_neto <= 0:
+        return None
+    return round(peso_neto * 1000 if peso_neto < 100 else peso_neto)
+
+
+def descripcion_rollo_completo(rollo: Rollo) -> str:
+    kilos = kilos_rollo(rollo.peso_neto)
+    detalle = " - ".join(p for p in (f"{kilos} KG" if kilos else "", f"{rollo.metros_disponibles:g} MTS") if p)
+    nombre = rollo.descripcion or rollo.codigo_interno
+    return f"1 ROLLO {nombre} ({detalle}) - rollo {rollo.identificador_rollo}"[:255]
+
+
+def preparar_rollo_completo(db: Session, linea, bodega_id: int) -> None:
+    """Llena la línea con el código y los metros del rollo (1 rollo = todos
+    sus metros) y valida que ese rollo se pueda vender completo."""
+    from app.services.envios import envio_pendiente_del_rollo
+
+    rollo = db.get(Rollo, linea.rollo_id)
+    if rollo is None:
+        raise HTTPException(status_code=404, detail="Ese rollo no existe.")
+    if rollo.bodega_id != bodega_id:
+        raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} no está en la bodega de donde sale esa línea.")
+    if (rollo.metros_disponibles or 0) <= 0.005:
+        raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} ya está agotado.")
+    if envio_pendiente_del_rollo(db, rollo.id) is not None:
+        raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} va en un envío pendiente de confirmar.")
+    exigir_rollo_libre(db, rollo, item_id=getattr(linea, "id", None))
+    linea.modalidad = ModalidadApartado.POR_ROLLO
+    linea.codigo_interno = rollo.codigo_interno
+    linea.cantidad = 1
+    linea.medida = round(rollo.metros_disponibles, 2)
+    if not (linea.descripcion or "").strip():
+        linea.descripcion = descripcion_rollo_completo(rollo)
+
+
+def _solo_rollos_completos(items) -> bool:
+    """Todo lo de rollo es "rollo completo": no hay nada que producir en Planta."""
+    de_rollo = [it for it in items if it.modalidad == ModalidadApartado.POR_ROLLO]
+    return bool(de_rollo) and all(it.rollo_id for it in de_rollo)
+
+
 def metros_reservados_codigo(db: Session, *, bodega_id: int, codigo_interno: str) -> float:
     total = (
         db.query(func.coalesce(func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos), 0))
@@ -468,6 +549,13 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     if ya_existe:
         raise HTTPException(status_code=400, detail=f"Ya existe un apartado con la cotización {datos.numero_cotizacion} en esa bodega.")
 
+    rollos_pedidos = [item.rollo_id for item in datos.items if item.rollo_id]
+    if len(rollos_pedidos) != len(set(rollos_pedidos)):
+        raise HTTPException(status_code=400, detail="El mismo rollo está dos veces en la cotización.")
+    for item in datos.items:
+        if item.rollo_id:
+            preparar_rollo_completo(db, item, bodega_id)
+
     solicitado_por_codigo: dict[str, float] = {}
     solicitado_por_producto: dict[int, float] = {}
     for item in datos.items:
@@ -476,8 +564,10 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         else:
             metros = round(item.cantidad * item.medida, 2)
             solicitado_por_codigo[item.codigo_interno] = solicitado_por_codigo.get(item.codigo_interno, 0) + metros
+    # Un rollo completo es material que ya está en la bodega: no puede ser "en camino".
     _validar_que_quepa(db, bodega_id=bodega_id, solicitado_por_codigo=solicitado_por_codigo,
-                       solicitado_por_producto=solicitado_por_producto, material_en_camino=datos.material_en_camino)
+                       solicitado_por_producto=solicitado_por_producto,
+                       material_en_camino=datos.material_en_camino and not rollos_pedidos)
 
     ahora = datetime.now(timezone.utc)
     apartado = Apartado(
@@ -489,6 +579,9 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         fecha_creacion=ahora,
         estado=EstadoApartado.APARTADO,
         observaciones=datos.observaciones,
+        # Solo rollos completos (y stock): no hay nada que producir, queda
+        # en "Pendientes por dar salida" hasta que se entregue.
+        salida_pendiente=_solo_rollos_completos(datos.items),
     )
     db.add(apartado)
     db.flush()
@@ -504,6 +597,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 apartado_id=apartado.id, modalidad=ModalidadApartado.POR_ROLLO,
                 codigo_interno=item.codigo_interno, descripcion=item.descripcion,
                 cantidad=item.cantidad, medida=item.medida, metros_requeridos=round(item.cantidad * item.medida, 2),
+                rollo_id=item.rollo_id,
             ))
 
     return apartado
@@ -545,6 +639,19 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     for item in con_salida:
         if item.id not in ids_nuevos:
             raise HTTPException(status_code=400, detail=f"No puedes quitar la línea '{item.descripcion or item.codigo_interno}': ya tiene salida registrada.")
+    rollos_pedidos = [linea.rollo_id for linea in datos.items if linea.rollo_id]
+    if len(rollos_pedidos) != len(set(rollos_pedidos)):
+        raise HTTPException(status_code=400, detail="El mismo rollo está dos veces en la cotización.")
+    for linea in datos.items:
+        if linea.id and (linea.rollo_id or None) != (actuales[linea.id].rollo_id or None):
+            raise HTTPException(status_code=400, detail="No se puede cambiar el rollo de una línea de rollo completo: quítala y agrega otra.")
+        if linea.id and linea.rollo_id:
+            # La línea de rollo completo no se edita: queda como estaba.
+            item = actuales[linea.id]
+            linea.modalidad, linea.codigo_interno = item.modalidad, item.codigo_interno
+            linea.cantidad, linea.medida = item.cantidad, item.medida
+        elif linea.rollo_id:
+            preparar_rollo_completo(db, linea, bodega_id)
     for linea in datos.items:
         if not linea.id:
             continue
@@ -619,7 +726,10 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             apartado.items.append(ApartadoItem(
                 modalidad=ModalidadApartado.POR_ROLLO, codigo_interno=linea.codigo_interno, descripcion=linea.descripcion,
                 cantidad=linea.cantidad, medida=linea.medida, metros_requeridos=round(linea.cantidad * linea.medida, 2),
+                rollo_id=linea.rollo_id,
             ))
+    if apartado.estado == EstadoApartado.APARTADO:
+        apartado.salida_pendiente = _solo_rollos_completos(apartado.items)
     db.flush()
     return apartado
 
@@ -698,6 +808,8 @@ def separar_apartado(db: Session, apartado_id: int, datos: SepararApartadoReques
         item = por_id[item_id]
         if cantidad > item.cantidad + TOLERANCIA_CANTIDAD:
             raise HTTPException(status_code=400, detail=f"De \"{item.descripcion}\" solo hay {item.cantidad:g}: no se pueden pasar {cantidad:g}.")
+        if item.rollo_id and cantidad < item.cantidad - TOLERANCIA_CANTIDAD:
+            raise HTTPException(status_code=400, detail=f"El rollo completo {item.rollo_referencia} no se puede partir: pásalo completo o déjalo.")
         if not producida and _tiene_salida(item):
             raise HTTPException(
                 status_code=400,
@@ -746,6 +858,9 @@ def separar_apartado(db: Session, apartado_id: int, datos: SepararApartadoReques
     original.observaciones = f"{original.observaciones}\n{nota}".strip() if original.observaciones else nota
     db.flush()
     db.expire(original, ["items"])
+    db.expire(nueva, ["items"])
+    if not producida and (original.salida_pendiente or _solo_rollos_completos(nueva.items)):
+        nueva.salida_pendiente = True
 
     # Si lo que queda en la original ya salió completo, la original termina.
     if original.estado in (EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION) and all(
@@ -793,6 +908,8 @@ def enviar_a_produccion(db: Session, apartado_id: int, usuario: Usuario) -> Apar
     apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
     if apartado.estado != EstadoApartado.APARTADO:
         raise HTTPException(status_code=400, detail="Este apartado ya fue enviado a producción o no está activo.")
+    if apartado.salida_pendiente:
+        raise HTTPException(status_code=400, detail="Esta cotización no tiene nada que producir: se le da salida desde Apartados.")
     faltantes = faltantes_apartado(db, apartado)
     if faltantes:
         raise HTTPException(
@@ -817,8 +934,10 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
     if apartado.estado not in (EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION):
         raise HTTPException(status_code=400, detail="Este apartado no está en producción.")
 
-    items_rollo = [item for item in apartado.items if item.modalidad == ModalidadApartado.POR_ROLLO]
+    # Las líneas de rollo completo no pasan por Planta (salen desde Apartados).
+    items_rollo = [item for item in apartado.items if item.modalidad == ModalidadApartado.POR_ROLLO and not item.rollo_id]
     items_stock = [item for item in apartado.items if item.modalidad == ModalidadApartado.POR_STOCK and not item.stock_descontado]
+    rollos_completos_sin_salida = [item for item in apartado.items if item.rollo_id and not _linea_completa(item)]
 
     # POR_ROLLO: EXACTAMENTE la misma validación que ya existía (si nunca se
     # registró producción para ningún ítem de rollo, se rechaza) -- solo que
@@ -878,6 +997,14 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
             cantidad=item.cantidad, usuario=usuario.correo,
             observaciones=f"Apartado {apartado.numero_cotizacion}.", cotizacion=apartado.numero_cotizacion,
         ))
+
+    if rollos_completos_sin_salida:
+        # Planta terminó, pero falta darle salida al rollo completo: la
+        # cotización sigue activa (el rollo sigue apartado) y pasa a
+        # "Pendientes por dar salida"; al darle salida queda Entregada.
+        apartado.salida_pendiente = True
+        apartado.estado = EstadoApartado.EN_PRODUCCION
+        return apartado
 
     # Al pasar el estado, los metros/cantidades reservados no consumidos de
     # este apartado dejan de contar en `metros_reservados_codigo`/

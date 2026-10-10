@@ -122,7 +122,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     if (sesion?.rol !== "administrativo") return setApartadosPorEnviarCount(0);
     try {
       const datos = await api.get<Record<string, unknown>[]>("/apartados?estado=apartado") || [];
-      setApartadosPorEnviarCount(datos.map(apartadoDesdeApi).filter((ap) => ap.faltantes.length === 0).length);
+      setApartadosPorEnviarCount(datos.map(apartadoDesdeApi).filter((ap) => ap.faltantes.length === 0 && !ap.salidaPendiente).length);
     } catch {
       setApartadosPorEnviarCount(0);
     }

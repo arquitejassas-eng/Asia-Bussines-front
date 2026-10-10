@@ -1,4 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import ElegirRolloCompleto from "../Componentes/ElegirRolloCompleto";
+import { descripcionRolloCompleto } from "../Utils/rolloCompleto";
 import { useNavigate } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
@@ -68,7 +70,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const esAdminInventario = sesion.rol === "admin_inventario";
   // Cotizaciones que Admin Inventario ya aprobó y esperan que la bodega
   // decida cuándo mandarlas a producción.
-  const cotizacionesAprobadas = a.puedeEnviarAProduccion ? a.apartados.filter((ap) => ap.estado === "apartado") : [];
+  const cotizacionesAprobadas = a.puedeEnviarAProduccion ? a.apartados.filter((ap) => ap.estado === "apartado" && !ap.salidaPendiente) : [];
 
   function confirmarEnvioAProduccion(ap: { id: number; numeroCotizacion: string }) {
     setConfirmacion({
@@ -313,6 +315,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       >
                         Producto de stock
                       </button>
+                      <button
+                        type="button"
+                        className={`produccion-tipo-boton ${item.modalidad === "rollo_completo" ? "produccion-tipo-activo" : ""}`}
+                        onClick={() => a.cambiarModalidadItem(indice, "rollo_completo")}
+                      >
+                        Rollo completo
+                      </button>
                     </div>
                   </div>
 
@@ -368,6 +377,16 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         )
                       )}
                     </div>
+                  ) : item.modalidad === "rollo_completo" ? (
+                    <ElegirRolloCompleto
+                      rollos={a.rollosParaApartar[item.bodegaId || a.formulario.bodegaId]}
+                      rolloId={item.rolloId} rolloResumen={item.rolloResumen}
+                      ocupados={a.formulario.items.filter((_, i) => i !== indice).map((it) => it.rolloId).filter((id): id is number => Boolean(id))}
+                      fijo={Boolean(item.id)}
+                      sinBodega={!(item.bodegaId || a.formulario.bodegaId)}
+                      alElegir={(rollo) => a.seleccionarRolloCompleto(indice, rollo, rollo ? descripcionRolloCompleto(rollo) : "")}
+                      alReintentar={() => a.cargarRollosParaApartar(item.bodegaId || a.formulario.bodegaId, true)}
+                    />
                   ) : (
                     <div>
                       <label>Producto *</label>
@@ -433,14 +452,16 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       onChange={(e) => a.actualizarItemApartado(indice, "descripcion", e.target.value)}
                     />
                   </div>
-                  <div>
-                    <label>Cantidad *</label>
-                    <input
-                      type="number" min="0" step="1"
-                      value={item.cantidad}
-                      onChange={(e) => a.actualizarItemApartado(indice, "cantidad", e.target.value)}
-                    />
-                  </div>
+                  {item.modalidad !== "rollo_completo" && (
+                    <div>
+                      <label>Cantidad *</label>
+                      <input
+                        type="number" min="0" step="1"
+                        value={item.cantidad}
+                        onChange={(e) => a.actualizarItemApartado(indice, "cantidad", e.target.value)}
+                      />
+                    </div>
+                  )}
                   {item.modalidad === "por_rollo" && (
                     <div>
                       <label>Medida (m por unidad) *</label>
@@ -676,7 +697,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             </td>
                             <td className="ap-col-fecha" data-etiqueta="Creado" style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
                             <td className="inventario-acciones ap-col-acciones">
-                              {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
+                              {a.puedeEnviarAProduccion && ap.estado === "apartado" && !ap.salidaPendiente && (
                                 <button
                                   disabled={ap.faltantes.length > 0}
                                   title={ap.faltantes.length ? "Esperando material: se habilita cuando le des ingreso" : undefined}
