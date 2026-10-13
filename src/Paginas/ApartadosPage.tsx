@@ -279,7 +279,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       {item.stockDescontado ? " No se puede cambiar." : " Puedes subirla, pero no quitarla ni bajarla de lo que ya salió."}
                     </p>
                   ) : null}
-                  {indice > 0 && !item.id && !a.editandoId && almacen.bodegas.length > 1 && (
+                  {indice > 0 && !(item.metrosConsumidos || item.stockDescontado) && almacen.bodegas.length > 1 && (
                     <div className="apartado-linea-cabecera">
                       <strong>Producto {indice + 1}</strong>
                       <select

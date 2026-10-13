@@ -13,7 +13,7 @@ from app.schemas.apartados import (
 )
 from app.models.rollo import Rollo
 from app.core.config import settings
-from app.schemas.apartados import ApartadoEditar, RegistrarSalidaRequest, SepararApartadoRequest
+from app.schemas.apartados import ApartadoEditar, ApartadoItemEditar, RegistrarSalidaRequest, SepararApartadoRequest
 from app.schemas.inventario import ProductoResponse
 from app.services import apartados as srv
 from app.services import importar_cotizaciones
@@ -228,8 +228,51 @@ def eliminar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: 
 def editar_apartado(
     apartado_id: int, datos: ApartadoEditar, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> Apartado:
-    """Admin Inventario corrige una cotización activa (ver srv.editar_apartado)."""
-    apartado = srv.editar_apartado(db, apartado_id, datos, usuario)
+    """Admin Inventario corrige una cotización activa (ver srv.editar_apartado).
+    Las líneas que salen de OTRA bodega se pasan a la misma cotización en esa
+    bodega: se le suman si ya existe ahí, o se crea. Todo junto o nada."""
+    bodega = srv.bodega_de_consulta(db, usuario, datos.bodega_id)
+    propias = [linea for linea in datos.items if not linea.bodega_id or linea.bodega_id == bodega]
+    por_bodega: dict[int, list] = {}
+    for linea in datos.items:
+        if linea.bodega_id and linea.bodega_id != bodega:
+            # Una línea que ya existía y cambia de bodega sale de esta
+            # cotización (si ya tuvo salida, editar_apartado no lo permite)
+            # y entra como línea nueva en la otra.
+            por_bodega.setdefault(linea.bodega_id, []).append(linea.model_copy(update={"id": None, "bodega_id": None}))
+    apartado = srv.editar_apartado(db, apartado_id, datos.model_copy(update={"items": propias}), usuario)
+    for otra, lineas in por_bodega.items():
+        nombre = db.get(Bodega, otra).nombre if db.get(Bodega, otra) else str(otra)
+        try:
+            hermana = (
+                db.query(Apartado)
+                .filter(Apartado.bodega_id == otra, Apartado.numero_cotizacion == apartado.numero_cotizacion,
+                        Apartado.estado.in_(srv.ESTADOS_RESERVA_ACTIVA))
+                .first()
+            )
+            if hermana is not None:
+                actuales = [
+                    ApartadoItemEditar(
+                        id=it.id, modalidad=it.modalidad, descripcion=it.descripcion, cantidad=it.cantidad,
+                        codigo_interno=it.codigo_interno, medida=it.medida, producto_id=it.producto_id, rollo_id=it.rollo_id,
+                    )
+                    for it in hermana.items
+                ]
+                srv.editar_apartado(db, hermana.id, ApartadoEditar(
+                    bodega_id=otra, material_en_camino=datos.material_en_camino, numero_cotizacion=hermana.numero_cotizacion,
+                    empresa=hermana.empresa or datos.empresa, cliente=hermana.cliente, observaciones=hermana.observaciones,
+                    items=actuales + lineas,
+                ), usuario)
+            else:
+                srv.crear_apartado(db, ApartadoCrear(
+                    bodega_id=otra, material_en_camino=datos.material_en_camino, numero_cotizacion=apartado.numero_cotizacion,
+                    empresa=datos.empresa, cliente=datos.cliente,
+                    observaciones=f"Parte de la cotización {apartado.numero_cotizacion} de {apartado.bodega_nombre} "
+                    f"con material de {nombre}.",
+                    items=lineas,
+                ), usuario)
+        except HTTPException as exc:
+            raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
     db.commit(); db.refresh(apartado)
     return _con_faltantes(db, [apartado])[0]
 

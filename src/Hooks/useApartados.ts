@@ -421,9 +421,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
         items: formulario.items.map((i) => {
-          // Solo al crear: una línea de otra bodega hace que se guarde una
-          // cotización por bodega (mismo número), ver backend crear_apartado.
-          const bodega_id = !editandoId && i.bodegaId ? Number(i.bodegaId) : undefined;
+          // Una línea de otra bodega va a la misma cotización en esa bodega
+          // (mismo número), al crear y al editar: ver backend crear/editar_apartado.
+          const bodega_id = i.bodegaId ? Number(i.bodegaId) : undefined;
           if (i.modalidad === "rollo_completo") {
             return { id: i.id, bodega_id, modalidad: "por_rollo", rollo_id: i.rolloId, descripcion: i.descripcion, cantidad: 1,
               codigo_interno: i.codigoInterno || undefined, medida: Number(i.medida) || undefined };
