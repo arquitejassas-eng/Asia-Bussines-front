@@ -20,6 +20,10 @@ class StockAdicionalItemCrear(BaseModel):
     calidad: Literal["primera", "segunda"]
     cantidad: int = Field(gt=0)
     motivo_segunda: str = ""
+    # Tejas: cada línea puede tener su propia medida (ej. 2 de 6 m y 3 de 3 m).
+    # Sin ella se usa `metros_por_unidad` de la producción. Caballetes y
+    # flanches usan siempre la de la producción (define el corte).
+    metros_por_unidad: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def _exigir_motivo_si_segunda(self) -> "StockAdicionalItemCrear":
@@ -66,8 +70,8 @@ class ProduccionCrear(BaseModel):
             raise ValueError("Indica el calibre — es obligatorio para identificar y consolidar correctamente el stock de TEJA.")
         if self.tipo_producto in ("caballete", "flanche") and not self.metros_por_unidad:
             raise ValueError(f"Indica la longitud del {self.tipo_producto} (metros por unidad) para calcular los cortes.")
-        if self.stock_adicional and not self.metros_por_unidad:
-            raise ValueError("Indica los metros por unidad para registrar el stock adicional.")
+        if any(not (item.metros_por_unidad or self.metros_por_unidad) for item in self.stock_adicional):
+            raise ValueError("Indica los metros por unidad de cada línea de stock adicional.")
         return self
 
 

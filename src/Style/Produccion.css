@@ -336,3 +336,25 @@
   .produccion-tarjetas-historial tbody td:first-child { font-weight: 700; }
   .produccion-tabla-wrap { overflow-x: visible; }
 }
+
+/* Stock adicional: en PC cada línea es una fila; en celular, un recuadro
+   con su título y Cantidad + Medida lado a lado. */
+.produccion-stock-linea-titulo { display: none; }
+@media (max-width: 640px) {
+  .produccion-stock-linea {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem 0.6rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--at-border, #E1D5C0);
+    border-radius: var(--at-r-md, 12px);
+    background: var(--at-surface, #FFFFFF);
+  }
+  .produccion-stock-linea-titulo {
+    display: block;
+    grid-column: 1 / -1;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  /* Calidad, motivo y Quitar ocupan todo el ancho. */
+  .produccion-stock-linea > div:nth-of-type(n + 3) { grid-column: 1 / -1; }
+}

@@ -22,25 +22,9 @@ function PanelStockAdicionalProduccion({
           : "Si en esta producción salieron más unidades de las que necesitaba el apartado (o simplemente quieres dejar unidades en inventario), regístralas aquí. No es obligatorio."}
       </p>
 
-      {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && stockAdicional.length > 0 && (
-        <div>
-          <label className="produccion-label" htmlFor="prod-metros-unidad">Metros por unidad</label>
-          <input
-            id="prod-metros-unidad"
-            type="number"
-            min="0"
-            step="any"
-            className="produccion-input"
-            style={{ maxWidth: 200 }}
-            placeholder="Ej. 6"
-            value={metrosPorUnidad}
-            onChange={(e) => setMetrosPorUnidad(e.target.value)}
-          />
-        </div>
-      )}
-
       {stockAdicional.map((linea, indice) => (
-        <div key={indice} className="produccion-form-grid" style={{ marginTop: "0.85rem", alignItems: "end" }}>
+        <div key={indice} className="produccion-form-grid produccion-stock-linea" style={{ marginTop: "0.85rem", alignItems: "end" }}>
+          <span className="produccion-stock-linea-titulo">Línea {indice + 1}</span>
           <div>
             <label className="produccion-label">Cantidad</label>
             <input
@@ -51,6 +35,21 @@ function PanelStockAdicionalProduccion({
               onChange={(e) => actualizarLineaStock(indice, "cantidad", e.target.value)}
             />
           </div>
+          {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && (
+            <div>
+              <label className="produccion-label">Medida (m por unidad)</label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                inputMode="decimal"
+                className="produccion-input"
+                placeholder="Ej. 6"
+                value={linea.metros ?? ""}
+                onChange={(e) => actualizarLineaStock(indice, "metros", e.target.value)}
+              />
+            </div>
+          )}
           <div>
             <label className="produccion-label">Calidad</label>
             <select

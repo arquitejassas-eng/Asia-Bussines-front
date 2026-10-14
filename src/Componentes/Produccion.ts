@@ -112,7 +112,11 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   const [stockAdicional, setStockAdicional] = useState([]);
 
   function agregarLineaStock() {
-    setStockAdicional((actual) => [...actual, { calidad: "primera", cantidad: "1", motivoSegunda: "" }]);
+    // Tejas: cada línea con su medida; la nueva arranca con la de la línea anterior.
+    setStockAdicional((actual) => [...actual, {
+      calidad: "primera", cantidad: "1", motivoSegunda: "",
+      metros: actual.length ? actual[actual.length - 1].metros || "" : (metrosPorUnidad || String(parseFloat(String(medidaProducto).replace(",", ".")) || "")),
+    }]);
   }
   function quitarLineaStock(indice) {
     setStockAdicional((actual) => actual.filter((_, i) => i !== indice));
@@ -386,10 +390,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     // aquí ya no se auto-asigna nada por FIFO.
     if (SECCIONES_POR_TIPO_PRODUCTO[tipoProducto]) return;
 
-    const metrosUnidad = Number(metrosPorUnidad) || 0;
-    const metrosNecesariosStock = metrosUnidad > 0
-      ? redondear(stockAdicional.reduce((suma, linea) => suma + (Number(linea.cantidad) || 0) * metrosUnidad, 0))
-      : 0;
+    const metrosNecesariosStock = redondear(stockAdicional.reduce(
+      (suma, linea) => suma + (Number(linea.cantidad) || 0) * (Number(linea.metros) || 0), 0));
 
     if (metrosNecesariosStock > 0) {
       gestionandoStockRef.current = true;
@@ -493,18 +495,18 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     }
 
     if (stockAdicional.length > 0) {
-      if (!metrosPorUnidad || Number(metrosPorUnidad) <= 0) {
-        return "Indica los metros por unidad para registrar el stock adicional.";
-      }
       let metrosNecesarios = 0;
       for (const linea of stockAdicional) {
         if (!linea.cantidad || Number(linea.cantidad) <= 0) {
           return "Cada línea de stock adicional necesita una cantidad válida.";
         }
+        if (!(Number(linea.metros) > 0)) {
+          return "Indica la medida (metros por unidad) de cada línea de stock adicional.";
+        }
         if (linea.calidad === "segunda" && !linea.motivoSegunda.trim()) {
           return "Indica el motivo/descripción del defecto para cada unidad de Segunda.";
         }
-        metrosNecesarios += Number(linea.cantidad) * Number(metrosPorUnidad);
+        metrosNecesarios += Number(linea.cantidad) * Number(linea.metros);
       }
       // El material de las unidades adicionales también tiene que salir del
       // rollo: lo que sobre después de cubrir el apartado (o todo lo
@@ -589,11 +591,15 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         color: color.trim(),
         ral: ral.trim(),
         calibre: calibreLote.trim(),
-        metros_por_unidad: metrosPorUnidad ? Number(metrosPorUnidad) : null,
+        // Tejas: la medida va en cada línea de stock; caballete/flanche usa la de arriba.
+        metros_por_unidad: SECCIONES_POR_TIPO_PRODUCTO[tipoProducto]
+          ? (metrosPorUnidad ? Number(metrosPorUnidad) : null)
+          : (stockAdicional.length ? Number(stockAdicional[0].metros) || null : (metrosPorUnidad ? Number(metrosPorUnidad) : null)),
         stock_adicional: stockAdicional.map((linea) => ({
           calidad: linea.calidad,
           cantidad: Number(linea.cantidad),
           motivo_segunda: linea.calidad === "segunda" ? linea.motivoSegunda.trim() : "",
+          metros_por_unidad: SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] ? null : Number(linea.metros) || null,
         })),
       };
 

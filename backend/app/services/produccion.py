@@ -126,15 +126,23 @@ def _numero(valor: float) -> str:
     return f"{valor:g}".replace(".", ",")
 
 
-def _descripcion_stock(datos: ProduccionCrear, codigo_rollo_origen: str) -> str:
+def metros_de_linea_stock(datos: ProduccionCrear, item: StockAdicionalItemCrear) -> float | None:
+    """Medida de una línea de stock adicional: la suya (tejas) o la de la producción."""
+    if datos.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO:
+        return datos.metros_por_unidad
+    return item.metros_por_unidad or datos.metros_por_unidad
+
+
+def _descripcion_stock(datos: ProduccionCrear, codigo_rollo_origen: str, metros: float | None = None) -> str:
     """Nombre estándar del stock que deja una producción, armado con sus datos
     (ej. "TEJA ARQUI 4,65 m CAL 0,33 BLANCO (RAL 9002) - rollo LB90020,33").
     No se usa el texto de la cotización: ese stock ya no es de ese cliente."""
     partes = [NOMBRE_POR_TIPO_PRODUCTO.get(datos.tipo_producto, "teja").upper()]
     if datos.tipo_producto == "teja" and datos.modelo.strip():
         partes.append(datos.modelo.strip().upper())
-    if datos.metros_por_unidad:
-        partes.append(f"{_numero(datos.metros_por_unidad)} m")
+    metros = metros if metros is not None else datos.metros_por_unidad
+    if metros:
+        partes.append(f"{_numero(metros)} m")
     if datos.calibre.strip():
         partes.append(f"CAL {datos.calibre.strip()}")
     if datos.color.strip():
@@ -155,6 +163,7 @@ def _buscar_producto_existente(
     familia_stock: str,
     codigo_rollo_origen_stock: str,
     ancho_rollo_stock: float | None,
+    metros: float | None = None,
 ) -> Producto | None:
     """Busca un `Producto` que ya tenga exactamente la misma identidad que
     generaría esta línea de stock adicional, para sumarle el stock en vez de
@@ -197,7 +206,7 @@ def _buscar_producto_existente(
             if (
                 _calibre_identidad(candidato.calibre) == calibre_nuevo
                 and _calidad_efectiva(candidato.calidad, candidato.codigo) == item_stock.calidad
-                and _misma_longitud(_longitud_efectiva(candidato.metros_por_unidad, candidato.codigo), datos.metros_por_unidad)
+                and _misma_longitud(_longitud_efectiva(candidato.metros_por_unidad, candidato.codigo), metros)
             ):
                 return candidato
         return None
@@ -209,7 +218,7 @@ def _buscar_producto_existente(
             Producto.familia == familia_stock,
             func.coalesce(Producto.codigo_rollo_origen, "") == codigo_rollo_origen_stock.strip(),
             Producto.ancho_rollo == ancho_rollo_stock,
-            Producto.metros_por_unidad == datos.metros_por_unidad,
+            Producto.metros_por_unidad == metros,
             Producto.calidad == item_stock.calidad,
         )
         .with_for_update()
@@ -376,7 +385,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         # aplica); es una validación distinta, sobre que el material sí se
         # haya descontado de verdad. A diferencia de caballetes, aquí "al
         # menos" alcanza — la cantidad de stock sigue siendo elección libre.
-        metros_necesarios = round(sum(item.cantidad * datos.metros_por_unidad for item in datos.stock_adicional), 2)
+        metros_necesarios = round(sum(item.cantidad * metros_de_linea_stock(datos, item) for item in datos.stock_adicional), 2)
         if metros_excedente + 0.01 < metros_necesarios:
             raise HTTPException(
                 status_code=400,
@@ -447,12 +456,13 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         tipo_producto_stock = ""
         ancho_rollo_stock = None
 
-    descripcion_base = _descripcion_stock(datos, codigo_rollo_origen_stock)
     for indice, item_stock in enumerate(datos.stock_adicional, start=1):
-        descripcion = descripcion_base + (" (Segunda)" if item_stock.calidad == "segunda" else "")
+        metros_linea = metros_de_linea_stock(datos, item_stock)
+        descripcion = _descripcion_stock(datos, codigo_rollo_origen_stock, metros_linea) + (
+            " (Segunda)" if item_stock.calidad == "segunda" else "")
 
         producto_existente = _buscar_producto_existente(
-            db, usuario, datos, item_stock, familia_stock, codigo_rollo_origen_stock, ancho_rollo_stock,
+            db, usuario, datos, item_stock, familia_stock, codigo_rollo_origen_stock, ancho_rollo_stock, metros_linea,
         )
 
         if producto_existente is not None:
@@ -476,7 +486,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
                 referencia=datos.modelo.strip() if familia_stock == "TEJA" else "",
                 calidad=item_stock.calidad,
                 motivo_segunda=item_stock.motivo_segunda if item_stock.calidad == "segunda" else "",
-                metros_por_unidad=datos.metros_por_unidad,
+                metros_por_unidad=metros_linea,
                 produccion_id=produccion.id,
                 fecha_produccion=ahora,
                 entrada=item_stock.cantidad, stock=item_stock.cantidad,
