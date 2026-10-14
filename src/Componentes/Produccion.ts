@@ -111,6 +111,19 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   const [metrosPorUnidad, setMetrosPorUnidad] = useState("");
   const [stockAdicional, setStockAdicional] = useState([]);
 
+  // Producción solo para dejar stock (tejas, sin cotización vinculada).
+  function esSoloStock() {
+    return !SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && !apartadoItemId && stockAdicional.length > 0;
+  }
+  function unidadesDelStock() {
+    return stockAdicional.reduce((suma, linea) => suma + (Number(linea.cantidad) || 0), 0);
+  }
+  // Ej. "6 m / 3 m" (sin repetir medidas).
+  function medidasDelStock() {
+    const medidas = [...new Set(stockAdicional.map((linea) => Number(linea.metros)).filter((m) => m > 0))];
+    return medidas.map((m) => `${String(m).replace(".", ",")} m`).join(" / ");
+  }
+
   function agregarLineaStock() {
     // Tejas: cada línea con su medida; la nueva arranca con la de la línea anterior.
     setStockAdicional((actual) => [...actual, {
@@ -458,11 +471,14 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     // Para caballetes, medidaProducto se deriva sola de la longitud (ver el
     // useEffect que las sincroniza) — la longitud se valida más abajo, con
     // un mensaje más claro que repetir "indica la medida" aquí.
-    if (!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && !medidaProducto.trim()) return "Indica la medida del producto fabricado.";
-    if (!cantidadProductos || Number(cantidadProductos) <= 0) {
+    // Solo stock (tejas sin cotización): la medida y la cantidad ya están en
+    // cada línea del stock adicional, no se vuelven a pedir arriba.
+    const soloStock = esSoloStock();
+    if (!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && !soloStock && !medidaProducto.trim()) return "Indica la medida del producto fabricado.";
+    if (!soloStock && (!cantidadProductos || Number(cantidadProductos) <= 0)) {
       return "Indica cuántas unidades de producto se obtuvieron.";
     }
-    if (!Number.isInteger(Number(cantidadProductos))) {
+    if (cantidadProductos && !Number.isInteger(Number(cantidadProductos))) {
       return "La cantidad son unidades enteras (ej. 18), no metros. La medida de cada unidad va en su propia casilla.";
     }
     if (!responsable.trim()) return "Indica quién es el responsable de esta producción.";
@@ -579,8 +595,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         tipo_producto: tipoProducto,
         producto_fabricado: productoFabricado.trim(),
         modelo: modelo.trim(),
-        medida_producto: medidaProducto.trim(),
-        cantidad_productos: Number(cantidadProductos),
+        medida_producto: medidaProducto.trim() || (esSoloStock() ? medidasDelStock() : ""),
+        cantidad_productos: Number(cantidadProductos) || (esSoloStock() ? unidadesDelStock() : 0),
         responsable: responsable.trim(),
         observaciones,
         rollos: rollosSeleccionados.map(({ rollo, metrosTexto }) => ({
