@@ -68,9 +68,6 @@ type ItemDisponibilidad = { cargando?: boolean; error?: boolean; sinBodega?: boo
 function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const a = useApartados(sesion, almacen.refrescarApartadosPorEnviar);
   const esAdminInventario = sesion.rol === "admin_inventario";
-  // Cotizaciones que Admin Inventario ya aprobó y esperan que la bodega
-  // decida cuándo mandarlas a producción.
-  const cotizacionesAprobadas = a.puedeEnviarAProduccion ? a.apartados.filter((ap) => ap.estado === "apartado" && !ap.salidaPendiente) : [];
 
   function confirmarEnvioAProduccion(ap: { id: number; numeroCotizacion: string }) {
     setConfirmacion({
@@ -195,30 +192,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               ? <>Cuando se aprueba una cotización, créala aquí y elige de qué bodega sale el material.
                 Cada línea puede ser material por rollo (código de clasificación, color y calibre) o un
                 producto de stock (Tornillos, Amarres, etc.). El material queda reservado en esa bodega y a
-                su encargada le llega el aviso para enviarlo a producción cuando quiera.</>
+                su encargada lo envía a producción desde la lista cuando quiera.</>
               : a.puedeEnviarAProduccion
                 ? <>Aquí llegan las cotizaciones aprobadas por Admin Inventario con el material ya reservado en tu
-                  bodega. Envíalas a producción cuando estés lista.</>
+                  bodega. Envíalas a producción desde la lista con el botón "Enviar a producción".</>
                 : <>Cotizaciones aprobadas con su material reservado.</>}
           </p>
-
-          {!a.mostrarFormularioApartado && cotizacionesAprobadas.map((ap) => (
-            <div key={ap.id} className="inventario-exito" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-              <span>
-                {ap.faltantes.length ? "⏳" : "✅"} Cotización {ap.numeroCotizacion} aprobada{ap.cliente ? ` — ${ap.cliente}` : ""}
-                {ap.empresa && <> · material de <strong>{EMPRESAS[ap.empresa] || ap.empresa}</strong></>}
-                <span style={{ fontWeight: 400 }}> · {formatearFechaColombia(ap.fechaCreacion)}</span>
-                {ap.faltantes.length > 0 && (
-                  <span style={{ display: "block", fontWeight: 400 }}>
-                    Esperando material: {ap.faltantes.join("; ")}. Podrás enviarla cuando le des ingreso.
-                  </span>
-                )}
-              </span>
-              <button className="inventario-boton" disabled={ap.faltantes.length > 0} onClick={() => confirmarEnvioAProduccion(ap)}>
-                Enviar a producción
-              </button>
-            </div>
-          ))}
 
           {a.errorAccionApartado && <p className="inventario-error">{a.errorAccionApartado}</p>}
 
