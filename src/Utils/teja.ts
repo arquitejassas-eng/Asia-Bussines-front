@@ -4,6 +4,23 @@
 // Excel masivo, que hoy no traen esos campos, a diferencia del stock que
 // genera Producción). Nunca se persiste: es puramente de presentación.
 
+/** Nombre oficial del modelo de teja a partir de lo que se escribe:
+ * "arqui" -> ARQUITECTONICA, "super" -> SUPERMIL, "master" -> MASTERMIL; lo
+ * demás en mayúsculas. Misma lista que backend/app/services/modelos_teja.py. */
+export const MODELOS_TEJA: Record<string, string[]> = {
+  ARQUITECTONICA: ["arq"],
+  SUPERMIL: ["super"],
+  MASTERMIL: ["master"],
+};
+export function normalizarModeloTeja(texto: string | null | undefined): string {
+  const compacto = String(texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!compacto) return "";
+  for (const [nombre, comienzos] of Object.entries(MODELOS_TEJA)) {
+    if (comienzos.some((c) => compacto.startsWith(c))) return nombre;
+  }
+  return String(texto ?? "").trim().split(/\s+/).join(" ").toUpperCase();
+}
+
 /** "2T..." (sin distinguir mayúsculas/minúsculas ni espacios) = Segunda.
  * No asume "Primera" para lo demás -- eso lo decide quien llama, igual que
  * ya hacía la lógica existente basada en `Producto.calidad`. */

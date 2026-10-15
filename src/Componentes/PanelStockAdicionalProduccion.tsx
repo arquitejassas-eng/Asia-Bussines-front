@@ -7,8 +7,6 @@ import { NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/
 function PanelStockAdicionalProduccion({
   tipoProducto,
   stockAdicional,
-  metrosPorUnidad,
-  setMetrosPorUnidad,
   actualizarLineaStock,
   quitarLineaStock,
   agregarLineaStock,

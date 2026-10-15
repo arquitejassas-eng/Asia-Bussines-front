@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ErrorApi } from "../Componentes/Api";
 import { productoDesdeApi } from "../Componentes/Mapeo";
-import { calibrePantalla } from "../Utils/teja";
+import { calibrePantalla, normalizarModeloTeja } from "../Utils/teja";
 import { useActualizacionAutomatica } from "./useActualizacionAutomatica";
 
 const FORMULARIO_VACIO = {
@@ -284,7 +284,8 @@ export function useProductosInventario() {
         clave = `${familia}|${producto.descripcion}|${producto.calibre}|${longitud}`;
         tipoGrupo = "conversion";
       } else if (esTeja) {
-        referenciaGrupo = (producto.referencia || "").trim().toUpperCase();
+        // "Arqui" y "ARQUITECTONICA" son el mismo modelo: una sola tarjeta.
+        referenciaGrupo = normalizarModeloTeja(producto.referencia);
         longitud = null;
         clave = `${familia}|${referenciaGrupo}`;
         tipoGrupo = "teja";

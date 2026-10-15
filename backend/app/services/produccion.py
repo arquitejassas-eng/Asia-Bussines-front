@@ -15,6 +15,7 @@ from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.schemas.produccion import ProduccionCrear, StockAdicionalItemCrear
 from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
+from app.services.modelos_teja import normalizar_modelo_teja
 
 # Regla física de los productos "seccionados": el ancho del rollo se divide
 # siempre en N partes iguales según el tipo (3 para caballetes, 5 para
@@ -194,7 +195,6 @@ def _buscar_producto_existente(
             .filter(
                 Producto.bodega_id == usuario.bodega_id,
                 Producto.familia == "TEJA",
-                func.coalesce(Producto.referencia, "") == datos.modelo.strip(),
                 func.coalesce(Producto.color, "") == datos.color.strip(),
                 func.coalesce(Producto.codigo_rollo_origen, "") == codigo_rollo_origen_stock.strip(),
             )
@@ -202,9 +202,11 @@ def _buscar_producto_existente(
             .all()
         )
         calibre_nuevo = _calibre_identidad(datos.calibre)
+        modelo_nuevo = normalizar_modelo_teja(datos.modelo)
         for candidato in candidatos:
             if (
-                _calibre_identidad(candidato.calibre) == calibre_nuevo
+                normalizar_modelo_teja(candidato.referencia) == modelo_nuevo
+                and _calibre_identidad(candidato.calibre) == calibre_nuevo
                 and _calidad_efectiva(candidato.calidad, candidato.codigo) == item_stock.calidad
                 and _misma_longitud(_longitud_efectiva(candidato.metros_por_unidad, candidato.codigo), metros)
             ):
@@ -228,6 +230,9 @@ def _buscar_producto_existente(
 
 def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) -> Produccion:
     if not datos.rollos: raise HTTPException(status_code=400, detail="Selecciona al menos un rollo y sus metros a consumir.")
+    if datos.tipo_producto == "teja":
+        # "arqui" -> ARQUITECTONICA, "super" -> SUPERMIL... (ver modelos_teja).
+        datos.modelo = normalizar_modelo_teja(datos.modelo)
     ahora = datetime.now(timezone.utc)
     ids = [item.rollo_id for item in datos.rollos]
     if len(set(ids)) != len(ids): raise HTTPException(status_code=400, detail="No puedes usar el mismo rollo más de una vez.")

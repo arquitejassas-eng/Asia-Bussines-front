@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { anchoPorSeccion, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/produccion";
+import { MODELOS_TEJA, normalizarModeloTeja } from "../Utils/teja";
 
 // Sección "1. Datos del producto fabricado" de Producción. Extraído de
 // ProduccionPage.tsx sin cambiar props ni comportamiento -- no usa estado
@@ -87,10 +88,20 @@ function PanelDatosProductoProduccion({
             id="prod-modelo"
             type="text"
             className="produccion-input"
-            placeholder="Ej. M-200"
+            placeholder={tipoProducto === "teja" ? "Ej. arqui, super..." : "Ej. M-200"}
+            list={tipoProducto === "teja" ? "prod-modelos-teja" : undefined}
             value={modelo}
             onChange={(e) => setModelo(e.target.value)}
+            onBlur={() => { if (tipoProducto === "teja" && modelo.trim()) setModelo(normalizarModeloTeja(modelo)); }}
           />
+          {tipoProducto === "teja" && (
+            <datalist id="prod-modelos-teja">
+              {Object.keys(MODELOS_TEJA).map((nombre) => <option key={nombre} value={nombre} />)}
+            </datalist>
+          )}
+          {tipoProducto === "teja" && modelo.trim() && normalizarModeloTeja(modelo) !== modelo.trim() && (
+            <p className="produccion-texto-ayuda">Se guarda como <strong>{normalizarModeloTeja(modelo)}</strong></p>
+          )}
         </div>
         {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && (
           <div>
