@@ -379,7 +379,15 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         # Misma regla para tejas — la reserva del apartado siempre se mide
         # en metros, y ahí sí coincide 1:1 con el consumo físico.
         if apartado_item is not None:
-            pendiente = sum(max(0.0, round(it.metros_requeridos - it.metros_consumidos, 2)) for it in items_produccion)
+            # Cuánto le toca a cada línea: lo que le faltaba o, con varias
+            # líneas, lo que salió de ella (sin pasarse de lo que le faltaba).
+            topes_por_linea = []
+            for it in items_produccion:
+                falta = max(0.0, round(it.metros_requeridos - it.metros_consumidos, 2))
+                if len(items_produccion) > 1 and datos.metros_por_linea:
+                    falta = min(falta, max(0.0, round(float(datos.metros_por_linea.get(it.id, 0)), 2)))
+                topes_por_linea.append((it, falta))
+            pendiente = round(sum(tope for _, tope in topes_por_linea), 2)
             aplicado_al_apartado = min(total, pendiente)
             metros_excedente = round(total - aplicado_al_apartado, 2)
         else:
@@ -453,12 +461,13 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     produccion.saldo_codigo = round(saldo, 2)
 
     if apartado_item is not None:
-        # Lo aplicado se reparte en orden: primero la línea principal, luego
-        # las que salieron junto con ella, cada una hasta lo que le faltaba.
+        # Lo aplicado se reparte entre las líneas, cada una hasta su tope
+        # (ver topes_por_linea); caballete/flanche es siempre una sola línea.
+        if datos.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO:
+            topes_por_linea = [(apartado_item, aplicado_al_apartado)]
         por_repartir = aplicado_al_apartado
-        for indice, it in enumerate(items_produccion):
-            falta = max(0.0, round(it.metros_requeridos - it.metros_consumidos, 2))
-            parte = por_repartir if indice == len(items_produccion) - 1 else min(por_repartir, falta)
+        for it, tope in topes_por_linea:
+            parte = min(por_repartir, tope)
             it.metros_consumidos = round(it.metros_consumidos + parte, 2)
             por_repartir = round(por_repartir - parte, 2)
         if apartado_item.apartado.estado == EstadoApartado.ENVIADO_A_PRODUCCION:

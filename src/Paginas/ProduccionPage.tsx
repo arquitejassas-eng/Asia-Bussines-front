@@ -92,6 +92,8 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
                 cantidadProductos={p.cantidadProductos}
                 setCantidadProductos={p.setCantidadProductos}
                 ayudaCantidad={p.ayudaCantidad}
+                lineasProduccion={p.lineasProduccion}
+                actualizarLineaProduccion={p.actualizarLineaProduccion}
                 metrosPorUnidad={p.metrosPorUnidad}
                 setMetrosPorUnidad={p.setMetrosPorUnidad}
                 responsable={p.responsable}

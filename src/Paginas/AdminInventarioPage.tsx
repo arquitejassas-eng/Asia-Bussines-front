@@ -7,6 +7,8 @@ import { claseColorMaterial } from "../Utils/colorRollo";
 import Paginacion from "../Componentes/Paginacion";
 import PanelMermaRollo from "../Componentes/PanelMermaRollo";
 import PanelBuscarRollos from "../Componentes/PanelBuscarRollos";
+import CeldaApartado from "../Componentes/CeldaApartado";
+import PanelResumenProductos from "../Componentes/PanelResumenProductos";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
@@ -20,20 +22,6 @@ const ETIQUETAS_ESTADO_ENVIO: Record<string, string> = {
   recibido: "Recibido",
   no_llego: "No llegó",
 };
-
-/** Debajo del físico: cuánto está apartado y cuánto queda libre para vender
- * (solo si hay algo apartado). En rojo si lo apartado supera lo físico
- * (material apartado que viene en camino). */
-function CeldaApartado({ reservado, libre, unidad }: { reservado?: number; libre?: number; unidad: string }) {
-  if (!reservado) return null;
-  return (
-    <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>
-      Apartado: {reservado}{unidad}
-      <br />
-      <strong style={{ color: (libre ?? 0) < 0 ? "#b3261e" : undefined }}>Libre: {libre}{unidad}</strong>
-    </span>
-  );
-}
 
 /** Metros de una empresa en un código: lo libre (como STOCK ARQUITEJAS /
  * STOCK ASIA del Excel) y, si hay algo apartado, el físico y lo apartado. */
@@ -492,8 +480,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                     )}
                   </div>
                   <p className="inventario-carga-ayuda">
-                    Igual que la tabla de arriba, pero para productos (mercancía por unidades, no rollos de
-                    materia prima).{c.empresaResumen && " El filtro de empresa no aplica aquí: los productos no llevan empresa."}
+                    Productos (mercancía por unidades, no rollos de materia prima) agrupados en tarjetas igual
+                    que el inventario de cada bodega: ábrelas para ver cada código en cada sede.{c.empresaResumen && " El filtro de empresa no aplica aquí: los productos no llevan empresa."}
                   </p>
                   <div className="inventario-buscador">
                     <input
@@ -503,47 +491,12 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                       onChange={(e) => c.buscarResumenProductos(e.target.value)}
                     />
                   </div>
-                  <div className="inventario-tabla-contenedor">
-                    <table className="inventario-tabla">
-                      <thead>
-                        <tr>
-                          <th>Código (producto)</th>
-                          <th>Descripción</th>
-                          <th>Calibre</th>
-                          <th>Unidad</th>
-                          {bodegas.map((b) => <th key={b.id}>{b.nombre}</th>)}
-                          <th>Total empresa</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {c.productosResumenPagina.length === 0 ? (
-                          <tr><td colSpan={bodegas.length + 5} className="inventario-vacio">
-                            {c.busquedaResumenProductos ? "Sin resultados para tu búsqueda." : "Sin datos."}
-                          </td></tr>
-                        ) : (
-                          c.productosResumenPagina.map((f) => (
-                            <tr key={f.codigo}>
-                              <td>{f.codigo}</td>
-                              <td>{f.descripcion || "—"}</td>
-                              <td>{f.calibre || "—"}</td>
-                              <td>{almacen?.unidadPorFamilia?.[f.familia] || "—"}</td>
-                              {bodegas.map((b) => (
-                                <td key={b.id}>
-                                  {f.porBodega[b.id] ?? 0}
-                                  <CeldaApartado reservado={f.reservadoPorBodega[b.id]} libre={f.librePorBodega[b.id]} unidad="" />
-                                </td>
-                              ))}
-                              <td>
-                                <strong>{f.total}</strong>
-                                <CeldaApartado reservado={f.reservadoTotal} libre={f.libreTotal} unidad="" />
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  <Paginacion paginacion={c.paginacionProductos} alCambiarPagina={c.setPaginaProductos} etiqueta="códigos" />
+                  <PanelResumenProductos
+                    grupos={c.gruposResumenProductos}
+                    bodegas={bodegas}
+                    unidadPorFamilia={almacen?.unidadPorFamilia}
+                    busqueda={c.busquedaResumenProductos}
+                  />
                 </>
               )}
 

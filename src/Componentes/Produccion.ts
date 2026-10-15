@@ -164,6 +164,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   // Otras líneas de la misma cotización y el mismo código (color + espesor)
   // que salen en esta misma producción (solo cambia la medida de la teja).
   const [itemsJuntos, setItemsJuntos] = useState<number[]>([]);
+  // Con varias líneas: cantidad y medida de CADA una ({itemId: {...}}).
+  const [medidasPorLinea, setMedidasPorLinea] = useState<Record<number, { cantidad: string; medida: string }>>({});
 
   // `silenciosa` (actualización automática): si falla, conserva la lista que
   // ya estaba -- vaciarla hacía desaparecer el panel de solicitudes y movía
@@ -267,15 +269,43 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       && modeloEnDescripcion(solicitud.descripcion) === modeloEnDescripcion(principal.descripcion);
   }
 
-  // Datos del producto con todas las líneas elegidas: "5,1 m / 4,9 m" y la
-  // suma de unidades (si todas vienen en unidades; las importadas vienen en metros).
-  function llenarDatosDeLineas(lineas) {
-    const enUnidades = lineas.every((s) => s.medida != null && s.medida !== 1 && Number.isInteger(s.cantidad));
-    const medidas = [...new Set(lineas.map((s) => s.medida))];
-    setProductoFabricado(lineas.map((s) => s.descripcion || s.codigoInterno).join(" + "));
-    setMedidaProducto(enUnidades ? (medidas.length === 1 ? String(medidas[0]) : medidas.map((m) => `${String(m).replace(".", ",")} m`).join(" / ")) : "");
-    setCantidadProductos(enUnidades ? String(lineas.reduce((suma, s) => suma + s.cantidad, 0)) : "");
+  // Cantidad y medida que trae una línea de la cotización, si viene en
+  // unidades (las importadas vienen en metros: cantidad = metros, medida = 1).
+  function cantidadYMedidaDe(solicitud) {
+    const enUnidades = solicitud.medida != null && solicitud.medida !== 1 && Number.isInteger(solicitud.cantidad);
+    return enUnidades ? { cantidad: String(solicitud.cantidad), medida: String(solicitud.medida) } : { cantidad: "", medida: "" };
   }
+
+  // Varias líneas: cada una con su cantidad y su medida (se pueden corregir).
+  function llenarDatosDeLineas(lineas) {
+    setProductoFabricado(lineas.map((s) => s.descripcion || s.codigoInterno).join(" + "));
+    setMedidasPorLinea((actual) => Object.fromEntries(lineas.map((s) => [s.itemId, actual[s.itemId] || cantidadYMedidaDe(s)])));
+    if (lineas.length === 1) {
+      const { cantidad, medida } = cantidadYMedidaDe(lineas[0]);
+      setMedidaProducto(medida); setCantidadProductos(cantidad);
+    }
+  }
+
+  // Las líneas de esta producción con su cantidad, medida y metros (solo si son varias).
+  const lineasProduccion = useMemo(() => (solicitudesElegidas.length > 1 ? solicitudesElegidas.map((s) => {
+    const { cantidad = "", medida = "" } = medidasPorLinea[s.itemId] || {};
+    const metros = redondear((Number(cantidad) || 0) * (Number(String(medida).replace(",", ".")) || 0));
+    return { itemId: s.itemId, descripcion: s.descripcion || s.codigoInterno, metrosPendientes: s.metrosPendientes, cantidad, medida, metros };
+  }) : []), [solicitudesElegidas, medidasPorLinea]);
+
+  function actualizarLineaProduccion(itemId, campo, valor) {
+    setMedidasPorLinea((actual) => ({ ...actual, [itemId]: { ...(actual[itemId] || { cantidad: "", medida: "" }), [campo]: valor } }));
+  }
+
+  // Con varias líneas, "Medida" y "Cantidad" de arriba salen de ellas
+  // ("5,1 m / 4,9 m" y la suma de unidades): así quedan en el historial.
+  useEffect(() => {
+    if (lineasProduccion.length < 2) return;
+    const medidas = [...new Set(lineasProduccion.map((l) => String(l.medida).replace(".", ",")).filter(Boolean))];
+    setMedidaProducto(medidas.map((m) => `${m} m`).join(" / "));
+    const unidades = lineasProduccion.reduce((suma, l) => suma + (Number(l.cantidad) || 0), 0);
+    setCantidadProductos(unidades ? String(unidades) : "");
+  }, [lineasProduccion]);
 
   function alternarProducirJunto(solicitud) {
     const nuevos = itemsJuntos.includes(solicitud.itemId)
@@ -290,7 +320,11 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     gestionandoStockRef.current = false; // arranca en blanco para esta nueva solicitud.
     setApartadoItemId(solicitud.itemId);
     setItemsJuntos([]);
+    setMedidasPorLinea({});
     setProductoFabricado(solicitud.descripcion || solicitud.codigoInterno);
+    // El modelo sale solo de la línea ("...ARQUITECTONICA..." -> ARQUITECTONICA).
+    const modeloDeLinea = modeloEnDescripcion(solicitud.descripcion);
+    if (modeloDeLinea) setModelo(modeloDeLinea);
     // Las cotizaciones importadas guardan la línea en METROS (cantidad =
     // metros de "SALE", medida = 1 -- ver importar_cotizaciones.py): copiar
     // esa cantidad la volvía "83.7 tejas" y el backend la rechazaba. Solo se
@@ -313,6 +347,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     gestionandoStockRef.current = false;
     setApartadoItemId(null);
     setItemsJuntos([]);
+    setMedidasPorLinea({});
     setCodigoBusqueda("");
     setEmpresaFiltro("");
     setSeleccion({});
@@ -516,6 +551,12 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     // cada línea del stock adicional, no se vuelven a pedir arriba.
     const soloStock = esSoloStock();
     if (!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && !soloStock && !medidaProducto.trim()) return "Indica la medida del producto fabricado.";
+    for (const linea of lineasProduccion) {
+      if (!(Number(linea.cantidad) > 0) || !Number.isInteger(Number(linea.cantidad))) {
+        return `Escribe cuántas unidades salieron de "${linea.descripcion}".`;
+      }
+      if (!(Number(String(linea.medida).replace(",", ".")) > 0)) return `Escribe la medida de "${linea.descripcion}".`;
+    }
     if (!soloStock && (!cantidadProductos || Number(cantidadProductos) <= 0)) {
       return "Indica cuántas unidades de producto se obtuvieron.";
     }
@@ -645,6 +686,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         })),
         apartado_item_id: apartadoItemId,
         apartado_items_extra: SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] ? [] : itemsJuntos,
+        metros_por_linea: Object.fromEntries(lineasProduccion.map((l) => [l.itemId, l.metros])),
         color: color.trim(),
         ral: ral.trim(),
         calibre: calibreLote.trim(),
@@ -791,6 +833,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     cotizacionResaltada,
     apartadoItemId,
     itemsJuntos,
+    lineasProduccion,
+    actualizarLineaProduccion,
     puedeProducirJunto,
     alternarProducirJunto,
     seleccionarSolicitud,

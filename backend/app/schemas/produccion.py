@@ -57,6 +57,10 @@ class ProduccionCrear(BaseModel):
     # que salen en esta misma producción (ej. 11 tejas de 5,10 m y 11 de
     # 4,90 m del mismo rojo calibre 0,25). Solo tejas.
     apartado_items_extra: list[int] = []
+    # Con varias líneas: los metros que salieron de cada una (cantidad x
+    # medida de esa línea), {apartado_item_id: metros}. Cada línea se
+    # descuenta con lo suyo, nunca más de lo que le faltaba.
+    metros_por_linea: dict[int, float] = {}
 
     # Datos del lote, para las unidades de `stock_adicional` (si las hay) —
     # ninguno es obligatorio si no se registra stock adicional. Para

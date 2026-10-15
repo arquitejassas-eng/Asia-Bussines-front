@@ -123,9 +123,11 @@ def _pivotear(filas, *, con_color: bool, con_peso: bool = False, con_familia: bo
     for fila in filas:
         codigo, descripcion, bodega_id, total, extra, calibre, peso, cantidad_rollos = fila[:8]
         familia = fila[8] if con_familia else ""
+        referencia, tipo_producto, metros_por_unidad = fila[9:12] if con_familia else ("", "", None)
         sin_peso_actual = fila[8] if con_peso else 0
         entrada = agrupado.setdefault(
-            codigo, {"descripcion": "", "color_material": "", "calibre": "", "familia": "", "por_bodega": {}, "total": 0.0,
+            codigo, {"descripcion": "", "color_material": "", "calibre": "", "familia": "", "referencia": "", "tipo_producto": "",
+                     "metros_por_unidad": None, "por_bodega": {}, "total": 0.0,
                      "peso_actual_por_bodega": {}, "peso_actual_total": 0.0, "rollos_sin_peso_actual": 0,
                      "cantidad_por_bodega": {}, "cantidad_total": 0}
         )
@@ -141,6 +143,12 @@ def _pivotear(filas, *, con_color: bool, con_peso: bool = False, con_familia: bo
             entrada["calibre"] = formatear_calibre(calibre) if isinstance(calibre, (int, float)) else str(calibre)
         if familia and not entrada["familia"]:
             entrada["familia"] = familia
+        if referencia and not entrada["referencia"]:
+            entrada["referencia"] = referencia
+        if tipo_producto and not entrada["tipo_producto"]:
+            entrada["tipo_producto"] = tipo_producto
+        if metros_por_unidad is not None and entrada["metros_por_unidad"] is None:
+            entrada["metros_por_unidad"] = float(metros_por_unidad)
         if con_peso:
             peso_valor = round(float(peso or 0), 2)
             entrada["peso_actual_por_bodega"][bodega_id] = peso_valor
@@ -151,7 +159,8 @@ def _pivotear(filas, *, con_color: bool, con_peso: bool = False, con_familia: bo
     return [
         FilaComparativoResponse(codigo=codigo, descripcion=datos["descripcion"],
                                  color_material=datos["color_material"], calibre=datos["calibre"],
-                                 familia=datos["familia"],
+                                 familia=datos["familia"], referencia=datos["referencia"],
+                                 tipo_producto=datos["tipo_producto"], metros_por_unidad=datos["metros_por_unidad"],
                                  por_bodega=datos["por_bodega"], total=datos["total"],
                                  peso_actual_por_bodega=datos["peso_actual_por_bodega"], peso_actual_total=datos["peso_actual_total"],
                                  rollos_sin_peso_actual=datos["rollos_sin_peso_actual"],
@@ -217,7 +226,8 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
             # por defecto) — solo el calibre real (posición 5) y familia importan aquí.
             Producto.codigo, func.max(Producto.descripcion), Producto.bodega_id, func.sum(Producto.stock),
             literal(None), func.max(Producto.calibre), literal(None), literal(None),
-            func.max(Producto.familia),
+            func.max(Producto.familia), func.max(Producto.referencia), func.max(Producto.tipo_producto),
+            func.max(Producto.metros_por_unidad),
         )
         .filter(Producto.bodega_id.isnot(None), Producto.familia != "Rollos de acero")
         .group_by(Producto.codigo, Producto.bodega_id)

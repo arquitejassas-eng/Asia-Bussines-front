@@ -18,6 +18,8 @@ function PanelDatosProductoProduccion({
   cantidadProductos,
   setCantidadProductos,
   ayudaCantidad,
+  lineasProduccion = [],
+  actualizarLineaProduccion,
   metrosPorUnidad,
   setMetrosPorUnidad,
   responsable,
@@ -70,6 +72,31 @@ function PanelDatosProductoProduccion({
         </p>
       )}
 
+      {lineasProduccion.length > 1 && (
+        <div className="produccion-lineas-juntas">
+          <p className="produccion-label">Cantidad y medida de cada línea</p>
+          {lineasProduccion.map((linea) => (
+            <div key={linea.itemId} className="produccion-linea-junta">
+              <span className="produccion-linea-junta-nombre">
+                {linea.descripcion}
+                <small>Pide {linea.metrosPendientes} m · salen {linea.metros} m</small>
+              </span>
+              <label>
+                <span>Cantidad</span>
+                <input type="number" min="1" step="1" inputMode="numeric" className="produccion-input"
+                  value={linea.cantidad} onChange={(e) => actualizarLineaProduccion(linea.itemId, "cantidad", e.target.value)} />
+              </label>
+              <label>
+                <span>Medida (m)</span>
+                <input type="number" min="0" step="any" inputMode="decimal" className="produccion-input"
+                  value={linea.medida} onChange={(e) => actualizarLineaProduccion(linea.itemId, "medida", e.target.value)} />
+              </label>
+            </div>
+          ))}
+          {ayudaCantidad && <p className="produccion-texto-ayuda">{ayudaCantidad}</p>}
+        </div>
+      )}
+
       <div className="produccion-form-grid">
         <div>
           <label className="produccion-label" htmlFor="prod-producto">Producto (opcional)</label>
@@ -103,7 +130,7 @@ function PanelDatosProductoProduccion({
             <p className="produccion-texto-ayuda">Se guarda como <strong>{normalizarModeloTeja(modelo)}</strong></p>
           )}
         </div>
-        {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && (
+        {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && lineasProduccion.length < 2 && (
           <div>
             <label className="produccion-label" htmlFor="prod-medida">Medida del producto</label>
             <input
@@ -116,7 +143,7 @@ function PanelDatosProductoProduccion({
             />
           </div>
         )}
-        <div>
+        {lineasProduccion.length < 2 && <div>
           <label className="produccion-label" htmlFor="prod-cantidad">
             {SECCIONES_POR_TIPO_PRODUCTO[tipoProducto]
               ? `Cantidad de ${NOMBRE_POR_TIPO_PRODUCTO[tipoProducto]}s necesarios`
@@ -133,7 +160,7 @@ function PanelDatosProductoProduccion({
             onChange={(e) => setCantidadProductos(e.target.value)}
           />
           {ayudaCantidad && <p className="produccion-texto-ayuda">{ayudaCantidad}</p>}
-        </div>
+        </div>}
         {SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && (
           <div>
             <label className="produccion-label" htmlFor="prod-longitud-caballete">

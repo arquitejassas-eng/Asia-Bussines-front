@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { envioDesdeApi, rolloDesdeApi } from "./Mapeo";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
+import { agruparProductosPorFamilia } from "../Utils/agrupacionProductos";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
 type Apartado = {
@@ -16,8 +17,9 @@ type RolloResumen = Apartado & {
   pesoActualPorBodega: Record<string, number>; pesoActualTotal: number; rollosSinPesoActual: number;
   cantidadPorBodega: Record<string, number>; cantidadTotal: number;
 };
-type ProductoResumen = Apartado & {
+export type ProductoResumen = Apartado & {
   codigo: string; descripcion: string; calibre: string; familia: string;
+  referencia: string; tipoProducto: string; metrosPorUnidad: number | null;
   porBodega: Record<string, number>; total: number;
 };
 type Comparativo = {
@@ -108,6 +110,8 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
         })),
         productos: (datos.productos || []).map((f) => ({
           codigo: f.codigo, descripcion: f.descripcion, calibre: f.calibre, familia: f.familia || "",
+          referencia: f.referencia || "", tipoProducto: f.tipo_producto || "",
+          metrosPorUnidad: f.metros_por_unidad == null ? null : Number(f.metros_por_unidad),
           porBodega: f.por_bodega, total: f.total,
           ...apartado(f),
         })),
@@ -179,6 +183,8 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
 
   const { items: rollosResumenPagina, paginacion: paginacionRollos } = paginar(rollosResumenFiltrados, paginaRollos);
   const { items: productosResumenPagina, paginacion: paginacionProductos } = paginar(productosResumenFiltrados, paginaProductos);
+  // Mismas tarjetas que el inventario de cada bodega (ver Utils/agrupacionProductos).
+  const gruposResumenProductos = useMemo(() => agruparProductosPorFamilia(productosResumenFiltrados), [productosResumenFiltrados]);
 
   // ---------- Expandir una fila del resumen: ver cada rollo individual (con su peso) ----------
   const [codigoRolloExpandido, setCodigoRolloExpandido] = useState<string | null>(null);
@@ -360,7 +366,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     comparativo, cargandoComparativo, errorComparativo, empresaResumen, setEmpresaResumen,
 
     rollosResumenPagina, paginacionRollos, paginaRollos, setPaginaRollos,
-    productosResumenPagina, paginacionProductos, paginaProductos, setPaginaProductos,
+    productosResumenPagina, paginacionProductos, paginaProductos, setPaginaProductos, gruposResumenProductos,
     busquedaResumenRollos, buscarResumenRollos, busquedaResumenProductos, buscarResumenProductos,
 
     codigoRolloExpandido, rollosDelCodigoExpandido, cargandoRollosExpandido, alternarExpandirCodigoRollo,

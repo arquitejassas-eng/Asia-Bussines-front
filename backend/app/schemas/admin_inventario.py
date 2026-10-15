@@ -11,6 +11,11 @@ class FilaComparativoResponse(BaseModel):
     # Solo para productos (no rollos) — resuelve la unidad de medida junto
     # con TablaUnidadFamilia en el frontend.
     familia: str = ""
+    # Solo productos: lo que necesita el frontend para agruparlos en tarjetas
+    # igual que el inventario de cada bodega (modelo de la teja, tipo y medida).
+    referencia: str = ""
+    tipo_producto: str = ""
+    metros_por_unidad: float | None = None
     por_bodega: dict[int, float]
     total: float
     # Lo apartado por cotizaciones activas (aún sin producir/entregar) y lo

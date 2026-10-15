@@ -1236,3 +1236,20 @@
 .rollo-completo-opciones button:hover { background: #f3f7fc; }
 .rollo-completo-opciones p { margin: 0; padding: 0.4rem 0.6rem; }
 .salida-rollo-completo { margin: 0.4rem 0 0; font-size: 0.9rem; color: #2f5d8a; }
+
+/* Inventario total: resumen de productos en tarjetas (como en cada bodega). */
+.resumen-productos-bodegas { display: block; font-size: 0.78rem; color: var(--at-muted, #7C6A56); margin-top: 0.15rem; }
+.resumen-productos-codigo { font-weight: 700; white-space: nowrap; }
+@media (max-width: 640px) {
+  .resumen-productos-tabla, .resumen-productos-tabla tbody { display: block; width: 100%; }
+  .resumen-productos-tabla thead { display: none; }
+  .resumen-productos-tabla tbody tr {
+    display: flex; flex-direction: column; gap: 0.3rem; margin: 0.5rem; padding: 0.7rem 0.8rem;
+    border: 1px solid var(--at-border, #E1D5C0); border-radius: var(--at-r-md, 12px);
+  }
+  .resumen-productos-tabla tbody td { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0; border: 0; }
+  .resumen-productos-tabla td[data-etiqueta]::before { content: attr(data-etiqueta); color: #666; font-size: 0.85rem; }
+  /* Cabecera de cada tarjeta: los recuadros bajan a otra fila si no caben. */
+  .resumen-productos-grupo .inventario-grupo-header { flex-wrap: wrap; gap: 0.5rem; }
+  .resumen-productos-grupo .inventario-grupo-info { flex-basis: 100%; }
+}
