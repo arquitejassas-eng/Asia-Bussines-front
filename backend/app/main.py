@@ -45,6 +45,31 @@ app = FastAPI(
 # pocos segundos): menos datos por la red y respuestas más rápidas.
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# Va ANTES de CORS (queda por dentro): así la respuesta de error también
+# lleva los encabezados de CORS y el navegador puede leer el motivo.
+@app.middleware("http")
+async def registrar_solicitud(request: Request, call_next):
+    """Registro compacto para diagnosticar errores y latencias en producción."""
+    inicio = time.perf_counter()
+    try:
+        respuesta = await call_next(request)
+    except Exception as exc:
+        logger.exception("request_error method=%s path=%s", request.method, request.url.path)
+        # Responde el motivo (en JSON y por dentro de CORS, ver abajo) en vez
+        # de dejar caer la conexión: sin esto el navegador no recibe nada y la
+        # pantalla solo dice "Intenta de nuevo".
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": f"Error interno del servidor ({type(exc).__name__}: {str(exc)[:300]}). Avísale a soporte."},
+        )
+    logger.info(
+        "request method=%s path=%s status=%s duration_ms=%d",
+        request.method, request.url.path, respuesta.status_code,
+        (time.perf_counter() - inicio) * 1000,
+    )
+    return respuesta
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.lista_origenes_permitidos,
@@ -82,21 +107,6 @@ async def manejar_integrity_error(request: Request, exc: IntegrityError) -> JSON
     return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": mensaje})
 
 
-@app.middleware("http")
-async def registrar_solicitud(request: Request, call_next):
-    """Registro compacto para diagnosticar errores y latencias en producción."""
-    inicio = time.perf_counter()
-    try:
-        respuesta = await call_next(request)
-    except Exception:
-        logger.exception("request_error method=%s path=%s", request.method, request.url.path)
-        raise
-    logger.info(
-        "request method=%s path=%s status=%s duration_ms=%d",
-        request.method, request.url.path, respuesta.status_code,
-        (time.perf_counter() - inicio) * 1000,
-    )
-    return respuesta
 
 
 @app.get("/", tags=["Salud"])

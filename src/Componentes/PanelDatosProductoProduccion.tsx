@@ -102,6 +102,7 @@ function PanelDatosProductoProduccion({
           <label className="produccion-label" htmlFor="prod-producto">Producto (opcional)</label>
           <input
             id="prod-producto"
+            maxLength={150}
             type="text"
             className="produccion-input"
             placeholder="Ej. Cubierta metálica"

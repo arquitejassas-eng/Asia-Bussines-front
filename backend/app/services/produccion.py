@@ -501,7 +501,10 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     sello = ahora.strftime("%Y%m%d%H%M%S"); codigo_unico = f"PROD-{sello}-{token_hex(3).upper()}"
     cotizacion = apartado_item.apartado.numero_cotizacion if apartado_item else f"P{token_hex(4).upper()}"
 
-    produccion = Produccion(codigo_unico=codigo_unico, cotizacion=cotizacion, fecha=ahora, usuario=usuario.correo, responsable=datos.responsable, bodega_id=usuario.bodega_id, tipo_producto=datos.tipo_producto, apartado_item_id=apartado_item.id if apartado_item else None, producto_fabricado=datos.producto_fabricado, modelo=datos.modelo, medida_producto=datos.medida_producto, cantidad_productos=datos.cantidad_productos, codigo_clasificacion=codigo, total_metros_consumidos=total, saldo_codigo=0, metros_excedente=metros_excedente, observaciones=datos.observaciones)
+    # Los textos se recortan al largo de su columna (producto 150, modelo y
+    # medida 80): Postgres rechaza un texto más largo y la producción no se
+    # guardaba (ej. varias líneas juntas con sus descripciones completas).
+    produccion = Produccion(codigo_unico=codigo_unico, cotizacion=cotizacion, fecha=ahora, usuario=usuario.correo, responsable=datos.responsable[:150], bodega_id=usuario.bodega_id, tipo_producto=datos.tipo_producto, apartado_item_id=apartado_item.id if apartado_item else None, producto_fabricado=datos.producto_fabricado[:150], modelo=datos.modelo[:80], medida_producto=datos.medida_producto[:80], cantidad_productos=datos.cantidad_productos, codigo_clasificacion=codigo, total_metros_consumidos=total, saldo_codigo=0, metros_excedente=metros_excedente, observaciones=datos.observaciones)
     db.add(produccion); db.flush(); saldo = 0.0
     for item, rollo in zip(datos.rollos, bloqueados, strict=True):
         rollo.metros_disponibles = round(rollo.metros_disponibles - item.metros, 2); rollo.metros_consumidos = round(rollo.metros_consumidos + item.metros, 2); rollo.recalcular_estado(); saldo += rollo.metros_disponibles
@@ -575,17 +578,18 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
             producto_stock = Producto(
                 bodega_id=usuario.bodega_id,
                 codigo=f"{codigo_unico}-{indice}",
-                descripcion=descripcion,
+                descripcion=descripcion[:255],
                 familia=familia_stock,
                 codigo_rollo_origen=codigo_rollo_origen_stock,
                 ancho_rollo=ancho_rollo_stock,
                 tipo_producto=tipo_producto_stock,
-                calibre=datos.calibre,
-                color=datos.color,
-                ral=datos.ral,
-                referencia=datos.modelo.strip() if familia_stock == "TEJA" else "",
+                # Recortados al largo de su columna (Postgres rechaza más largo).
+                calibre=datos.calibre[:30],
+                color=datos.color[:60],
+                ral=datos.ral[:20],
+                referencia=datos.modelo.strip()[:50] if familia_stock == "TEJA" else "",
                 calidad=item_stock.calidad,
-                motivo_segunda=item_stock.motivo_segunda if item_stock.calidad == "segunda" else "",
+                motivo_segunda=item_stock.motivo_segunda[:255] if item_stock.calidad == "segunda" else "",
                 metros_por_unidad=metros_linea,
                 produccion_id=produccion.id,
                 fecha_produccion=ahora,
@@ -598,7 +602,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         rollo_origen = rollo_de_linea.get(indice - 1)
         db.add(Movimiento(
             fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo="produccion_excedente",
-            producto_codigo=codigo_producto_movimiento, producto_descripcion=descripcion,
+            producto_codigo=codigo_producto_movimiento, producto_descripcion=descripcion[:255],
             # Para el historial de ESE rollo (no cambia sus metros).
             rollo_id=rollo_origen.id if rollo_origen else None,
             identificador_rollo=rollo_origen.identificador_rollo if rollo_origen else "",

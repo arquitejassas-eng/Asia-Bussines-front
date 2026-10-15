@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/produccion";
+import { kilosDelRollo } from "../Utils/kilos";
 
 // Sección "2. Stock adicional" de Producción. Extraído de ProduccionPage.tsx
 // sin cambiar props ni comportamiento -- no usa estado local propio, todo
@@ -70,7 +71,9 @@ function PanelStockAdicionalProduccion({
               >
                 <option value="">Escoge el rollo...</option>
                 {rollosSeleccionados.map(({ rollo }) => (
-                  <option key={rollo.id} value={rollo.id}>{rollo.identificadorRollo}</option>
+                  <option key={rollo.id} value={rollo.id}>
+                    {kilosDelRollo(rollo.pesoNeto) != null ? `${kilosDelRollo(rollo.pesoNeto).toLocaleString("es-CO")} kg · ` : ""}{rollo.identificadorRollo}
+                  </option>
                 ))}
               </select>
             </div>

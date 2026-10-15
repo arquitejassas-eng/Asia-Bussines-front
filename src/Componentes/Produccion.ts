@@ -279,7 +279,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
 
   // Varias líneas: cada una con su cantidad y su medida (se pueden corregir).
   function llenarDatosDeLineas(lineas) {
-    setProductoFabricado(lineas.map((s) => s.descripcion || s.codigoInterno).join(" + "));
+    // Máximo 150 letras (lo que guarda la base): con varias líneas largas se recorta.
+    setProductoFabricado(lineas.map((s) => s.descripcion || s.codigoInterno).join(" + ").slice(0, 150));
     setMedidasPorLinea((actual) => Object.fromEntries(lineas.map((s) => [s.itemId, actual[s.itemId] || cantidadYMedidaDe(s)])));
     if (lineas.length === 1) {
       const { cantidad, medida } = cantidadYMedidaDe(lineas[0]);
@@ -322,7 +323,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     setApartadoItemId(solicitud.itemId);
     setItemsJuntos([]);
     setMedidasPorLinea({});
-    setProductoFabricado(solicitud.descripcion || solicitud.codigoInterno);
+    setProductoFabricado((solicitud.descripcion || solicitud.codigoInterno).slice(0, 150));
     // El modelo sale solo de la línea ("...ARQUITECTONICA..." -> ARQUITECTONICA).
     const modeloDeLinea = modeloEnDescripcion(solicitud.descripcion);
     if (modeloDeLinea) setModelo(modeloDeLinea);
@@ -497,10 +498,14 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
 
     const objetivoTotal = redondear(pendienteSolicitudElegida + metrosNecesariosStock);
 
-    const candidatos = [...rollosDisponibles].sort(
-      (a, b) => new Date(a.fechaIngreso).getTime() - new Date(b.fechaIngreso).getTime()
-    );
-    setSeleccion((actual) => calcularAsignacionRollos(objetivoTotal, candidatos, actual).seleccion);
+    // Los metros del stock se suman SOLO a los rollos que Planta escogió:
+    // nunca se escoge un rollo por su cuenta (antes tomaba el más viejo de la
+    // lista y aparecía seleccionado otro rollo). Sin rollo escogido, no toca nada.
+    setSeleccion((actual) => {
+      const escogidos = rollosDisponibles.filter((r) => actual[r.id]?.seleccionado);
+      if (escogidos.length === 0) return actual;
+      return calcularAsignacionRollos(objetivoTotal, escogidos, actual).seleccion;
+    });
     // Depende del NÚMERO pendiente de la solicitud elegida, no de la lista de
     // solicitudes: la actualización automática crea una lista nueva en cada
     // recarga aunque nada cambie, y eso recalculaba la asignación y deshacía
@@ -716,7 +721,18 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         })),
       };
 
-      const respuesta = await api.post("/produccion", cuerpo);
+      let respuesta;
+      try {
+        respuesta = await api.post("/produccion", cuerpo);
+      } catch (err) {
+        // Sin respuesta (se cortó el internet o el servidor se estaba
+        // actualizando) no se sabe si alcanzó a guardarse: que lo revisen
+        // antes de repetir, para no registrarla doble.
+        setErrorValidacion(err instanceof ErrorApi ? err.message
+          : "No hubo respuesta del servidor (se cortó la conexión o se estaba actualizando). Antes de volver a intentar, "
+            + "mira abajo en el historial de producciones si ya quedó registrada, para no registrarla dos veces.");
+        return;
+      }
       const registro = produccionDesdeApi(respuesta);
 
       gestionandoStockRef.current = false;
@@ -729,9 +745,15 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       setColor(""); setRal(""); setCalibreLote(""); setMetrosPorUnidad(""); setStockAdicional([]);
       setTipoProducto("teja");
 
-      const datosRollos = await api.get("/rollos");
-      setRollosDeMiBodega(datosRollos.map(rolloDesdeApi));
-      await cargarSolicitudesPendientes();
+      // La producción YA quedó registrada: si falla recargar las listas, no
+      // se dice "no se pudo registrar" (se actualizan solas en unos segundos).
+      try {
+        const datosRollos = await api.get("/rollos");
+        setRollosDeMiBodega(datosRollos.map(rolloDesdeApi));
+        await cargarSolicitudesPendientes();
+      } catch {
+        /* se refresca con la actualización automática */
+      }
     } catch (err) {
       setErrorValidacion(
         err instanceof ErrorApi ? err.message : "No se pudo registrar la producción. Intenta de nuevo."
