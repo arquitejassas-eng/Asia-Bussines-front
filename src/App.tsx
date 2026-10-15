@@ -21,6 +21,7 @@ const HojaVidaPage = lazy(() => import("./Paginas/HojaVidaPage"));
 const ReportesPage = lazy(() => import("./Paginas/ReportesPage"));
 const IAPage = lazy(() => import("./Paginas/IAPage"));
 const UsuariosPage = lazy(() => import("./Paginas/UsuariosPage"));
+const MermaPage = lazy(() => import("./Paginas/MermaPage"));
 
 const CLAVE_SESION = "arquitejas_sesion";
 
@@ -129,6 +130,10 @@ export default function App() {
       <Route
         path="/admin-inventario"
         element={paginaProtegida(["admin_inventario", "vendedor"], AdminInventarioPage)}
+      />
+      <Route
+        path="/merma"
+        element={paginaProtegida(["admin_inventario"], MermaPage)}
       />
       <Route
         path="/reportes"

@@ -1,0 +1,44 @@
+/* Página Merma (Admin Inventario). Las tarjetas por código son las de
+   Rollos.css (rollos-grupo); aquí solo los totales y la tabla en celular. */
+
+.merma-totales {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.merma-totales > div {
+  display: flex;
+  flex-direction: column;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-radius: var(--at-r-md, 12px);
+  background: var(--at-surface, #FFFFFF);
+  min-width: 140px;
+}
+.merma-totales .numero { font-size: 1.3rem; font-weight: 700; }
+.merma-totales span:last-child { font-size: 0.85rem; color: #555; }
+
+.merma-ref { font-weight: 700; white-space: nowrap; }
+
+/* Celular: cada rollo es una tarjeta (mismo patrón que Producción). */
+@media (max-width: 640px) {
+  .merma-tabla, .merma-tabla tbody { display: block; width: 100%; min-width: 0; }
+  .merma-tabla thead { display: none; }
+  .merma-tabla tbody tr {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0.5rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--at-border, #E1D5C0);
+    border-radius: var(--at-r-md, 12px);
+  }
+  .merma-tabla tbody td { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0; border: 0; }
+  .merma-tabla td[data-etiqueta]::before { content: attr(data-etiqueta); color: #666; font-size: 0.85rem; }
+  .merma-tabla .merma-ref { font-size: 1rem; }
+  /* Cabecera de cada código: los totales bajan a otra fila si no caben. */
+  .merma-grupo .rollos-grupo-header { flex-wrap: wrap; gap: 0.5rem; padding: 0.9rem 1rem; }
+  .merma-grupo .rollos-grupo-info { flex-basis: 100%; }
+  .merma-grupo .rollos-grupo-cantidad { padding: 0.35rem 0.7rem; }
+}
