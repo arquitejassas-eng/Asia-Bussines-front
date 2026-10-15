@@ -358,3 +358,13 @@
   /* Calidad, motivo y Quitar ocupan todo el ancho. */
   .produccion-stock-linea > div:nth-of-type(n + 3) { grid-column: 1 / -1; }
 }
+
+/* Merma / sobrante: varios rollos con los mismos kilos, para elegir uno. */
+.merma-opciones { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.6rem; }
+.merma-opciones button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; text-align: left;
+  padding: 0.5rem 0.7rem; border: 1px solid var(--at-border, #E1D5C0); border-radius: 10px;
+  background: var(--at-surface, #FFFFFF); cursor: pointer; font: inherit;
+}
+.merma-opciones button:hover { background: var(--at-surface-2, #F1E9DC); }
+.merma-opciones small { color: #666; font-size: 0.8rem; }

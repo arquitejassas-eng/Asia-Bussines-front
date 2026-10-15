@@ -21,6 +21,20 @@ export function normalizarModeloTeja(texto: string | null | undefined): string {
   return String(texto ?? "").trim().split(/\s+/).join(" ").toUpperCase();
 }
 
+/** El modelo que trae escrito una línea de cotización ("...5.10 MTR
+ * ARQUITECTONICA CAL 31" -> ARQUITECTONICA; "MASTER MIL" -> MASTERMIL), o
+ * "" si no nombra ninguno conocido. Igual que modelo_en_descripcion del backend. */
+export function modeloEnDescripcion(texto: string | null | undefined): string {
+  const palabras = String(texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/\s+/);
+  for (const palabra of palabras) {
+    const compacta = palabra.replace(/[^a-z0-9]/g, "");
+    for (const [nombre, comienzos] of Object.entries(MODELOS_TEJA)) {
+      if (compacta && comienzos.some((c) => compacta.startsWith(c))) return nombre;
+    }
+  }
+  return "";
+}
+
 /** "2T..." (sin distinguir mayúsculas/minúsculas ni espacios) = Segunda.
  * No asume "Primera" para lo demás -- eso lo decide quien llama, igual que
  * ya hacía la lógica existente basada en `Producto.calidad`. */

@@ -53,6 +53,10 @@ class ProduccionCrear(BaseModel):
     # Si viene de una solicitud de producción (apartado enviado a producción);
     # cuando se informa, la cotización se toma del apartado y no se puede editar.
     apartado_item_id: int | None = None
+    # Otras líneas de la MISMA cotización y el MISMO código (color + espesor)
+    # que salen en esta misma producción (ej. 11 tejas de 5,10 m y 11 de
+    # 4,90 m del mismo rojo calibre 0,25). Solo tejas.
+    apartado_items_extra: list[int] = []
 
     # Datos del lote, para las unidades de `stock_adicional` (si las hay) —
     # ninguno es obligatorio si no se registra stock adicional. Para

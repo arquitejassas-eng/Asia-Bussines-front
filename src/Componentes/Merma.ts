@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ErrorApi } from "./Api";
-import { rolloDesdeApi } from "./Mapeo";
+import { movimientoDesdeApi, rolloDesdeApi } from "./Mapeo";
 import { FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { coincideKilos, kilosBuscados, kilosDelRollo } from "../Utils/kilos";
@@ -47,6 +47,34 @@ export function useControladorMerma(almacen: AlmacenGlobal) {
     }
   }, []);
   useEffect(() => { cargar(); }, [cargar]);
+
+  // Hoja de vida de un rollo: misma consulta y misma ventana que Rollos
+  // almacenados (Rollos.ts::abrirHistorial, ModalHistorialRollo).
+  const [rolloParaHistorial, setRolloParaHistorial] = useState<RolloMerma | null>(null);
+  const [historialRollo, setHistorialRollo] = useState<Record<string, unknown>[]>([]);
+  const [cargandoHistorial, setCargandoHistorial] = useState(false);
+  const [errorHistorial, setErrorHistorial] = useState("");
+
+  async function abrirHistorial(rollo: RolloMerma) {
+    setRolloParaHistorial(rollo);
+    setHistorialRollo([]);
+    setErrorHistorial("");
+    setCargandoHistorial(true);
+    try {
+      const datos = await api.get(`/rollos/${rollo.id}/historial`);
+      setHistorialRollo((datos as Record<string, unknown>[]).map(movimientoDesdeApi));
+    } catch (err) {
+      setErrorHistorial(err instanceof ErrorApi ? err.message : "No se pudo cargar el historial de este rollo.");
+    } finally {
+      setCargandoHistorial(false);
+    }
+  }
+
+  function cerrarHistorial() {
+    setRolloParaHistorial(null);
+    setHistorialRollo([]);
+    setErrorHistorial("");
+  }
 
   const nombreBodega = useCallback(
     (id: number | null) => almacen.bodegas.find((b) => b.id === id)?.nombre || "—",
@@ -108,5 +136,6 @@ export function useControladorMerma(almacen: AlmacenGlobal) {
     cargando, error, cargar, grupos, totales, nombreBodega,
     busqueda, setBusqueda, empresa, setEmpresa, bodega, setBodega, soloConMerma, setSoloConMerma,
     opcionesFiltro, hayFiltros, limpiarFiltros, exportar,
+    rolloParaHistorial, historialRollo, cargandoHistorial, errorHistorial, abrirHistorial, cerrarHistorial,
   };
 }

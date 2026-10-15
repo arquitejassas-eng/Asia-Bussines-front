@@ -16,6 +16,18 @@ MODELOS_TEJA: dict[str, tuple[str, ...]] = {
 }
 
 
+def modelo_en_descripcion(texto: str | None) -> str:
+    """El modelo que trae escrito una línea de cotización, ej. "11 TEJAS DE
+    5.10 MTR ARQUITECTONICA CAL 31..." -> ARQUITECTONICA; "60 UNIDADES MASTER
+    MIL..." -> MASTERMIL. "" si no nombra ningún modelo conocido."""
+    for palabra in normalizar_texto(texto).split():
+        compacta = "".join(c for c in palabra if c.isalnum())
+        for nombre, comienzos in MODELOS_TEJA.items():
+            if compacta.startswith(comienzos):
+                return nombre
+    return ""
+
+
 def normalizar_modelo_teja(texto: str | None) -> str:
     compacto = "".join(c for c in normalizar_texto(texto) if c.isalnum())
     if not compacto:

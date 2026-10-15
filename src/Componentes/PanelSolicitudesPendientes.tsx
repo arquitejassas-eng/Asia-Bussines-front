@@ -9,6 +9,9 @@ function PanelSolicitudesPendientes({
   solicitudesPendientes,
   errorSolicitudPendiente,
   apartadoItemId,
+  itemsJuntos = [],
+  puedeProducirJunto = () => false,
+  alternarProducirJunto = () => {},
   limpiarSolicitud,
   seleccionarSolicitud,
   marcarProduccionTerminada,
@@ -29,7 +32,8 @@ function PanelSolicitudesPendientes({
       </div>
       <p className="produccion-vacio" style={{ margin: "0.75rem 0" }}>
         Elige la línea a producir con "Iniciar producción": se llenan los datos del producto y abajo
-        aparecen los rollos de ese código para que elijas cuál(es) usar.
+        aparecen los rollos de ese código para que elijas cuál(es) usar. Si otra línea es del mismo modelo,
+        color y espesor (solo cambia la medida), dale "+ Producir junto" para registrarlas en la misma producción.
       </p>
       {errorSolicitudPendiente && <p className="produccion-error">{errorSolicitudPendiente}</p>}
       <div className="produccion-tabla-wrap">
@@ -43,11 +47,13 @@ function PanelSolicitudesPendientes({
             </tr>
           </thead>
           <tbody>
-            {solicitudesPendientes.map((s) => (
+            {solicitudesPendientes.map((s) => {
+              const elegida = apartadoItemId === s.itemId || itemsJuntos.includes(s.itemId);
+              return (
               <tr
                 key={s.itemId}
-                className={apartadoItemId === s.itemId ? "produccion-fila-resaltada" : undefined}
-                style={apartadoItemId === s.itemId ? { fontWeight: 600 } : undefined}
+                className={elegida ? "produccion-fila-resaltada" : undefined}
+                style={elegida ? { fontWeight: 600 } : undefined}
               >
                 <td data-etiqueta="Código" style={{ whiteSpace: "nowrap" }}>{s.codigoInterno}</td>
                 <td>{s.descripcion || "—"}</td>
@@ -57,6 +63,14 @@ function PanelSolicitudesPendientes({
                     <button type="button" className="produccion-boton-secundario" onClick={limpiarSolicitud}>
                       Quitar vínculo
                     </button>
+                  ) : itemsJuntos.includes(s.itemId) ? (
+                    <button type="button" className="produccion-boton-secundario" onClick={() => alternarProducirJunto(s)}>
+                      Quitar de esta producción
+                    </button>
+                  ) : puedeProducirJunto(s) ? (
+                    <button type="button" className="produccion-boton-primario" onClick={() => alternarProducirJunto(s)}>
+                      + Producir junto
+                    </button>
                   ) : (
                     <button type="button" className="produccion-boton-primario" onClick={() => seleccionarSolicitud(s)}>
                       Iniciar producción
@@ -64,7 +78,8 @@ function PanelSolicitudesPendientes({
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

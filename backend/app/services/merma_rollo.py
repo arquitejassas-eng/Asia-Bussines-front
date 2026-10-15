@@ -47,6 +47,27 @@ def rollo_por_referencia(db: Session, referencia: str, usuario: Usuario) -> Roll
     return visibles[0]
 
 
+MAXIMO_POR_KILOS = 30
+
+
+def rollos_por_kilos(db: Session, kilos: str, usuario: Usuario) -> list[Rollo]:
+    """Rollos cuyo peso empieza por esos kilos (ej. "4484" o "448"), de la
+    bodega de quien busca (Admin Inventario: de todas). El peso puede estar en
+    kilos (Excel) o en toneladas (Recepción): ver apartados.kilos_rollo. Los
+    que todavía tienen metros van primero."""
+    from app.services.apartados import kilos_rollo
+
+    digitos = "".join(c for c in kilos if c.isdigit())
+    if len(digitos) < 3:
+        raise HTTPException(status_code=400, detail="Escribe al menos 3 dígitos de los kilos (ej. 4484).")
+    consulta = db.query(Rollo).filter(Rollo.peso_neto.isnot(None), Rollo.bodega_id.isnot(None))
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+        consulta = consulta.filter(Rollo.bodega_id == usuario.bodega_id)
+    encontrados = [r for r in consulta.all() if str(kilos_rollo(r.peso_neto) or "").startswith(digitos)]
+    encontrados.sort(key=lambda r: (r.metros_disponibles <= 0, r.codigo_interno, r.identificador_rollo))
+    return encontrados[:MAXIMO_POR_KILOS]
+
+
 def _bloquear(db: Session, rollo_id: int, usuario: Usuario) -> Rollo:
     rollo = db.query(Rollo).filter(Rollo.id == rollo_id).with_for_update().populate_existing().first()
     if rollo is None or not _puede_ver(usuario, rollo):

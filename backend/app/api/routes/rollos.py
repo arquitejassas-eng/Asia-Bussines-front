@@ -93,8 +93,13 @@ def historial_de_rollo(
 ) -> list[Movimiento]:
     """Hoja de vida de UN rollo: todos los movimientos (entrada, consumo,
     producción, transferencia) que lo tienen como `rollo_id`, nunca mezclados
-    con los de otro rollo que comparta la misma clasificación."""
-    _rollo_de_mi_bodega(db, rollo_id, usuario)
+    con los de otro rollo que comparta la misma clasificación. Admin
+    Inventario (sin bodega propia) ve el de cualquier rollo (página Merma)."""
+    if usuario.rol == RolUsuario.ADMIN_INVENTARIO:
+        if db.get(Rollo, rollo_id) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rollo no encontrado.")
+    else:
+        _rollo_de_mi_bodega(db, rollo_id, usuario)
     return (
         db.query(Movimiento)
         .filter(Movimiento.rollo_id == rollo_id)
@@ -308,6 +313,16 @@ def buscar_por_referencia(
 ) -> Rollo:
     """El rollo de la hoja de vida (aunque esté agotado), con su merma."""
     return _con_merma(db, merma_rollo.rollo_por_referencia(db, referencia, usuario))
+
+
+@router.get("/por-kilos", response_model=list[RolloResponse], dependencies=[Depends(requiere_rol(*ROLES_MERMA))])
+def buscar_por_kilos(
+    kilos: str = Query(..., min_length=1), db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> list[Rollo]:
+    """Rollos que pesan esos kilos (aunque estén agotados), con su merma."""
+    rollos = merma_rollo.rollos_por_kilos(db, kilos, usuario)
+    merma_rollo.asignar_merma_y_sobrante(db, rollos)
+    return rollos
 
 
 @router.post("/{rollo_id}/terminar", response_model=RolloResponse, dependencies=[Depends(requiere_rol(*ROLES_MERMA))])

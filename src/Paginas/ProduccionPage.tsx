@@ -64,6 +64,9 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
               cotizacionResaltada={p.cotizacionResaltada}
               errorSolicitudPendiente={p.errorSolicitudPendiente}
               apartadoItemId={p.apartadoItemId}
+              itemsJuntos={p.itemsJuntos}
+              puedeProducirJunto={p.puedeProducirJunto}
+              alternarProducirJunto={p.alternarProducirJunto}
               limpiarSolicitud={p.limpiarSolicitud}
               seleccionarSolicitud={p.seleccionarSolicitud}
               marcarProduccionTerminada={p.marcarProduccionTerminada}

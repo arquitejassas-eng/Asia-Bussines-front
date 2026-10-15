@@ -2,6 +2,8 @@ import BarraLateral from "../Componentes/BarraLateral";
 import { useControladorMerma } from "../Componentes/Merma";
 import PanelMermaRollo from "../Componentes/PanelMermaRollo";
 import PanelRollosMerma from "../Componentes/PanelRollosMerma";
+import ModalHistorialRollo from "../Componentes/ModalHistorialRollo";
+import { ESTADOS_ROLLO } from "../Componentes/Rollos";
 import { FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
 import "../Style/Inventario.css";
 import "../Style/Rollos.css";
@@ -83,7 +85,19 @@ function MermaPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerr
           {m.error && <p className="inventario-error">{m.error}</p>}
           {m.cargando
             ? <p className="inventario-cargando">Cargando rollos finalizados...</p>
-            : <PanelRollosMerma grupos={m.grupos} nombreBodega={m.nombreBodega} />}
+            : <PanelRollosMerma grupos={m.grupos} nombreBodega={m.nombreBodega} abrirHistorial={m.abrirHistorial} />}
+
+          {/* ================== MODAL: HOJA DE VIDA DEL ROLLO ================== */}
+          {m.rolloParaHistorial && (
+            <ModalHistorialRollo
+              rolloParaHistorial={m.rolloParaHistorial}
+              cerrarHistorial={m.cerrarHistorial}
+              ESTADOS_ROLLO={ESTADOS_ROLLO}
+              cargandoHistorial={m.cargandoHistorial}
+              errorHistorial={m.errorHistorial}
+              historialRollo={m.historialRollo}
+            />
+          )}
         </div>
       </div>
     </div>

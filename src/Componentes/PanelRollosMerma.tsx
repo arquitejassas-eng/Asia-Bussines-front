@@ -4,15 +4,15 @@ import { nombreEmpresa } from "../Utils/empresas";
 import { formatearCalibre } from "../Utils/calibre";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { kilosDelRollo } from "../Utils/kilos";
-import { redondearMetros, type GrupoMerma } from "./Merma";
+import { redondearMetros, type GrupoMerma, type RolloMerma } from "./Merma";
 
 const metros = (n: number) => `${redondearMetros(n).toLocaleString("es-CO")} m`;
 
 /** Rollos finalizados agrupados por código, mismas tarjetas que Rollos
  * almacenados (PanelAgrupacionRollos), pero con la merma y los metros de más
  * en vez de los metros disponibles. En celular cada rollo es una tarjeta. */
-export default function PanelRollosMerma({ grupos, nombreBodega }: {
-  grupos: GrupoMerma[]; nombreBodega: (id: number | null) => string;
+export default function PanelRollosMerma({ grupos, nombreBodega, abrirHistorial }: {
+  grupos: GrupoMerma[]; nombreBodega: (id: number | null) => string; abrirHistorial: (rollo: RolloMerma) => void;
 }) {
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
 
@@ -58,7 +58,7 @@ export default function PanelRollosMerma({ grupos, nombreBodega }: {
                   <thead>
                     <tr>
                       <th>Referencia</th><th>Bodega</th><th>Empresa</th><th>Kilos</th><th>Metros proveedor</th>
-                      <th>Consumidos</th><th>Merma</th><th>Metros de más</th><th>Ingreso</th>
+                      <th>Consumidos</th><th>Merma</th><th>Metros de más</th><th>Ingreso</th><th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -75,6 +75,11 @@ export default function PanelRollosMerma({ grupos, nombreBodega }: {
                           <td data-etiqueta="Merma"><strong>{r.mermaMetros ? metros(r.mermaMetros) : "—"}</strong></td>
                           <td data-etiqueta="Metros de más">{r.sobranteMetros ? metros(r.sobranteMetros) : "—"}</td>
                           <td data-etiqueta="Ingreso">{formatearFechaColombia(r.fechaIngreso, false)}</td>
+                          <td>
+                            <button type="button" className="rollos-boton-secundario" onClick={() => abrirHistorial(r)}>
+                              Ver historial
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}

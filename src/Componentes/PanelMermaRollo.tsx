@@ -3,6 +3,7 @@ import { api, ErrorApi } from "./Api";
 import ModalConfirmacion from "./ModalConfirmacion";
 import { rolloDesdeApi } from "./Mapeo";
 import { nombreEmpresa } from "../Utils/empresas";
+import { kilosBuscados, kilosDelRollo } from "../Utils/kilos";
 import "../Style/Produccion.css";
 
 type Rollo = ReturnType<typeof rolloDesdeApi>;
@@ -17,6 +18,8 @@ const ESTADOS: Record<string, string> = { cerrado: "Cerrado", abierto: "Abierto"
 export default function PanelMermaRollo({ bodegas = [], alCambiar }: { bodegas?: Bodega[]; alCambiar?: () => void }) {
   const [referencia, setReferencia] = useState("");
   const [rollo, setRollo] = useState<Rollo | null>(null);
+  // Buscando por kilos pueden salir varios rollos: se elige uno de la lista.
+  const [opciones, setOpciones] = useState<Rollo[]>([]);
   const [metrosSobrante, setMetrosSobrante] = useState("");
   const [observaciones, setObservaciones] = useState("");
   const [cargando, setCargando] = useState(false);
@@ -27,10 +30,19 @@ export default function PanelMermaRollo({ bodegas = [], alCambiar }: { bodegas?:
   async function buscar(evento?: { preventDefault: () => void }) {
     evento?.preventDefault();
     if (!referencia.trim()) return;
-    setCargando(true); setError(""); setAviso(""); setRollo(null);
+    setCargando(true); setError(""); setAviso(""); setRollo(null); setOpciones([]);
     try {
-      const datos = await api.get<Record<string, unknown>>(`/rollos/por-referencia?referencia=${encodeURIComponent(referencia.trim())}`);
-      if (datos) setRollo(rolloDesdeApi(datos));
+      // Solo números (ej. 4484 o 4.484 kg) = kilos; si no, la referencia.
+      const kilos = kilosBuscados(referencia);
+      if (kilos) {
+        const datos = (await api.get<Record<string, unknown>[]>(`/rollos/por-kilos?kilos=${kilos}`) || []).map(rolloDesdeApi);
+        if (datos.length === 0) setError(`No hay ningún rollo de ${kilos} kg${bodegas.length ? "" : " en tu bodega"}.`);
+        else if (datos.length === 1) setRollo(datos[0]);
+        else setOpciones(datos);
+      } else {
+        const datos = await api.get<Record<string, unknown>>(`/rollos/por-referencia?referencia=${encodeURIComponent(referencia.trim())}`);
+        if (datos) setRollo(rolloDesdeApi(datos));
+      }
     } catch (err) {
       setError(err instanceof ErrorApi ? err.message : "No se pudo buscar el rollo.");
     } finally {
@@ -63,7 +75,7 @@ export default function PanelMermaRollo({ bodegas = [], alCambiar }: { bodegas?:
     <section className="produccion-tarjeta">
       <h2>Merma / sobrante de rollo</h2>
       <p className="produccion-vacio" style={{ marginBottom: "0.75rem" }}>
-        Cuando un rollo se acaba, escribe su referencia (la de la hoja de vida). <strong>Terminar rollo</strong>: lo
+        Cuando un rollo se acaba, escribe su referencia (la de la hoja de vida) o sus kilos. <strong>Terminar rollo</strong>: lo
         que todavía le queda en el sistema sale como <strong>merma</strong> y el rollo queda agotado.{" "}
         <strong>Sobrante</strong>: si el rollo rindió más metros de los que dice el sistema, súmaselos aquí antes de
         registrar la producción.
@@ -72,7 +84,7 @@ export default function PanelMermaRollo({ bodegas = [], alCambiar }: { bodegas?:
         <input
           className="produccion-input"
           style={{ flex: "1 1 240px" }}
-          placeholder="Referencia del rollo, ej. ABG1LR30020,33-13"
+          placeholder="Referencia o kilos del rollo, ej. ABG1LR30020,33-13 o 4484"
           value={referencia}
           onChange={(e) => setReferencia(e.target.value)}
         />
@@ -80,6 +92,22 @@ export default function PanelMermaRollo({ bodegas = [], alCambiar }: { bodegas?:
       </form>
       {error && <p className="produccion-error">{error}</p>}
       {aviso && <p className="produccion-exito">{aviso}</p>}
+
+      {opciones.length > 0 && (
+        <div className="merma-opciones">
+          <p className="produccion-texto-ayuda">{opciones.length} rollos pesan eso: elige cuál.</p>
+          {opciones.map((r) => (
+            <button type="button" key={r.id} onClick={() => { setRollo(r); setOpciones([]); }}>
+              <strong>{r.identificadorRollo}</strong>
+              <small>
+                {r.codigoInterno} · {(kilosDelRollo(r.pesoNeto) ?? 0).toLocaleString("es-CO")} kg
+                {" · "}{bodegas.find((b) => b.id === r.bodegaId)?.nombre || nombreEmpresa(r.empresa)}
+                {" · "}{r.metrosDisponibles > 0 ? `le quedan ${r.metrosDisponibles} m` : "agotado"}
+              </small>
+            </button>
+          ))}
+        </div>
+      )}
 
       {rollo && (
         <div style={{ marginTop: "0.75rem" }}>

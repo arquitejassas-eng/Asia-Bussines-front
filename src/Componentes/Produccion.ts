@@ -6,6 +6,7 @@ import { apartadoDesdeApi, produccionDesdeApi, rolloDesdeApi } from "./Mapeo";
 import { calcularSolicitudesPendientes, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/produccion";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import { coincideKilos, kilosBuscados } from "../Utils/kilos";
+import { modeloEnDescripcion } from "../Utils/teja";
 
 // Refresco automático de solicitudes pendientes / historial de producción.
 // Más espaciado que el resto de pantallas (10 s): el historial completo de
@@ -160,6 +161,9 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
 
   const [apartadosPendientes, setApartadosPendientes] = useState([]);
   const [apartadoItemId, setApartadoItemId] = useState(null);
+  // Otras líneas de la misma cotización y el mismo código (color + espesor)
+  // que salen en esta misma producción (solo cambia la medida de la teja).
+  const [itemsJuntos, setItemsJuntos] = useState<number[]>([]);
 
   // `silenciosa` (actualización automática): si falla, conserva la lista que
   // ya estaba -- vaciarla hacía desaparecer el panel de solicitudes y movía
@@ -248,9 +252,44 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
 
   const [advertenciaSeleccion, setAdvertenciaSeleccion] = useState("");
 
+  // Las líneas elegidas para esta producción: la principal y las que van junto.
+  const solicitudesElegidas = useMemo(
+    () => [apartadoItemId, ...itemsJuntos].map((id) => solicitudesPendientes.find((s) => s.itemId === id)).filter(Boolean),
+    [apartadoItemId, itemsJuntos, solicitudesPendientes],
+  );
+
+  // Se puede sumar a esta producción una línea de la misma cotización y del
+  // mismo código de clasificación (mismo color y espesor). Solo tejas.
+  function puedeProducirJunto(solicitud) {
+    const principal = solicitudesElegidas[0];
+    return Boolean(principal) && !SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && solicitud.itemId !== principal.itemId
+      && solicitud.apartadoId === principal.apartadoId && solicitud.codigoInterno === principal.codigoInterno
+      && modeloEnDescripcion(solicitud.descripcion) === modeloEnDescripcion(principal.descripcion);
+  }
+
+  // Datos del producto con todas las líneas elegidas: "5,1 m / 4,9 m" y la
+  // suma de unidades (si todas vienen en unidades; las importadas vienen en metros).
+  function llenarDatosDeLineas(lineas) {
+    const enUnidades = lineas.every((s) => s.medida != null && s.medida !== 1 && Number.isInteger(s.cantidad));
+    const medidas = [...new Set(lineas.map((s) => s.medida))];
+    setProductoFabricado(lineas.map((s) => s.descripcion || s.codigoInterno).join(" + "));
+    setMedidaProducto(enUnidades ? (medidas.length === 1 ? String(medidas[0]) : medidas.map((m) => `${String(m).replace(".", ",")} m`).join(" / ")) : "");
+    setCantidadProductos(enUnidades ? String(lineas.reduce((suma, s) => suma + s.cantidad, 0)) : "");
+  }
+
+  function alternarProducirJunto(solicitud) {
+    const nuevos = itemsJuntos.includes(solicitud.itemId)
+      ? itemsJuntos.filter((id) => id !== solicitud.itemId)
+      : [...itemsJuntos, solicitud.itemId];
+    setItemsJuntos(nuevos);
+    llenarDatosDeLineas([apartadoItemId, ...nuevos].map((id) => solicitudesPendientes.find((s) => s.itemId === id)).filter(Boolean));
+    setSeleccion({}); // el total cambió: los metros del rollo se vuelven a elegir.
+  }
+
   function seleccionarSolicitud(solicitud) {
     gestionandoStockRef.current = false; // arranca en blanco para esta nueva solicitud.
     setApartadoItemId(solicitud.itemId);
+    setItemsJuntos([]);
     setProductoFabricado(solicitud.descripcion || solicitud.codigoInterno);
     // Las cotizaciones importadas guardan la línea en METROS (cantidad =
     // metros de "SALE", medida = 1 -- ver importar_cotizaciones.py): copiar
@@ -273,6 +312,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   function limpiarSolicitud() {
     gestionandoStockRef.current = false;
     setApartadoItemId(null);
+    setItemsJuntos([]);
     setCodigoBusqueda("");
     setEmpresaFiltro("");
     setSeleccion({});
@@ -332,9 +372,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
           return calcularAsignacionRollos(infoCorte.metrosNecesarios, [rollo], actual).seleccion;
         }
       } else {
-        const solicitud = apartadoItemId ? solicitudesPendientes.find((s) => s.itemId === apartadoItemId) : null;
-        if (solicitud) {
-          return calcularAsignacionRollos(solicitud.metrosPendientes, [rollo], actual).seleccion;
+        if (solicitudesElegidas.length) {
+          return calcularAsignacionRollos(pendienteSolicitudElegida, [rollo], actual).seleccion;
         }
       }
       return { ...actual, [rollo.id]: { seleccionado: true, metrosTexto: "" } };
@@ -375,10 +414,11 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   // borrada), pero antes hace un último ajuste al pendiente del apartado.
   const gestionandoStockRef = useRef(false);
 
-  const pendienteSolicitudElegida = useMemo(() => {
-    const solicitud = apartadoItemId ? solicitudesPendientes.find((s) => s.itemId === apartadoItemId) : null;
-    return solicitud ? solicitud.metrosPendientes : 0;
-  }, [apartadoItemId, solicitudesPendientes]);
+  // Lo que piden todas las líneas elegidas (la principal y las que van junto).
+  const pendienteSolicitudElegida = useMemo(
+    () => redondear(solicitudesElegidas.reduce((suma, s) => suma + s.metrosPendientes, 0)),
+    [solicitudesElegidas],
+  );
 
   // Teja ligada a una solicitud: la solicitud se mide en metros y la cantidad
   // del formulario en unidades -- muestra la cuenta para que nadie escriba
@@ -386,15 +426,16 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   const ayudaCantidad = useMemo(() => {
     if (!apartadoItemId || SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] || !(pendienteSolicitudElegida > 0)) return "";
     const formato = (n) => n.toLocaleString("es-CO", { maximumFractionDigits: 2 });
-    const pide = `Esta solicitud pide ${formato(pendienteSolicitudElegida)} m`;
+    const pide = `${solicitudesElegidas.length > 1 ? `Estas ${solicitudesElegidas.length} líneas piden` : "Esta solicitud pide"} ${formato(pendienteSolicitudElegida)} m`;
     const medida = parseFloat(String(medidaProducto).replace(",", "."));
+    if (solicitudesElegidas.length > 1) return `${pide} en total. La cantidad es la suma de las unidades de todas.`;
     if (!(medida > 0)) return `${pide}. Escribe la medida de cada unidad y aquí verás cuántas salen.`;
     const unidades = pendienteSolicitudElegida / medida;
     if (Math.abs(unidades - Math.round(unidades)) < 0.01) {
       return `${pide}: con unidades de ${formato(medida)} m son ${Math.round(unidades)}.`;
     }
     return `${pide}: con unidades de ${formato(medida)} m son ${formato(unidades)} (no da exacto — escribe las unidades que realmente salieron).`;
-  }, [apartadoItemId, tipoProducto, pendienteSolicitudElegida, medidaProducto]);
+  }, [apartadoItemId, tipoProducto, pendienteSolicitudElegida, medidaProducto, solicitudesElegidas.length]);
 
   useEffect(() => {
     // Caballetes/Flanches: el rollo lo elige Planta a mano (ver
@@ -527,8 +568,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       // El material de las unidades adicionales también tiene que salir del
       // rollo: lo que sobre después de cubrir el apartado (o todo lo
       // consumido, si es producción libre) debe alcanzar para esas unidades.
-      const solicitud = apartadoItemId ? solicitudesPendientes.find((s) => s.itemId === apartadoItemId) : null;
-      const pendienteApartado = solicitud ? solicitud.metrosPendientes : 0;
+      const pendienteApartado = pendienteSolicitudElegida;
       const aplicadoApartado = Math.min(totalMetrosAConsumir, pendienteApartado);
       const excedente = redondear(totalMetrosAConsumir - aplicadoApartado);
       if (excedente + 0.01 < metrosNecesarios) {
@@ -604,6 +644,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
           metros: Number(metrosTexto),
         })),
         apartado_item_id: apartadoItemId,
+        apartado_items_extra: SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] ? [] : itemsJuntos,
         color: color.trim(),
         ral: ral.trim(),
         calibre: calibreLote.trim(),
@@ -627,6 +668,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       setProduccionConfirmada(registro);
       setSeleccion({});
       setApartadoItemId(null);
+      setItemsJuntos([]);
       setAdvertenciaSeleccion("");
       setColor(""); setRal(""); setCalibreLote(""); setMetrosPorUnidad(""); setStockAdicional([]);
       setTipoProducto("teja");
@@ -655,6 +697,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     setObservaciones("");
     setErrorValidacion("");
     setApartadoItemId(null);
+    setItemsJuntos([]);
     setAdvertenciaSeleccion("");
     setColor(""); setRal(""); setCalibreLote(""); setMetrosPorUnidad(""); setStockAdicional([]);
     setTipoProducto("teja");
@@ -747,6 +790,9 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     solicitudesPendientes,
     cotizacionResaltada,
     apartadoItemId,
+    itemsJuntos,
+    puedeProducirJunto,
+    alternarProducirJunto,
     seleccionarSolicitud,
     limpiarSolicitud,
     marcarProduccionTerminada,

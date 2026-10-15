@@ -308,6 +308,7 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
 def validar_reserva_rollos(
     db: Session, *, bodega_id: int | None, codigo_interno: str, metros_salen: float,
     rollos_codigo: list[Rollo], metros_reserva_propia: float = 0.0, apartado_item_id: int | None = None,
+    otros_item_ids: list[int] | tuple[int, ...] = (),
 ) -> None:
     """Impide que salga material de un código que ya está apartado.
 
@@ -327,7 +328,9 @@ def validar_reserva_rollos(
     # aunque una más nueva esté esperando material.
     libre = round(max(fisico - reservado, 0), 2)
     if apartado_item_id is not None:
-        cubierto = cobertura_rollo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, fisico=fisico).get(apartado_item_id, 0)
+        # Varias líneas producidas juntas: su reserva propia es la de todas.
+        cobertura = cobertura_rollo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, fisico=fisico)
+        cubierto = sum(cobertura.get(i, 0) for i in (apartado_item_id, *otros_item_ids))
         metros_reserva_propia = min(metros_reserva_propia, cubierto)
     neto = round(metros_salen - metros_reserva_propia, 2)
     if neto > libre + 0.005:

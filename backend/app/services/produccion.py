@@ -15,7 +15,7 @@ from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.schemas.produccion import ProduccionCrear, StockAdicionalItemCrear
 from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
-from app.services.modelos_teja import normalizar_modelo_teja
+from app.services.modelos_teja import modelo_en_descripcion, normalizar_modelo_teja
 
 # Regla física de los productos "seccionados": el ancho del rollo se divide
 # siempre en N partes iguales según el tipo (3 para caballetes, 5 para
@@ -278,6 +278,35 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
                 f"Selecciona rollos del código {apartado_item.codigo_interno}.",
             )
 
+    # Varias líneas de la misma cotización y el mismo código (color +
+    # espesor) en una sola producción: solo cambia la medida de las tejas.
+    items_produccion: list[ApartadoItem] = [apartado_item] if apartado_item is not None else []
+    if datos.apartado_items_extra:
+        if apartado_item is None:
+            raise HTTPException(status_code=400, detail="Elige primero la línea principal de la cotización.")
+        if datos.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO:
+            raise HTTPException(status_code=400, detail="Solo se pueden producir varias líneas juntas en tejas.")
+        for extra_id in dict.fromkeys(datos.apartado_items_extra):
+            if extra_id == apartado_item.id:
+                continue
+            extra = _apartado_item_para_produccion(db, extra_id, usuario)
+            if extra.apartado_id != apartado_item.apartado_id:
+                raise HTTPException(status_code=400, detail="Solo se producen juntas líneas de la misma cotización.")
+            if extra.modalidad != ModalidadApartado.POR_ROLLO or extra.rollo_id:
+                raise HTTPException(status_code=400, detail=f"La línea \"{extra.descripcion}\" no se produce en Planta.")
+            if extra.codigo_interno != codigo:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"La línea \"{extra.descripcion}\" es de {extra.codigo_interno} (otro color o espesor): "
+                    f"no se puede producir junto con {codigo}.",
+                )
+            if modelo_en_descripcion(extra.descripcion) != modelo_en_descripcion(apartado_item.descripcion):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"La línea \"{extra.descripcion}\" es de otro modelo: solo se producen juntas tejas del mismo modelo.",
+                )
+            items_produccion.append(extra)
+
     # Cuánto se consume del rollo: para tejas es libre (lo que el usuario
     # seleccionó); para productos seccionados (caballete/flanche) es un
     # número EXACTO, no una elección — cada corte produce siempre las
@@ -350,7 +379,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         # Misma regla para tejas — la reserva del apartado siempre se mide
         # en metros, y ahí sí coincide 1:1 con el consumo físico.
         if apartado_item is not None:
-            pendiente = max(0.0, round(apartado_item.metros_requeridos - apartado_item.metros_consumidos, 2))
+            pendiente = sum(max(0.0, round(it.metros_requeridos - it.metros_consumidos, 2)) for it in items_produccion)
             aplicado_al_apartado = min(total, pendiente)
             metros_excedente = round(total - aplicado_al_apartado, 2)
         else:
@@ -409,6 +438,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         db, bodega_id=usuario.bodega_id, codigo_interno=codigo, metros_salen=total,
         metros_reserva_propia=aplicado_al_apartado, rollos_codigo=rollos_codigo,
         apartado_item_id=apartado_item.id if apartado_item else None,
+        otros_item_ids=[it.id for it in items_produccion[1:]],
     )
 
     sello = ahora.strftime("%Y%m%d%H%M%S"); codigo_unico = f"PROD-{sello}-{token_hex(3).upper()}"
@@ -423,7 +453,14 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     produccion.saldo_codigo = round(saldo, 2)
 
     if apartado_item is not None:
-        apartado_item.metros_consumidos = round(apartado_item.metros_consumidos + aplicado_al_apartado, 2)
+        # Lo aplicado se reparte en orden: primero la línea principal, luego
+        # las que salieron junto con ella, cada una hasta lo que le faltaba.
+        por_repartir = aplicado_al_apartado
+        for indice, it in enumerate(items_produccion):
+            falta = max(0.0, round(it.metros_requeridos - it.metros_consumidos, 2))
+            parte = por_repartir if indice == len(items_produccion) - 1 else min(por_repartir, falta)
+            it.metros_consumidos = round(it.metros_consumidos + parte, 2)
+            por_repartir = round(por_repartir - parte, 2)
         if apartado_item.apartado.estado == EstadoApartado.ENVIADO_A_PRODUCCION:
             apartado_item.apartado.estado = EstadoApartado.EN_PRODUCCION
 
