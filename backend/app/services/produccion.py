@@ -428,12 +428,14 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         # Misma regla para tejas — la reserva del apartado siempre se mide
         # en metros, y ahí sí coincide 1:1 con el consumo físico.
         if apartado_item is not None:
-            # Cuánto le toca a cada línea: lo que le faltaba o, con varias
-            # líneas, lo que salió de ella (sin pasarse de lo que le faltaba).
+            # Cuánto le toca a cada línea: lo que le faltaba o, si la pantalla
+            # dice lo que se produjo para ella (cantidad x medida), solo eso
+            # (sin pasarse de lo que le faltaba). El resto de los metros queda
+            # para el stock adicional (ej. el stock salió de otro rollo).
             topes_por_linea = []
             for it in items_produccion:
                 falta = max(0.0, round(it.metros_requeridos - it.metros_consumidos, 2))
-                if len(items_produccion) > 1 and datos.metros_por_linea:
+                if it.id in datos.metros_por_linea:
                     falta = min(falta, max(0.0, round(float(datos.metros_por_linea.get(it.id, 0)), 2)))
                 topes_por_linea.append((it, falta))
             pendiente = round(sum(tope for _, tope in topes_por_linea), 2)

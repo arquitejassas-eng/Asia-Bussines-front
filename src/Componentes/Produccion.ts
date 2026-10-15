@@ -388,7 +388,13 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
 
   const [seleccion, setSeleccion] = useState({});
 
+  // Orden en que Planta escogió los rollos: la cotización sale del primero
+  // (y si no le alcanza, del siguiente).
+  const ordenRollosRef = useRef<number[]>([]);
+
   function alternarSeleccionRollo(rollo: Rollo) {
+    ordenRollosRef.current = ordenRollosRef.current.filter((id) => id !== rollo.id);
+    if (!seleccion[rollo.id]?.seleccionado) ordenRollosRef.current.push(rollo.id);
     setSeleccion((actual) => {
       const actualDeEste = actual[rollo.id];
       if (actualDeEste?.seleccionado) {
@@ -410,7 +416,13 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         }
       } else {
         if (solicitudesElegidas.length) {
-          return calcularAsignacionRollos(pendienteSolicitudElegida, [rollo], actual).seleccion;
+          // Solo lo que todavía falta (cotización + stock) después de los
+          // rollos ya escogidos: el segundo rollo no repite la cotización.
+          const enOtros = Object.values(actual).reduce(
+            (suma, s) => suma + (s?.seleccionado ? Number(s.metrosTexto) || 0 : 0), 0);
+          const falta = redondear(Math.max(0, metrosParaCotizacion + metrosDelStock - enOtros));
+          if (falta <= 0) return { ...actual, [rollo.id]: { seleccionado: true, metrosTexto: "" } };
+          return calcularAsignacionRollos(falta, [rollo], { ...actual, [rollo.id]: undefined }).seleccion;
         }
       }
       return { ...actual, [rollo.id]: { seleccionado: true, metrosTexto: "" } };
@@ -457,6 +469,22 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     [solicitudesElegidas],
   );
 
+  // Metros producidos PARA la cotización, por línea: cantidad x medida (con
+  // varias líneas, los de cada una). La cotización solo se lleva eso (nunca
+  // más de lo que le falta); el resto de los metros de los rollos queda para
+  // el stock adicional. Sin medida o cantidad, toda la línea, como antes.
+  const metrosParaCotizacionPorLinea = useMemo(() => {
+    if (SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] || !apartadoItemId) return {};
+    if (lineasProduccion.length > 1) return Object.fromEntries(lineasProduccion.map((l) => [l.itemId, l.metros]));
+    const medida = parseFloat(String(medidaProducto).replace(",", "."));
+    const unidades = Number(cantidadProductos);
+    return medida > 0 && unidades > 0 ? { [apartadoItemId]: redondear(medida * unidades) } : {};
+  }, [tipoProducto, apartadoItemId, lineasProduccion, medidaProducto, cantidadProductos]);
+
+  const metrosParaCotizacion = useMemo(() => redondear(solicitudesElegidas.reduce(
+    (suma, s) => suma + Math.min(s.metrosPendientes, metrosParaCotizacionPorLinea[s.itemId] ?? s.metrosPendientes), 0)),
+  [solicitudesElegidas, metrosParaCotizacionPorLinea]);
+
   // Teja ligada a una solicitud: la solicitud se mide en metros y la cantidad
   // del formulario en unidades -- muestra la cuenta para que nadie escriba
   // los metros en "Cantidad de productos obtenidos".
@@ -478,6 +506,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   // los metros de los rollos; escoger "Salió del rollo" o la calidad no.
   const metrosDelStock = redondear(stockAdicional.reduce(
     (suma, linea) => suma + (Number(linea.cantidad) || 0) * (Number(linea.metros) || 0), 0));
+  // Cambia solo con los metros de cada línea y su rollo (no con la calidad).
+  const firmaStock = stockAdicional.map((linea) => `${linea.cantidad}x${linea.metros}@${linea.rolloId || ""}`).join("|");
 
   useEffect(() => {
     // Caballetes/Flanches: el rollo lo elige Planta a mano (ver
@@ -496,15 +526,33 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       gestionandoStockRef.current = false; // último ajuste: soltar el control.
     }
 
-    const objetivoTotal = redondear(pendienteSolicitudElegida + metrosNecesariosStock);
-
-    // Los metros del stock se suman SOLO a los rollos que Planta escogió:
-    // nunca se escoge un rollo por su cuenta (antes tomaba el más viejo de la
-    // lista y aparecía seleccionado otro rollo). Sin rollo escogido, no toca nada.
+    // Reparte los metros SOLO entre los rollos que Planta escogió (nunca
+    // escoge uno por su cuenta ni desmarca uno escogido):
+    // - el stock, en el rollo de "Salió del rollo" (o en el único escogido);
+    // - la cotización, en el orden en que se escogieron los rollos, sin
+    //   pasarse de lo que tiene cada uno.
+    // Un rollo al que no le toca nada conserva lo que se escribió a mano.
     setSeleccion((actual) => {
-      const escogidos = rollosDisponibles.filter((r) => actual[r.id]?.seleccionado);
-      if (escogidos.length === 0) return actual;
-      return calcularAsignacionRollos(objetivoTotal, escogidos, actual).seleccion;
+      const ordenados = [
+        ...ordenRollosRef.current.filter((id) => actual[id]?.seleccionado),
+        ...Object.keys(actual).map(Number).filter((id) => actual[id]?.seleccionado && !ordenRollosRef.current.includes(id)),
+      ].map((id) => rollosDisponibles.find((r) => r.id === id)).filter(Boolean);
+      if (ordenados.length === 0) return actual;
+      const stockPorRollo: Record<number, number> = {};
+      for (const linea of stockAdicional) {
+        const id = ordenados.length === 1 ? ordenados[0].id : Number(linea.rolloId) || ordenados[0].id;
+        stockPorRollo[id] = (stockPorRollo[id] || 0) + (Number(linea.cantidad) || 0) * (Number(linea.metros) || 0);
+      }
+      const nueva = { ...actual };
+      let falta = metrosParaCotizacion;
+      for (const rollo of ordenados) {
+        const delStock = redondear(stockPorRollo[rollo.id] || 0);
+        const parte = redondear(Math.max(0, Math.min(falta, rollo.metrosDisponibles - delStock)));
+        falta = redondear(falta - parte);
+        const total = redondear(parte + delStock);
+        if (total > 0) nueva[rollo.id] = { seleccionado: true, metrosTexto: String(total) };
+      }
+      return nueva;
     });
     // Depende del NÚMERO pendiente de la solicitud elegida, no de la lista de
     // solicitudes: la actualización automática crea una lista nueva en cada
@@ -512,7 +560,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     // los metros que Planta había ajustado a mano. Solo si el pendiente cambia
     // de verdad (ej. otro registro para el mismo apartado) se recalcula.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipoProducto, metrosDelStock, metrosPorUnidad, apartadoItemId, rollosDisponibles, pendienteSolicitudElegida]);
+  }, [tipoProducto, firmaStock, metrosPorUnidad, apartadoItemId, rollosDisponibles, metrosParaCotizacion]);
 
   // Siembra la línea de stock adicional con el sobrante calculado (5
   // unidades pedidas -> corte de 6 -> 1 de sobrante), pero solo si el
@@ -627,7 +675,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       // El material de las unidades adicionales también tiene que salir del
       // rollo: lo que sobre después de cubrir el apartado (o todo lo
       // consumido, si es producción libre) debe alcanzar para esas unidades.
-      const pendienteApartado = pendienteSolicitudElegida;
+      const pendienteApartado = metrosParaCotizacion;
       const aplicadoApartado = Math.min(totalMetrosAConsumir, pendienteApartado);
       const excedente = redondear(totalMetrosAConsumir - aplicadoApartado);
       if (excedente + 0.01 < metrosNecesarios) {
@@ -704,7 +752,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         })),
         apartado_item_id: apartadoItemId,
         apartado_items_extra: SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] ? [] : itemsJuntos,
-        metros_por_linea: Object.fromEntries(lineasProduccion.map((l) => [l.itemId, l.metros])),
+        metros_por_linea: metrosParaCotizacionPorLinea,
         color: color.trim(),
         ral: ral.trim(),
         calibre: calibreLote.trim(),
