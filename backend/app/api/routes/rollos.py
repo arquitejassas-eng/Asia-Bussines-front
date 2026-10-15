@@ -100,12 +100,10 @@ def historial_de_rollo(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rollo no encontrado.")
     else:
         _rollo_de_mi_bodega(db, rollo_id, usuario)
-    return (
-        db.query(Movimiento)
-        .filter(Movimiento.rollo_id == rollo_id)
-        .order_by(Movimiento.fecha)
-        .all()
-    )
+    propios = db.query(Movimiento).filter(Movimiento.rollo_id == rollo_id).all()
+    # También el stock que sobró de las producciones donde se usó este rollo.
+    from app.services.produccion import stock_de_producciones_del_rollo
+    return sorted(propios + stock_de_producciones_del_rollo(db, rollo_id), key=lambda m: (m.fecha, m.id))
 
 
 def _match_equivalencias(db: Session, prefijo: str) -> tuple[TablaTipoMaterialEquivalencia, TablaColorEquivalencia] | None:

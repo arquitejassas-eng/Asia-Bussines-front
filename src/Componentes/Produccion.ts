@@ -130,6 +130,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     setStockAdicional((actual) => [...actual, {
       calidad: "primera", cantidad: "1", motivoSegunda: "",
       metros: actual.length ? actual[actual.length - 1].metros || "" : (metrosPorUnidad || String(parseFloat(String(medidaProducto).replace(",", ".")) || "")),
+      rolloId: actual.length ? actual[actual.length - 1].rolloId || "" : "",
     }]);
   }
   function quitarLineaStock(indice) {
@@ -472,6 +473,11 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     return `${pide}: con unidades de ${formato(medida)} m son ${formato(unidades)} (no da exacto — escribe las unidades que realmente salieron).`;
   }, [apartadoItemId, tipoProducto, pendienteSolicitudElegida, medidaProducto, solicitudesElegidas.length]);
 
+  // Los metros del stock (cantidad x medida de cada línea): solo eso mueve
+  // los metros de los rollos; escoger "Salió del rollo" o la calidad no.
+  const metrosDelStock = redondear(stockAdicional.reduce(
+    (suma, linea) => suma + (Number(linea.cantidad) || 0) * (Number(linea.metros) || 0), 0));
+
   useEffect(() => {
     // Caballetes/Flanches: el rollo lo elige Planta a mano (ver
     // alternarSeleccionRollo) -- el total EXACTO que exige el corte físico lo
@@ -479,8 +485,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     // aquí ya no se auto-asigna nada por FIFO.
     if (SECCIONES_POR_TIPO_PRODUCTO[tipoProducto]) return;
 
-    const metrosNecesariosStock = redondear(stockAdicional.reduce(
-      (suma, linea) => suma + (Number(linea.cantidad) || 0) * (Number(linea.metros) || 0), 0));
+    const metrosNecesariosStock = metrosDelStock;
 
     if (metrosNecesariosStock > 0) {
       gestionandoStockRef.current = true;
@@ -502,7 +507,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     // los metros que Planta había ajustado a mano. Solo si el pendiente cambia
     // de verdad (ej. otro registro para el mismo apartado) se recalcula.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipoProducto, stockAdicional, metrosPorUnidad, apartadoItemId, rollosDisponibles, pendienteSolicitudElegida]);
+  }, [tipoProducto, metrosDelStock, metrosPorUnidad, apartadoItemId, rollosDisponibles, pendienteSolicitudElegida]);
 
   // Siembra la línea de stock adicional con el sobrante calculado (5
   // unidades pedidas -> corte de 6 -> 1 de sobrante), pero solo si el
@@ -590,6 +595,14 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         return `Este corte produce físicamente ${infoCorte.producidoFisico} ${nombre}s; ${cantidadProductos} van para la necesidad y ${infoCorte.sobrante} deben quedar declarados como stock adicional (ahora declaraste ${stockDeclarado}). Ningún ${nombre} cortado se pierde.`;
       }
       return "";
+    }
+
+    // Con varios rollos, cada línea de stock dice de cuál salió (solo para el historial).
+    if (stockAdicional.length > 0 && rollosSeleccionados.length > 1) {
+      const usados = rollosSeleccionados.map(({ rollo }) => String(rollo.id));
+      if (stockAdicional.some((linea) => !usados.includes(String(linea.rolloId || "")))) {
+        return "Usaste varios rollos: escoge de qué rollo salió cada línea del stock adicional.";
+      }
     }
 
     if (stockAdicional.length > 0) {
@@ -699,6 +712,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
           cantidad: Number(linea.cantidad),
           motivo_segunda: linea.calidad === "segunda" ? linea.motivoSegunda.trim() : "",
           metros_por_unidad: SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] ? null : Number(linea.metros) || null,
+          rollo_id: rollosSeleccionados.length === 1 ? rollosSeleccionados[0].rollo.id : Number(linea.rolloId) || null,
         })),
       };
 

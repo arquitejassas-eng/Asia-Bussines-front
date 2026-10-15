@@ -127,6 +127,33 @@ def _numero(valor: float) -> str:
     return f"{valor:g}".replace(".", ",")
 
 
+def nota_stock_de_produccion(codigo_unico: str) -> str:
+    """Observación del movimiento de entrada del stock que sobra de una
+    producción: con ella el historial de cada rollo usado encuentra ese stock
+    (ver stock_de_producciones_del_rollo)."""
+    return f"Stock adicional generado por la producción {codigo_unico}."
+
+
+def stock_de_producciones_del_rollo(db: Session, rollo_id: int) -> list[Movimiento]:
+    """Las entradas de stock que dejaron las producciones donde se usó este
+    rollo. Solo lectura: no guarda nada nuevo, sirve también para las
+    producciones viejas."""
+    codigos = [
+        codigo for (codigo,) in db.query(Produccion.codigo_unico)
+        .join(RolloUtilizadoProduccion, RolloUtilizadoProduccion.produccion_id == Produccion.id)
+        .filter(RolloUtilizadoProduccion.rollo_id == rollo_id)
+        .distinct()
+    ]
+    if not codigos:
+        return []
+    return (
+        db.query(Movimiento)
+        .filter(Movimiento.motivo == "produccion_excedente", Movimiento.rollo_id.is_(None),
+                Movimiento.observaciones.in_([nota_stock_de_produccion(c) for c in codigos]))
+        .all()
+    )
+
+
 def metros_de_linea_stock(datos: ProduccionCrear, item: StockAdicionalItemCrear) -> float | None:
     """Medida de una línea de stock adicional: la suya (tejas) o la de la producción."""
     if datos.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO:
@@ -254,6 +281,28 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         if rollo.estado == "agotado" or item.metros > rollo.metros_disponibles:
             raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} no tiene metros suficientes.")
         exigir_rollo_libre(db, rollo)
+
+    # Stock adicional: de qué rollo salió cada línea. Con un solo rollo es
+    # ese; con varios lo escoge Planta. Solo se revisa que de ese rollo sí se
+    # hayan sacado los metros de ese stock (los rollos bajan solo lo que se
+    # escribió para cada uno).
+    metros_de_rollo = {item.rollo_id: item.metros for item in datos.rollos}
+    rollo_de_linea: dict[int, Rollo | None] = {}
+    stock_por_rollo: dict[int, float] = {}
+    for indice, item_stock in enumerate(datos.stock_adicional):
+        rollo_id = item_stock.rollo_id or (ids[0] if len(ids) == 1 else None)
+        if rollo_id is not None and rollo_id not in metros_de_rollo:
+            raise HTTPException(status_code=400, detail="El rollo de donde salió el stock tiene que ser uno de los que usaste en esta producción.")
+        rollo_de_linea[indice] = por_id.get(rollo_id) if rollo_id is not None else None
+        if rollo_id is not None:
+            stock_por_rollo[rollo_id] = stock_por_rollo.get(rollo_id, 0) + item_stock.cantidad * (metros_de_linea_stock(datos, item_stock) or 0)
+    for rollo_id, metros_stock in stock_por_rollo.items():
+        if round(metros_stock, 2) > round(metros_de_rollo[rollo_id], 2) + 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Dijiste que del rollo {por_id[rollo_id].identificador_rollo} salieron {round(metros_stock, 2):g} m de stock, "
+                f"pero de ese rollo solo sacaste {metros_de_rollo[rollo_id]:g} m. Revisa de qué rollo salió cada línea.",
+            )
 
     apartado_item = _apartado_item_para_produccion(db, datos.apartado_item_id, usuario) if datos.apartado_item_id else None
     if apartado_item is not None:
@@ -546,12 +595,16 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
             db.flush()
             codigo_producto_movimiento = producto_stock.codigo
 
+        rollo_origen = rollo_de_linea.get(indice - 1)
         db.add(Movimiento(
             fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo="produccion_excedente",
             producto_codigo=codigo_producto_movimiento, producto_descripcion=descripcion,
+            # Para el historial de ESE rollo (no cambia sus metros).
+            rollo_id=rollo_origen.id if rollo_origen else None,
+            identificador_rollo=rollo_origen.identificador_rollo if rollo_origen else "",
             bodega_origen_id=None, bodega_destino_id=usuario.bodega_id,
             cantidad=item_stock.cantidad, usuario=usuario.correo,
-            observaciones=f"Stock adicional generado por la producción {codigo_unico}.",
+            observaciones=nota_stock_de_produccion(codigo_unico),
             # Nunca la cotización real del apartado: esta unidad no salió con
             # el cliente de esa cotización, se quedó como inventario. Si aquí
             # quedara la cotización real, el Kardex daría a entender que esa

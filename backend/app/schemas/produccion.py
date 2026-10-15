@@ -24,6 +24,9 @@ class StockAdicionalItemCrear(BaseModel):
     # Sin ella se usa `metros_por_unidad` de la producción. Caballetes y
     # flanches usan siempre la de la producción (define el corte).
     metros_por_unidad: float | None = Field(default=None, gt=0)
+    # De cuál de los rollos de esta producción salió (si se usaron varios).
+    # Solo para el historial del rollo: no descuenta nada aparte.
+    rollo_id: int | None = None
 
     @model_validator(mode="after")
     def _exigir_motivo_si_segunda(self) -> "StockAdicionalItemCrear":

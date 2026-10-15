@@ -82,23 +82,28 @@ function ModalHistorialRollo({
                   <th>Tipo</th>
                   <th>Motivo</th>
                   <th>Empresa</th>
-                  <th>Cantidad (m)</th>
+                  <th>Cantidad</th>
                   <th>Cotización</th>
                   <th>Observaciones</th>
                 </tr>
               </thead>
               <tbody>
-                {historialRollo.map((m) => (
-                  <tr key={m.id}>
-                    <td>{formatearFechaColombia(m.fecha)}</td>
-                    <td>{m.tipo}</td>
-                    <td>{m.motivo || "—"}</td>
-                    <td>{m.empresaExterna || "—"}</td>
-                    <td>{m.cantidad}</td>
-                    <td>{m.cotizacion || "—"}</td>
-                    <td>{m.observaciones || "—"}</td>
-                  </tr>
-                ))}
+                {historialRollo.map((m) => {
+                  // Stock que sobró de una producción donde se usó este rollo:
+                  // va en unidades y dice qué producto quedó.
+                  const esStock = m.motivo === "produccion_excedente";
+                  return (
+                    <tr key={m.id} className={esStock ? "rollos-historial-stock" : undefined}>
+                      <td>{formatearFechaColombia(m.fecha)}</td>
+                      <td>{m.tipo}</td>
+                      <td>{esStock ? "stock que quedó" : m.motivo || "—"}</td>
+                      <td>{m.empresaExterna || "—"}</td>
+                      <td>{esStock ? `${m.cantidad} und` : `${m.cantidad} m`}</td>
+                      <td>{m.cotizacion || "—"}</td>
+                      <td>{esStock ? `${m.productoDescripcion} · ${m.observaciones}` : m.observaciones || "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

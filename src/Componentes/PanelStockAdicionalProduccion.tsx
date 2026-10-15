@@ -7,6 +7,7 @@ import { NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/
 function PanelStockAdicionalProduccion({
   tipoProducto,
   stockAdicional,
+  rollosSeleccionados = [],
   actualizarLineaStock,
   quitarLineaStock,
   agregarLineaStock,
@@ -59,6 +60,21 @@ function PanelStockAdicionalProduccion({
               <option value="segunda">Segunda</option>
             </select>
           </div>
+          {rollosSeleccionados.length > 1 && (
+            <div>
+              <label className="produccion-label">Salió del rollo</label>
+              <select
+                className="produccion-input"
+                value={linea.rolloId ?? ""}
+                onChange={(e) => actualizarLineaStock(indice, "rolloId", e.target.value)}
+              >
+                <option value="">Escoge el rollo...</option>
+                {rollosSeleccionados.map(({ rollo }) => (
+                  <option key={rollo.id} value={rollo.id}>{rollo.identificadorRollo}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {linea.calidad === "segunda" && (
             <div>
               <label className="produccion-label">Motivo / descripción del defecto</label>

@@ -112,6 +112,7 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
               <PanelStockAdicionalProduccion
                 tipoProducto={p.tipoProducto}
                 stockAdicional={p.stockAdicional}
+                rollosSeleccionados={p.rollosSeleccionados}
                 metrosPorUnidad={p.metrosPorUnidad}
                 setMetrosPorUnidad={p.setMetrosPorUnidad}
                 actualizarLineaStock={p.actualizarLineaStock}

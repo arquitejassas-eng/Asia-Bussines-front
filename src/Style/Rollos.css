@@ -478,3 +478,6 @@
   color: var(--at-terra, #B7451F);
   font-family: var(--at-font-mono, "DM Mono", monospace);
 }
+
+/* Historial del rollo: el stock que sobró de sus producciones. */
+.rollos-historial-stock td { background: color-mix(in srgb, #2f7d4f 8%, transparent); }
