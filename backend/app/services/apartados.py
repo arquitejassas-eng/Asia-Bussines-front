@@ -582,9 +582,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         fecha_creacion=ahora,
         estado=EstadoApartado.APARTADO,
         observaciones=datos.observaciones,
-        # Solo rollos completos (y stock): no hay nada que producir, queda
-        # en "Pendientes por dar salida" hasta que se entregue.
-        salida_pendiente=_solo_rollos_completos(datos.items),
+        # Aunque solo tenga rollos completos va a Planta: allá alistan y mueven
+        # el rollo, lo marcan terminado y entonces queda por dar salida.
     )
     db.add(apartado)
     db.flush()
@@ -732,7 +731,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
                 rollo_id=linea.rollo_id,
             ))
     if apartado.estado == EstadoApartado.APARTADO:
-        apartado.salida_pendiente = _solo_rollos_completos(apartado.items)
+        apartado.salida_pendiente = False
     db.flush()
     return apartado
 
@@ -862,7 +861,7 @@ def separar_apartado(db: Session, apartado_id: int, datos: SepararApartadoReques
     db.flush()
     db.expire(original, ["items"])
     db.expire(nueva, ["items"])
-    if not producida and (original.salida_pendiente or _solo_rollos_completos(nueva.items)):
+    if not producida and original.salida_pendiente:
         nueva.salida_pendiente = True
 
     # Si lo que queda en la original ya salió completo, la original termina.
@@ -911,8 +910,11 @@ def enviar_a_produccion(db: Session, apartado_id: int, usuario: Usuario) -> Apar
     apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
     if apartado.estado != EstadoApartado.APARTADO:
         raise HTTPException(status_code=400, detail="Este apartado ya fue enviado a producción o no está activo.")
-    if apartado.salida_pendiente:
+    if apartado.salida_pendiente and not _solo_rollos_completos(apartado.items):
         raise HTTPException(status_code=400, detail="Esta cotización no tiene nada que producir: se le da salida desde Apartados.")
+    # Un rollo completo también pasa por Planta (alistan el rollo); las
+    # creadas antes de esto quedaban "por dar salida" sin poder enviarse.
+    apartado.salida_pendiente = False
     faltantes = faltantes_apartado(db, apartado)
     if faltantes:
         raise HTTPException(

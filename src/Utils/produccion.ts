@@ -12,11 +12,14 @@ export const NOMBRE_POR_TIPO_PRODUCTO: Record<string, string> = { caballete: "ca
 type ApartadoItemPendiente = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string;
   cantidad: number; medida: number | null; metrosPendientes: number | null;
+  rolloId?: number | null; rolloReferencia?: string;
 };
 type ApartadoParaProduccion = { id: number; numeroCotizacion: string; cliente: string; empresa?: string; items: ApartadoItemPendiente[] };
 export type SolicitudProduccionPendiente = {
   itemId: number; apartadoId: number; numeroCotizacion: string; cliente: string; empresa: string;
   codigoInterno: string | null; descripcion: string; cantidad: number; medida: number | null; metrosPendientes: number;
+  // Rollo completo: Planta no lo produce, solo lo alista y lo mueve.
+  rolloCompleto?: boolean; rolloReferencia?: string;
 };
 
 /** Ítems POR_ROLLO de apartados ya enviados a producción que todavía tienen
@@ -28,12 +31,14 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
   // Las "pendientes por dar salida" ya salieron de la bodega: no se producen.
   return apartados.filter((ap) => !(ap as { salidaPendiente?: boolean }).salidaPendiente).flatMap((ap) =>
     ap.items
-      // Un rollo completo no se produce: se le da salida desde Apartados.
-      .filter((it) => it.modalidad === "por_rollo" && !(it as { rolloId?: number | null }).rolloId && (it.metrosPendientes ?? 0) > 0)
+      // Un rollo completo también llega a Planta (lo alistan y lo mueven),
+      // pero no se produce: su salida se registra después desde Apartados.
+      .filter((it) => it.modalidad === "por_rollo" && (it.metrosPendientes ?? 0) > 0)
       .map((it) => ({
         itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, empresa: ap.empresa || "",
         codigoInterno: it.codigoInterno, descripcion: it.descripcion, cantidad: it.cantidad, medida: it.medida,
         metrosPendientes: it.metrosPendientes ?? 0,
+        rolloCompleto: Boolean(it.rolloId), rolloReferencia: it.rolloReferencia || "",
       }))
   );
 }

@@ -41,11 +41,17 @@ const PESTANAS: Record<Pestana, string> = {
 };
 const ESTADO_DE_PESTANA: Partial<Record<Pestana, string>> = { entregadas: "entregado", canceladas: "cancelado" };
 const CERRADAS = Object.values(ESTADO_DE_PESTANA);
+// Una cotización de rollo completo creada antes de que pasaran por Planta
+// quedaba "por dar salida" sin enviarse: mientras esté en "apartado" se
+// trata como cualquier otra (se envía a producción).
+function porDarSalida(ap: { estado: string; salidaPendiente: boolean }) {
+  return ap.salidaPendiente && ap.estado !== "apartado";
+}
 function vaEnPestana(ap: { estado: string; salidaPendiente: boolean }, pestana: Pestana) {
   const estadoPropio = ESTADO_DE_PESTANA[pestana];
   if (estadoPropio) return ap.estado === estadoPropio;
   if (CERRADAS.includes(ap.estado)) return false;
-  return ap.salidaPendiente === (pestana === "pendientes_salida");
+  return porDarSalida(ap) === (pestana === "pendientes_salida");
 }
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
@@ -670,13 +676,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               )}
                             </td>
                             <td className="ap-col-estado">
-                              {ap.salidaPendiente && !CERRADAS.includes(ap.estado)
+                              {porDarSalida(ap) && !CERRADAS.includes(ap.estado)
                                 ? <span className="apartados-estado estado-por_dar_salida">Por dar salida</span>
                                 : <span className={`apartados-estado estado-${ap.estado}`}>{ETIQUETAS_ESTADO[ap.estado] || ap.estado}</span>}
                             </td>
                             <td className="ap-col-fecha" data-etiqueta="Creado" style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
                             <td className="inventario-acciones ap-col-acciones">
-                              {a.puedeEnviarAProduccion && ap.estado === "apartado" && !ap.salidaPendiente && (
+                              {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
                                 <button
                                   disabled={ap.faltantes.length > 0}
                                   title={ap.faltantes.length ? "Esperando material: se habilita cuando le des ingreso" : undefined}

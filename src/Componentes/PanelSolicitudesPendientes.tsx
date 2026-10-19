@@ -34,6 +34,10 @@ function PanelSolicitudesPendientes({
         Elige la línea a producir con "Iniciar producción": se llenan los datos del producto y abajo
         aparecen los rollos de ese código para que elijas cuál(es) usar. Si otra línea es del mismo modelo,
         color y espesor (solo cambia la medida), dale "+ Producir junto" para registrarlas en la misma producción.
+        {solicitudesPendientes.some((s) => s.rolloCompleto) && (
+          <> Los <strong>rollos completos</strong> no se producen: alístalos y muévelos, y cuando todo esté listo
+          dale "Marcar producción terminada".</>
+        )}
       </p>
       {errorSolicitudPendiente && <p className="produccion-error">{errorSolicitudPendiente}</p>}
       <div className="produccion-tabla-wrap">
@@ -56,10 +60,15 @@ function PanelSolicitudesPendientes({
                 style={elegida ? { fontWeight: 600 } : undefined}
               >
                 <td data-etiqueta="Código" style={{ whiteSpace: "nowrap" }}>{s.codigoInterno}</td>
-                <td>{s.descripcion || "—"}</td>
+                <td>
+                  {s.rolloCompleto && <strong>Rollo completo {s.rolloReferencia}: </strong>}
+                  {s.descripcion || "—"}
+                </td>
                 <td data-etiqueta="Pendiente" style={{ whiteSpace: "nowrap" }}>{s.metrosPendientes} m</td>
                 <td>
-                  {apartadoItemId === s.itemId ? (
+                  {s.rolloCompleto ? (
+                    <span className="produccion-vacio">Alistar y mover el rollo (no se produce)</span>
+                  ) : apartadoItemId === s.itemId ? (
                     <button type="button" className="produccion-boton-secundario" onClick={limpiarSolicitud}>
                       Quitar vínculo
                     </button>
