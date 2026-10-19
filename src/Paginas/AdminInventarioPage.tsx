@@ -218,16 +218,18 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                     <thead>
                       <tr>
                         <th>Código</th>
+                        <th>Empresa</th>
                         <th>Descripción</th>
                         <th>Stock disponible</th>
                         <th>Cantidad a enviar</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(c.misProductos as { id: number; codigo: string; descripcion: string; stock: number; familia: string }[])
+                      {(c.misProductos as { id: number; codigo: string; empresa: string; descripcion: string; stock: number; familia: string }[])
                         .filter((p) => Number(p.stock) > 0).map((p) => (
                         <tr key={p.id}>
                           <td>{p.codigo}</td>
+                          <td>{p.empresa ? nombreEmpresa(p.empresa) : "—"}</td>
                           <td>{p.descripcion}</td>
                           <td>{p.stock} {almacen?.unidadPorFamilia?.[p.familia] || ""}</td>
                           <td>
@@ -235,8 +237,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                               type="number" min="0" max={p.stock}
                               step={almacen?.decimalesPorFamilia?.[p.familia] === false ? "1" : "any"}
                               style={{ width: "6rem" }}
-                              value={c.formularioEnvio.itemsProducto.find((it) => it.codigo === p.codigo)?.cantidad || ""}
-                              onChange={(e) => c.actualizarCantidadProductoEnvio(p.codigo, e.target.value)}
+                              value={c.formularioEnvio.itemsProducto.find((it) => it.codigo === p.codigo && it.empresa === (p.empresa || ""))?.cantidad || ""}
+                              onChange={(e) => c.actualizarCantidadProductoEnvio(p.codigo, p.empresa || "", e.target.value)}
                             />
                           </td>
                         </tr>
@@ -481,7 +483,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   </div>
                   <p className="inventario-carga-ayuda">
                     Productos (mercancía por unidades, no rollos de materia prima) agrupados en tarjetas igual
-                    que el inventario de cada bodega: ábrelas para ver cada código en cada sede.{c.empresaResumen && " El filtro de empresa no aplica aquí: los productos no llevan empresa."}
+                    que el inventario de cada bodega: ábrelas para ver cada código en cada sede.{c.empresaResumen && " Solo se cuenta el stock de la empresa elegida."}
                   </p>
                   <div className="inventario-buscador">
                     <input

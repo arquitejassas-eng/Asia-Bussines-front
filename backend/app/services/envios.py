@@ -22,6 +22,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.schemas.envios import EnvioCrear
+from app.services.empresas import sigla_empresa_desde_nombre
 from app.services.productos import nuevo_producto_en_bodega
 from app.services.unidades_familia import validar_cantidad_entera_si_aplica
 
@@ -91,7 +92,8 @@ def crear_envio(db: Session, datos: EnvioCrear, usuario: Usuario) -> Envio:
         else:
             producto = (
                 db.query(Producto)
-                .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id.is_(None))
+                .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id.is_(None),
+                        Producto.empresa == sigla_empresa_desde_nombre(item.empresa))
                 .with_for_update()
                 .first()
             )
@@ -104,7 +106,7 @@ def crear_envio(db: Session, datos: EnvioCrear, usuario: Usuario) -> Envio:
             validar_cantidad_entera_si_aplica(db, producto.familia, item.cantidad)
             producto.stock -= cantidad
             db.add(EnvioItem(
-                envio_id=envio.id, producto_codigo=producto.codigo, descripcion=producto.descripcion,
+                envio_id=envio.id, producto_codigo=producto.codigo, empresa=producto.empresa, descripcion=producto.descripcion,
                 cantidad=item.cantidad,
             ))
 
@@ -144,7 +146,8 @@ def confirmar_envio_recibido(db: Session, envio_id: int, usuario: Usuario) -> En
             cantidad = _decimal(item.cantidad or 0)
             producto_destino = (
                 db.query(Producto)
-                .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id == usuario.bodega_id)
+                .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id == usuario.bodega_id,
+                        Producto.empresa == (item.empresa or ""))
                 .with_for_update()
                 .first()
             )
@@ -157,7 +160,8 @@ def confirmar_envio_recibido(db: Session, envio_id: int, usuario: Usuario) -> En
                 # productos.nuevo_producto_en_bodega.
                 producto_origen = (
                     db.query(Producto)
-                    .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id.is_(None))
+                    .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id.is_(None),
+                            Producto.empresa == (item.empresa or ""))
                     .first()
                 )
                 if producto_origen is not None:
@@ -165,6 +169,7 @@ def confirmar_envio_recibido(db: Session, envio_id: int, usuario: Usuario) -> En
                 else:
                     db.add(Producto(
                         bodega_id=usuario.bodega_id, codigo=item.producto_codigo, descripcion=item.descripcion,
+                        empresa=item.empresa or "",
                         entrada=item.cantidad, stock=item.cantidad,
                     ))
             db.add(Movimiento(

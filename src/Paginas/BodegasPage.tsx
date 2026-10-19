@@ -1,5 +1,6 @@
 import BarraLateral from "../Componentes/BarraLateral";
 import { formatearFechaColombia } from "../Utils/fechas";
+import { nombreEmpresa } from "../Utils/empresas";
 import { useControladorBodegas } from "../Componentes/Bodegas";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import "../Style/Bodegas.css";
@@ -184,6 +185,7 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                     <thead>
                       <tr>
                         <th>Código</th>
+                        <th>Empresa</th>
                         <th>Rollo</th>
                         <th>Descripción</th>
                         <th>Stock disponible</th>
@@ -194,6 +196,7 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                       {b.inventarioBodegaSeleccionada.map((p) => (
                         <tr key={p.id}>
                           <td>{p.codigo}</td>
+                          <td>{(p as { empresa?: string }).empresa ? nombreEmpresa((p as { empresa?: string }).empresa) : "—"}</td>
                           <td>{p.identificadorRollo || "—"}</td>
                           <td>{p.descripcion}</td>
                           <td>{p.stock} {almacen?.unidadPorFamilia?.[p.familia] || ""}</td>

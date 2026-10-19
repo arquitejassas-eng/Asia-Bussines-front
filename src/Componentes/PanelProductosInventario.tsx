@@ -5,6 +5,7 @@ import PanelAdminUnidadesFamilia from "./PanelAdminUnidadesFamilia";
 import ModalConfirmacion from "./ModalConfirmacion";
 import { anchoPorSeccion } from "../Utils/produccion";
 import { esSegundaPorCodigo, longitudDesdeCodigo, calibrePantalla } from "../Utils/teja";
+import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
 
 // Pestaña "Productos" de Inventario: buscador, formulario de alta/edición y
 // tarjetas agrupadas por familia. Extraído de InventarioPage.tsx sin cambiar
@@ -101,6 +102,13 @@ function PanelProductosInventario({
                 value={formularioProducto.codigo}
                 onChange={(e) => actualizarCampoProducto("codigo", e.target.value)}
               />
+            </div>
+            <div>
+              <label>Empresa</label>
+              <select value={formularioProducto.empresa || ""} onChange={(e) => actualizarCampoProducto("empresa", e.target.value)}>
+                <option value="">Sin empresa</option>
+                {Object.entries(EMPRESAS).map(([sigla, nombre]) => <option key={sigla} value={sigla}>{nombre}</option>)}
+              </select>
             </div>
             <div>
               <label>Referencia</label>
@@ -296,6 +304,7 @@ function PanelProductosInventario({
                       <thead>
                         <tr>
                           <th>Código</th>
+                          <th>Empresa</th>
                           <th>{esTeja ? "Modelo" : "Referencia"}</th>
                           <th>Descripción</th>
                           {esTeja && <th>Rollo origen</th>}
@@ -313,6 +322,7 @@ function PanelProductosInventario({
                         {grupo.productos.map((p) => (
                           <tr key={p.id}>
                             <td>{p.codigo}</td>
+                            <td>{p.empresa ? nombreEmpresa(p.empresa) : "—"}</td>
                             <td>{p.referencia || "—"}</td>
                             <td>{p.descripcion}</td>
                             {esTeja && <td>{p.codigoRolloOrigen || "—"}</td>}

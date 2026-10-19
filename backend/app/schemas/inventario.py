@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.services.empresas import sigla_empresa_desde_nombre
 
 from app.schemas.fechas import ModeloConFechasUtc
 
@@ -10,6 +11,8 @@ from app.models.movimiento import TipoMovimiento
 class ProductoBase(BaseModel):
     codigo_importacion: str = ""
     codigo: str
+    # "AR", "ABG" o "" (sin empresa).
+    empresa: str = ""
     referencia: str = ""
     descripcion: str
     familia: str = ""
@@ -32,6 +35,14 @@ class ProductoCrear(ProductoBase):
     # respuesta también hereda de ahí y hay stock histórico en negativo.)
     entrada: float = Field(default=0, ge=0)
     stock: float = Field(default=0, ge=0)
+
+    @field_validator("empresa")
+    @classmethod
+    def _empresa_conocida(cls, valor: str) -> str:
+        sigla = sigla_empresa_desde_nombre(valor) if (valor or "").strip() else ""
+        if (valor or "").strip() and not sigla:
+            raise ValueError("Empresa no válida: usa Arquitejas (AR) o Asia Business (ABG).")
+        return sigla
 
 
 class ProductoActualizar(ProductoCrear):
@@ -159,3 +170,5 @@ class MovimientoCrear(BaseModel):
     bodega_destino_id: int | None = None
     cantidad: float
     observaciones: str = ""
+    # Solo para una entrada que crea el producto: de qué empresa es.
+    empresa: str = ""

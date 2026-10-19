@@ -28,7 +28,7 @@ type Comparativo = {
   calibresSinEquivalencia: number[];
   totalesPorEmpresa: Record<string, MetrosEmpresa>;
 };
-type ItemProducto = { codigo: string; cantidad: string };
+type ItemProducto = { codigo: string; empresa: string; cantidad: string };
 type FormularioEnvio = { bodegaDestinoId: string; rollosSeleccionados: number[]; itemsProducto: ItemProducto[]; observaciones: string };
 
 const COMPARATIVO_VACIO: Comparativo = {
@@ -294,12 +294,13 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     }));
   }
 
-  function actualizarCantidadProductoEnvio(codigo: string, cantidadTexto: string) {
+  // El mismo código puede ser de las dos empresas: cada uno es un ítem aparte.
+  function actualizarCantidadProductoEnvio(codigo: string, empresa: string, cantidadTexto: string) {
     setFormularioEnvio((actual) => {
       const cantidad = cantidadTexto.trim();
-      const resto = actual.itemsProducto.filter((it) => it.codigo !== codigo);
+      const resto = actual.itemsProducto.filter((it) => !(it.codigo === codigo && it.empresa === empresa));
       if (!cantidad) return { ...actual, itemsProducto: resto };
-      return { ...actual, itemsProducto: [...resto, { codigo, cantidad }] };
+      return { ...actual, itemsProducto: [...resto, { codigo, empresa, cantidad }] };
     });
   }
 
@@ -313,7 +314,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     const itemsRollo = f.rollosSeleccionados.map((rolloId) => ({ rollo_id: rolloId }));
     const itemsProducto = f.itemsProducto
       .filter((it) => Number(it.cantidad) > 0)
-      .map((it) => ({ producto_codigo: it.codigo, cantidad: Number(it.cantidad) }));
+      .map((it) => ({ producto_codigo: it.codigo, empresa: it.empresa, cantidad: Number(it.cantidad) }));
     const items = [...itemsRollo, ...itemsProducto];
     if (items.length === 0) {
       setErrorFormularioEnvio("Selecciona al menos un rollo o una cantidad de producto para enviar.");

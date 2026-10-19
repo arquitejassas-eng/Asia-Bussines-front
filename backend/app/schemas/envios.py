@@ -12,6 +12,8 @@ class EnvioItemCrear(BaseModel):
     producto por unidades (`producto_codigo` + `cantidad`)."""
     rollo_id: int | None = None
     producto_codigo: str | None = None
+    # Empresa del producto (el mismo código puede ser de Arquitejas y de Asia).
+    empresa: str = ""
     cantidad: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
@@ -38,6 +40,7 @@ class EnvioItemResponse(BaseModel):
     id: int
     rollo_id: int | None
     producto_codigo: str | None
+    empresa: str = ""
     descripcion: str
     cantidad: float | None
 

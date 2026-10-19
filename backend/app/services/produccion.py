@@ -192,6 +192,7 @@ def _buscar_producto_existente(
     codigo_rollo_origen_stock: str,
     ancho_rollo_stock: float | None,
     metros: float | None = None,
+    empresa: str = "",
 ) -> Producto | None:
     """Busca un `Producto` que ya tenga exactamente la misma identidad que
     generaría esta línea de stock adicional, para sumarle el stock en vez de
@@ -222,6 +223,7 @@ def _buscar_producto_existente(
             .filter(
                 Producto.bodega_id == usuario.bodega_id,
                 Producto.familia == "TEJA",
+                func.coalesce(Producto.empresa, "") == empresa,
                 func.coalesce(Producto.color, "") == datos.color.strip(),
                 func.coalesce(Producto.codigo_rollo_origen, "") == codigo_rollo_origen_stock.strip(),
             )
@@ -245,6 +247,7 @@ def _buscar_producto_existente(
         .filter(
             Producto.bodega_id == usuario.bodega_id,
             Producto.familia == familia_stock,
+            func.coalesce(Producto.empresa, "") == empresa,
             func.coalesce(Producto.codigo_rollo_origen, "") == codigo_rollo_origen_stock.strip(),
             Producto.ancho_rollo == ancho_rollo_stock,
             Producto.metros_por_unidad == metros,
@@ -563,11 +566,15 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
 
     for indice, item_stock in enumerate(datos.stock_adicional, start=1):
         metros_linea = metros_de_linea_stock(datos, item_stock)
+        # El stock es de la empresa del rollo de donde salió ("Salió del rollo",
+        # o el primero si no se dijo).
+        empresa_linea = ((rollo_de_linea.get(indice - 1) or bloqueados[0]).empresa or "")
         descripcion = _descripcion_stock(datos, codigo_rollo_origen_stock, metros_linea) + (
             " (Segunda)" if item_stock.calidad == "segunda" else "")
 
         producto_existente = _buscar_producto_existente(
             db, usuario, datos, item_stock, familia_stock, codigo_rollo_origen_stock, ancho_rollo_stock, metros_linea,
+            empresa_linea,
         )
 
         if producto_existente is not None:
@@ -579,6 +586,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         else:
             producto_stock = Producto(
                 bodega_id=usuario.bodega_id,
+                empresa=empresa_linea,
                 codigo=f"{codigo_unico}-{indice}",
                 descripcion=descripcion[:255],
                 familia=familia_stock,

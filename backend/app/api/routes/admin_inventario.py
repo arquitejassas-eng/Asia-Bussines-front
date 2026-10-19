@@ -176,7 +176,7 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
     ni producto. Admin Inventario nunca aparece: su propio material sin
     asignar (bodega_id IS NULL) se consulta en /rollos e
     /inventario/productos, no aquí. `empresa` (sigla o "sin_empresa")
-    filtra solo los rollos: los productos no llevan empresa."""
+    filtra rollos y productos (cada producto lleva su empresa)."""
     bodegas = db.query(Bodega).order_by(Bodega.nombre).all()
 
     # Peso ACTUAL por rollo (no el peso neto de ingreso): metros disponibles
@@ -229,7 +229,9 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
             func.max(Producto.familia), func.max(Producto.referencia), func.max(Producto.tipo_producto),
             func.max(Producto.metros_por_unidad),
         )
-        .filter(Producto.bodega_id.isnot(None), Producto.familia != "Rollos de acero")
+        .filter(Producto.bodega_id.isnot(None), Producto.familia != "Rollos de acero",
+                # Con filtro de empresa, solo el stock de esa empresa.
+                *([Producto.empresa == filtro_empresa(empresa)] if empresa else []))
         .group_by(Producto.codigo, Producto.bodega_id)
         .all()
     )

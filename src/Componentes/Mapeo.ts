@@ -16,6 +16,8 @@ export function usuarioDesdeApi(u: RegistroApi) {
 export function productoDesdeApi(p: RegistroApi) {
   return { id: numero(p.id), bodegaId: numeroOpcional(p.bodega_id), codigoImportacion: texto(p.codigo_importacion),
     codigo: texto(p.codigo), referencia: texto(p.referencia), descripcion: texto(p.descripcion), familia: texto(p.familia), calibre: texto(p.calibre),
+    // "AR", "ABG" o "" (sin empresa): el mismo código puede ser de las dos.
+    empresa: texto(p.empresa),
     entrada: numero(p.entrada), stock: numero(p.stock), stockMinimo: numeroOpcional(p.stock_minimo),
     pesoNeto: p.peso_neto == null ? null : numero(p.peso_neto), rolloId: p.rollo_id == null ? null : numero(p.rollo_id),
     identificadorRollo: texto(p.identificador_rollo),

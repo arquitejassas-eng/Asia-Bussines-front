@@ -15,7 +15,10 @@ class Producto(Base):
     # NULL en bodega_id (pool de Admin Inventario) NO queda cubierto por esta
     # constraint -- NULL nunca es igual a otro NULL en SQL estándar. Cubre
     # bodegas reales, que es el escenario de cargas simultáneas que importaba.
-    __table_args__ = (UniqueConstraint("bodega_id", "codigo", name="uq_productos_bodega_codigo"),)
+    # Un mismo código puede estar en las dos empresas de una bodega (ej. AM-B
+    # de Arquitejas y AM-B de Asia en Ricaurte): la identidad es bodega +
+    # código + empresa.
+    __table_args__ = (UniqueConstraint("bodega_id", "codigo", "empresa", name="uq_productos_bodega_codigo_empresa"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # NULL = material de Admin Inventario, aún sin repartir a ninguna sede.
@@ -28,6 +31,9 @@ class Producto(Base):
     referencia: Mapped[str] = mapped_column(String(50), default="")
     descripcion: Mapped[str] = mapped_column(String(255), nullable=False)
     familia: Mapped[str] = mapped_column(String(50), default="")
+    # Empresa dueña del stock: "AR" (Arquitejas), "ABG" (Asia Business) o ""
+    # (sin empresa). Mismas siglas que Rollo.empresa y Apartado.empresa.
+    empresa: Mapped[str] = mapped_column(String(10), default="", server_default="", index=True)
     calibre: Mapped[str] = mapped_column(String(30), default="")
 
     entrada: Mapped[float] = mapped_column(Numeric(12, 2), default=0)

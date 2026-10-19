@@ -87,6 +87,7 @@ app.include_router(router_api)
 # funciona en ambos motores sin parsear el texto del error de cada uno.
 _MENSAJES_CONSTRAINT: dict[str, str] = {
     "uq_productos_bodega_codigo": "Ya existe un producto con ese código en tu bodega. Actualiza la página e intenta de nuevo.",
+    "uq_productos_bodega_codigo_empresa": "Ya existe un producto con ese código y esa empresa en tu bodega. Actualiza la página e intenta de nuevo.",
 }
 
 

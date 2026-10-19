@@ -21,7 +21,7 @@ FAMILIA_ROLLOS = "Rollos de acero"
 CAMPOS_IDENTIDAD_PRODUCTO = (
     "codigo_importacion", "codigo", "referencia", "descripcion", "familia", "calibre", "stock_minimo",
     "color", "ral", "calidad", "motivo_segunda", "metros_por_unidad", "codigo_rollo_origen",
-    "ancho_rollo", "tipo_producto",
+    "ancho_rollo", "tipo_producto", "empresa",
 )
 
 

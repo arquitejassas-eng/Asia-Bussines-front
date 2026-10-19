@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { useEffect, useState } from "react";
+import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
 
 // Pestaña "Movimientos" de Inventario: registrar entrada/salida/traslado,
 // incluida la lógica de Porcelanato (cantidad por cajas o por m²).
@@ -136,7 +137,7 @@ function PanelMovimientosInventario({
                 )}
                 {productos.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.codigo} — {p.descripcion}
+                    {p.codigo} — {p.descripcion}{p.empresa ? ` (${nombreEmpresa(p.empresa)})` : ""}
                   </option>
                 ))}
               </select>
@@ -164,6 +165,13 @@ function PanelMovimientosInventario({
                 <div>
                   <label>Calibre</label>
                   <input value={formularioMov.calibreNuevo} onChange={(e) => actualizarCampoMov("calibreNuevo", e.target.value)} />
+                </div>
+                <div>
+                  <label>Empresa</label>
+                  <select value={formularioMov.empresaNueva || ""} onChange={(e) => actualizarCampoMov("empresaNueva", e.target.value)}>
+                    <option value="">Sin empresa</option>
+                    {Object.entries(EMPRESAS).map(([sigla, nombre]) => <option key={sigla} value={sigla}>{nombre}</option>)}
+                  </select>
                 </div>
               </>
             )}

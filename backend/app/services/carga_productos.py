@@ -14,12 +14,13 @@ from secrets import token_hex
 import pandas as pd
 from sqlalchemy.exc import IntegrityError
 
+from app.services.empresas import sigla_empresa_desde_nombre
 from app.models.producto import Producto
 from app.services import clasificacion
 from app.services.clasificacion import normalizar_texto
 
 CAMPOS_REQUERIDOS = ["codigo", "descripcion", "stock"]
-CAMPOS_OPCIONALES = ["referencia", "codigo_importacion", "familia", "calibre", "entrada"]
+CAMPOS_OPCIONALES = ["referencia", "codigo_importacion", "familia", "calibre", "entrada", "empresa"]
 
 ALIAS_CAMPOS: dict[str, list[str]] = {
     "codigo": ["codigo", "codigo producto", "sku"],
@@ -30,6 +31,7 @@ ALIAS_CAMPOS: dict[str, list[str]] = {
     "codigo_importacion": ["codigo importacion", "codigo de importacion", "codigo proveedor", "referencia proveedor"],
     "familia": ["familia", "categoria", "linea"],
     "calibre": ["calibre", "medida"],
+    "empresa": ["empresa", "empresa receptora", "empresa duena"],
 }
 
 FAMILIA_ROLLOS_RESERVADA = "rollos de acero"
@@ -76,8 +78,9 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
     # Excel (mismo patrón que ya usa recepcion.py para la tabla de
     # equivalencia de espesores).
     filtro_bodega_todos = Producto.bodega_id.is_(None) if bodega_id is None else Producto.bodega_id == bodega_id
+    # Identidad: código + empresa (el mismo código puede ser de las dos).
     existentes = {
-        p.codigo: p
+        (p.codigo, p.empresa or ""): p
         for p in db.query(Producto).filter(filtro_bodega_todos).all()
     }
 
@@ -116,8 +119,9 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
         referencia = _valor(fila, mapeo, "referencia")
         calibre = _valor(fila, mapeo, "calibre")
         codigo_importacion = _valor(fila, mapeo, "codigo_importacion")
+        empresa = sigla_empresa_desde_nombre(_valor(fila, mapeo, "empresa"))
 
-        existente = existentes.get(codigo)
+        existente = existentes.get((codigo, empresa))
         if existente:
             existente.stock = stock
             existente.entrada = entrada
@@ -133,7 +137,7 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
             # app, ej. la búsqueda de productos por código de importación).
             codigo_importacion_final = codigo_importacion or f"IMP-{token_hex(4).upper()}"
             nuevo = Producto(
-                bodega_id=bodega_id, codigo=codigo, referencia=referencia, descripcion=descripcion,
+                bodega_id=bodega_id, codigo=codigo, referencia=referencia, descripcion=descripcion, empresa=empresa,
                 familia=familia, calibre=calibre, codigo_importacion=codigo_importacion_final,
                 entrada=entrada, stock=stock,
             )
@@ -156,7 +160,7 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
                     FilaOmitida(numero_fila, codigo, "Ese código ya fue creado justo ahora por otra carga -- reintenta esta fila.")
                 )
                 continue
-            existentes[codigo] = nuevo
+            existentes[(codigo, empresa)] = nuevo
             resultado.creados += 1
 
     return resultado

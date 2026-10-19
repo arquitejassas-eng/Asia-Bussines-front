@@ -7,6 +7,7 @@ import { useActualizacionAutomatica } from "./useActualizacionAutomatica";
 const FORMULARIO_VACIO = {
   codigoImportacion: "",
   codigo: "",
+  empresa: "",
   referencia: "",
   descripcion: "",
   familia: "",
@@ -19,7 +20,7 @@ const FORMULARIO_VACIO = {
 
 /** Estado y operaciones del catálogo de productos. */
 type Producto = {
-  id: number; codigoImportacion: string; codigo: string; referencia?: string; descripcion: string;
+  id: number; codigoImportacion: string; codigo: string; empresa?: string; referencia?: string; descripcion: string;
   familia?: string; calibre: string | number; entrada: number; stock: number; stockMinimo?: number | null;
   // Solo poblados para el stock adicional que genera Producción.
   color?: string; ral?: string; calidad?: string | null; motivoSegunda?: string;
@@ -36,7 +37,7 @@ type Producto = {
 export const FAMILIA_PORCELANATO = "PORCELANATO";
 export { FAMILIA_TEJA, normalizarFamilia } from "../Utils/agrupacionProductos";
 type FormularioProducto = {
-  codigoImportacion: string; codigo: string; referencia?: string; descripcion: string; familia?: string;
+  codigoImportacion: string; codigo: string; empresa?: string; referencia?: string; descripcion: string; familia?: string;
   calibre: string | number; entrada: string | number; stock: string | number; stockMinimo: string | number;
   metrosPorUnidad: string | number;
 };
@@ -127,6 +128,7 @@ export function useProductosInventario() {
     setFormularioProducto({
       codigoImportacion: producto.codigoImportacion,
       codigo: producto.codigo,
+      empresa: producto.empresa || "",
       referencia: producto.referencia || "",
       descripcion: producto.descripcion,
       familia: producto.familia || "",
@@ -163,6 +165,7 @@ export function useProductosInventario() {
       const cuerpo = {
         codigo_importacion: formularioProducto.codigoImportacion || "",
         codigo: formularioProducto.codigo,
+        empresa: formularioProducto.empresa || "",
         referencia: formularioProducto.referencia || "",
         descripcion: formularioProducto.descripcion,
         familia: formularioProducto.familia || "",

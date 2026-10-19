@@ -86,7 +86,7 @@ def crear_solicitud_transferencia(
     return Solicitud(
         fecha=datetime.now(timezone.utc), estado=EstadoSolicitud.PENDIENTE,
         tipo_operacion=datos.tipo_operacion, cantidad=datos.cantidad,
-        producto_codigo=producto.codigo, producto_descripcion=producto.descripcion,
+        producto_codigo=producto.codigo, producto_descripcion=producto.descripcion, empresa=producto.empresa,
         rollo_id=None, bodega_solicitante_id=usuario.bodega_id,
         bodega_propietaria_id=producto.bodega_id, solicitado_por=usuario.correo,
         observaciones=datos.observaciones,
@@ -149,7 +149,7 @@ def aceptar_solicitud_transferencia(
 
     producto_origen = (
         db.query(Producto)
-        .filter(Producto.codigo == solicitud.producto_codigo,
+        .filter(Producto.codigo == solicitud.producto_codigo, Producto.empresa == (solicitud.empresa or ""),
                 Producto.bodega_id == solicitud.bodega_propietaria_id)
         .with_for_update().first()
     )
@@ -160,7 +160,7 @@ def aceptar_solicitud_transferencia(
     producto_origen.stock -= cantidad
     producto_destino = (
         db.query(Producto)
-        .filter(Producto.codigo == solicitud.producto_codigo,
+        .filter(Producto.codigo == solicitud.producto_codigo, Producto.empresa == (solicitud.empresa or ""),
                 Producto.bodega_id == solicitud.bodega_solicitante_id)
         .with_for_update().first()
     )

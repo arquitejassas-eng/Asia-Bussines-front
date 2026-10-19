@@ -32,6 +32,8 @@ class Solicitud(Base):
 
     cantidad: Mapped[float] = mapped_column(Float, nullable=False)
     producto_codigo: Mapped[str] = mapped_column(String(60), nullable=False)
+    # Empresa del producto pedido (el mismo código puede ser de las dos).
+    empresa: Mapped[str] = mapped_column(String(10), default="", server_default="")
     producto_descripcion: Mapped[str] = mapped_column(String(255), default="")
     # Solo se informa para materia prima manejada por unidad (rollos).
     rollo_id: Mapped[int | None] = mapped_column(ForeignKey("rollos.id"), nullable=True, index=True)

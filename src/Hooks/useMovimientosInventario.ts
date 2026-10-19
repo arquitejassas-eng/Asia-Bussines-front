@@ -13,7 +13,7 @@ export const MOTIVOS_SALIDA = [
 ];
 const FORMULARIO_VACIO = {
   tipo: "entrada", motivo: "", productoId: "", bodegaDestinoId: "", cantidad: "", observaciones: "",
-  codigoNuevo: "", descripcionNueva: "", familiaNueva: "", calibreNuevo: "",
+  codigoNuevo: "", descripcionNueva: "", familiaNueva: "", calibreNuevo: "", empresaNueva: "",
 };
 
 /** Reglas de validación y persistencia de entradas, salidas y traslados. */
@@ -70,6 +70,7 @@ export function useMovimientosInventario({ sesion, almacen, cargarProductos, car
         codigo: esProductoNuevo ? formularioMov.codigoNuevo : "",
         descripcion: esProductoNuevo ? formularioMov.descripcionNueva : "",
         familia: esProductoNuevo ? formularioMov.familiaNueva : "",
+        empresa: esProductoNuevo ? formularioMov.empresaNueva : "",
         calibre: esProductoNuevo ? formularioMov.calibreNuevo : "",
         bodega_origen_id: tipo === "salida" || tipo === "traslado" ? bodegaId : null,
         bodega_destino_id: tipo === "traslado" ? Number(bodegaDestinoId) : null,

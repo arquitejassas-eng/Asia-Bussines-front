@@ -13,6 +13,7 @@ from app.models.producto import Producto
 from app.models.usuario import Usuario
 from app.schemas.inventario import MovimientoCrear
 from app.services.apartados import validar_reserva_producto
+from app.services.empresas import sigla_empresa_desde_nombre
 from app.services.productos import nuevo_producto_en_bodega
 from app.services.unidades_familia import validar_cantidad_entera_si_aplica
 
@@ -104,11 +105,13 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
     if producto_nuevo:
         codigo = datos.codigo.strip()
         descripcion = datos.descripcion.strip()
+        empresa_nueva = sigla_empresa_desde_nombre(datos.empresa)
         if not codigo or not descripcion:
             raise HTTPException(status_code=400, detail="Para un producto nuevo indica codigo y descripcion.")
         existente = (
             db.query(Producto)
-            .filter(coincide_bodega(Producto.bodega_id, usuario.bodega_id), Producto.codigo == codigo)
+            .filter(coincide_bodega(Producto.bodega_id, usuario.bodega_id), Producto.codigo == codigo,
+                    Producto.empresa == empresa_nueva)
             .with_for_update()
             .first()
         )
@@ -116,6 +119,7 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
             raise HTTPException(status_code=409, detail="Ese codigo ya existe. Selecciona el producto para registrar la entrada.")
         producto = Producto(
             bodega_id=usuario.bodega_id,
+            empresa=empresa_nueva,
             codigo_importacion=datos.codigo_importacion.strip(),
             codigo=codigo,
             descripcion=descripcion,
@@ -158,7 +162,7 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
         destino = datos.bodega_destino_id
         producto_destino = (
             db.query(Producto)
-            .filter(Producto.codigo == producto.codigo, Producto.bodega_id == destino)
+            .filter(Producto.codigo == producto.codigo, Producto.bodega_id == destino, Producto.empresa == producto.empresa)
             .with_for_update()
             .first()
         )

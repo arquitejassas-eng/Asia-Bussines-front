@@ -72,12 +72,12 @@ def crear_producto(datos: ProductoCrear, db: Session = Depends(get_db), usuario:
     codigo = datos.codigo.strip()
     existente = (
         db.query(Producto)
-        .filter(coincide_bodega(Producto.bodega_id, usuario.bodega_id), Producto.codigo == codigo)
+        .filter(coincide_bodega(Producto.bodega_id, usuario.bodega_id), Producto.codigo == codigo, Producto.empresa == datos.empresa)
         .with_for_update()
         .first()
     )
     if existente:
-        raise HTTPException(status_code=409, detail=f"Ya existe un producto con el código '{codigo}' en tu bodega.")
+        raise HTTPException(status_code=409, detail=f"Ya existe un producto con el código '{codigo}' y esa empresa en tu bodega.")
     producto = Producto(bodega_id=usuario.bodega_id, **{**datos.model_dump(), "codigo": codigo})
     # Producto.tipo_producto es la fuente estructural de qué tipo de stock es
     # esta fila (ver Producción: "caballete"/"flanche") — un producto creado
@@ -102,6 +102,10 @@ def actualizar_producto(producto_id: int, datos: ProductoActualizar, db: Session
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.entrada)
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.stock)
     campos_de_stock = {"stock", "entrada", "stock_anterior", "entrada_anterior"}
+    # La empresa solo cambia si el formulario la manda (una pantalla vieja
+    # que no la conoce no la borra).
+    if "empresa" not in datos.model_fields_set:
+        campos_de_stock = campos_de_stock | {"empresa"}
     for campo, valor in datos.model_dump(exclude=campos_de_stock).items(): setattr(producto, campo, valor)
     aplicar_stock_editado(
         db, producto, stock=datos.stock, stock_anterior=datos.stock_anterior,
