@@ -83,6 +83,32 @@ SUFIJO_SALIDA_PENDIENTE = "SAL"
 MERMA = "MERMA"
 CODIGO_LAMINA = re.compile(r"^L[A-Z]\d{5},\d{2}$")
 CODIGO_TRASLADO = re.compile(r"^TRA[SN]\b", re.IGNORECASE)
+# "42 TEJAS DE 6 MTR ...", "5 X 7 MTR TEJA ...", "1 LAMINA LISA ... 3,00 MTR": la
+# primera medida en metros que aparece después de la cantidad es la de cada pieza.
+PIEZAS_EN_DESCRIPCION = re.compile(
+    r"^\W*\d+(?:\s*X\s*|\s*(?:TEJA|LAMINA)\w*\b\D*?)(\d+(?:[.,]\d+)?)\s*MTRS?\b", re.IGNORECASE)
+# "66 TEJAS MASTERMIL CAL 24 (0.43) AZUL 5017 DE 6.50 MTR": la medida va al final.
+PIEZAS_MEDIDA_AL_FINAL = re.compile(r"^\W*\d+\s*TEJA\w*\b.*?\bDE\s+(\d+(?:[.,]\d+)?)\s*MTRS?\b", re.IGNORECASE)
+ES_ROLLO = re.compile(r"^\W*(\d+\s*)?ROLLO\b", re.IGNORECASE)
+
+
+def cantidad_y_medida(descripcion: str, metros: float) -> tuple[float, float]:
+    """Cantidad de piezas y metros por pieza de una línea importada.
+
+    SALE trae metros; si la descripción dice la medida de cada teja y esos
+    metros son piezas enteras de esa medida (ej. 252 m de "42 TEJAS DE 6 MTR"
+    = 42 × 6), se guarda 42 × 6. SALE puede ser solo lo que falta (ej. 12 m de
+    "60 TEJAS DE 6 MTR" = 2 × 6). Si no se puede saber (un rollo, "700 METROS
+    DE TEJA", la colonial con traslape), queda en metros: cantidad = metros,
+    medida = 1. Los metros apartados nunca cambian."""
+    texto = _normalizar(descripcion)
+    encontrado = PIEZAS_EN_DESCRIPCION.match(texto) or PIEZAS_MEDIDA_AL_FINAL.match(texto)
+    if encontrado and not ES_ROLLO.match(texto):
+        medida = float(encontrado.group(1).replace(",", "."))
+        piezas = round(metros / medida) if medida > 0 else 0
+        if piezas >= 1 and abs(piezas * medida - metros) < 0.01:
+            return float(piezas), medida
+    return metros, 1.0
 
 
 def _normalizar(texto) -> str:
@@ -313,9 +339,10 @@ def crear(db: Session, resultado: ResultadoImportacion, usuario: Usuario, nombre
         db.add(apartado)
         db.flush()
         for linea in importado.lineas:
+            cantidad, medida = cantidad_y_medida(linea.descripcion, linea.cantidad)
             db.add(ApartadoItem(
                 apartado_id=apartado.id, modalidad=ModalidadApartado.POR_ROLLO, codigo_interno=linea.codigo,
-                descripcion=linea.descripcion, cantidad=linea.cantidad, medida=1, metros_requeridos=linea.cantidad,
+                descripcion=linea.descripcion, cantidad=cantidad, medida=medida, metros_requeridos=linea.cantidad,
             ))
         creados.append(apartado)
     db.flush()
