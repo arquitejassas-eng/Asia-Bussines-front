@@ -3,7 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, produccionDesdeApi, rolloDesdeApi } from "./Mapeo";
-import { calcularSolicitudesPendientes, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/produccion";
+import {
+  calcularSolicitudesPendientes, calcularStockParaAlistar, cotizacionesParaPlanta, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO,
+} from "../Utils/produccion";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import { coincideKilos, kilosBuscados } from "../Utils/kilos";
 import { modeloEnDescripcion } from "../Utils/teja";
@@ -189,6 +191,9 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     () => calcularSolicitudesPendientes(apartadosPendientes),
     [apartadosPendientes]
   );
+  // Productos de stock que Planta alista con el pedido (y corta si lo dice).
+  const stockParaAlistar = useMemo(() => calcularStockParaAlistar(apartadosPendientes), [apartadosPendientes]);
+  const cotizacionesConTrabajo = useMemo(() => cotizacionesParaPlanta(apartadosPendientes).size, [apartadosPendientes]);
 
   // La cotización que llega por querystring (botón "Iniciar Producción" de
   // Apartados) se muestra primero en la lista, para que quien registra la
@@ -914,6 +919,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     misProducciones,
 
     solicitudesPendientes,
+    stockParaAlistar,
+    cotizacionesConTrabajo,
     cotizacionResaltada,
     apartadoItemId,
     itemsJuntos,

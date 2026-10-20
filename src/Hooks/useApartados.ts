@@ -50,7 +50,7 @@ type Apartado = {
   fechaCreacion: string; estado: string; enviadoAProduccionPor: string; fechaEnviadoAProduccion: string | null;
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;
-  faltantes: string[]; items: ApartadoItem[];
+  faltantes: string[]; otrasPartes: string[]; items: ApartadoItem[];
 };
 
 /** Quita la posición `indice` de un objeto indexado por posición y corre
@@ -125,9 +125,14 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
   // Cotización que se está editando (null = se está creando una nueva).
   const [editandoId, setEditandoId] = useState<number | null>(null);
+  // Bodega y otras partes activas de la cotización que se está editando: si
+  // tiene otras partes, se le pueden quitar todas las líneas (se borra solo
+  // esta parte; ver backend quitar_parte).
+  const [parteEditada, setParteEditada] = useState<{ bodega: string; otrasPartes: string[] }>({ bodega: "", otrasPartes: [] });
 
   function abrirFormularioApartado() {
     setEditandoId(null);
+    setParteEditada({ bodega: "", otrasPartes: [] });
     setFormulario(FORMULARIO_VACIO);
     setErrorFormularioApartado("");
     setDisponibilidadItems({});
@@ -138,6 +143,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   /** Abre el mismo formulario con los datos de la cotización para corregirla. */
   function abrirEdicionApartado(ap: Apartado) {
     setEditandoId(ap.id);
+    setParteEditada({ bodega: ap.bodegaNombre, otrasPartes: ap.otrasPartes });
     setFormulario({
       bodegaId: String(ap.bodegaId), empresa: ap.empresa, materialEnCamino: (ap.faltantes?.length ?? 0) > 0,
       numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, observaciones: ap.observaciones,
@@ -383,7 +389,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       setErrorFormularioApartado("Indica el número de cotización.");
       return;
     }
-    if (formulario.items.length === 0) {
+    if (formulario.items.length === 0 && !(editandoId && parteEditada.otrasPartes.length > 0)) {
       setErrorFormularioApartado("Agrega al menos un producto solicitado.");
       return;
     }
@@ -501,7 +507,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     filtroEstado, setFiltroEstado,
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
-    editandoId, abrirEdicionApartado,
+    editandoId, abrirEdicionApartado, parteEditada,
     actualizarCampoApartado, cambiarBodegaApartado, cambiarBodegaItem, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
     cambiarModalidadItem, rollosParaApartar, cargarRollosParaApartar, seleccionarRolloCompleto,
     guardandoApartado, errorFormularioApartado, crearApartado,

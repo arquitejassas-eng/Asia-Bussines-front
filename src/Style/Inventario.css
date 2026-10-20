@@ -678,6 +678,14 @@
 .apartado-linea-lista {
   opacity: 0.6;
 }
+/* Línea de stock con corte (ej. UPVC de 11,80 m cortada a 7 m): la hace Planta. */
+.apartado-linea-cortar {
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--at-red, #C23B2C);
+}
 .apartado-chips {
   display: flex;
   flex-wrap: wrap;

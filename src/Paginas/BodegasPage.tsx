@@ -2,15 +2,10 @@ import BarraLateral from "../Componentes/BarraLateral";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { nombreEmpresa } from "../Utils/empresas";
 import { useControladorBodegas } from "../Componentes/Bodegas";
+import PanelTraslados from "../Componentes/PanelTraslados";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import "../Style/Bodegas.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
-
-const ETIQUETAS_ESTADO_SOLICITUD: Record<string, string> = {
-  pendiente: "Pendiente",
-  aceptada: "Aceptada",
-  rechazada: "Rechazada",
-};
 
 const kg = (valor: number) => `${Math.round(valor).toLocaleString("es-CO")} kg`;
 
@@ -40,8 +35,8 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
           <h1 className="bodegas-titulo">Bodegas</h1>
           <p className="bodegas-subtitulo">
             Consulta la disponibilidad de material en otras bodegas y solicítalo cuando lo
-            necesites. La bodega dueña recibe una notificación y, si acepta, el stock se
-            descuenta de ella y se suma automáticamente a {sesion?.bodegaNombre}.
+            necesites. La bodega dueña recibe una notificación y, si acepta, lo deja apartado;
+            sale de allá cuando lo despacha y entra a {sesion?.bodegaNombre} cuando confirmas que llegó.
           </p>
 
           {/* ================== NOTIFICACIONES ================== */}
@@ -60,6 +55,7 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                       <strong>{s.cantidad}</strong> de <strong>{s.productoCodigo}</strong> —{" "}
                       {s.productoDescripcion}
                       <span className="bodegas-tag-tipo">{s.tipoOperacion}</span>
+                      {s.numeroCotizacion && <span className="bodegas-tag-tipo">Cotización {s.numeroCotizacion}</span>}
                       {s.observaciones && (
                         <p className="bodegas-nota-solicitud">"{s.observaciones}"</p>
                       )}
@@ -136,6 +132,30 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
             </section>
           )}
 
+          {/* ================== TRASLADOS ENTRE SEDES ================== */}
+          <PanelTraslados
+            titulo="Traslados por despachar"
+            ayuda="Los aceptaste y siguen en tu bodega, apartados. Cuando el carro se los lleve, dale Despachar: salen de tu inventario y quedan en camino."
+            traslados={b.trasladosPorDespachar}
+            procesandoId={b.procesandoTrasladoId}
+            error={b.errorTraslado}
+            mostrar="destino"
+            acciones={[
+              { texto: "Despachar", textoProcesando: "Procesando...", clase: "bodegas-boton-aceptar", ejecutar: b.despacharTraslado },
+              { texto: "No se va a enviar", textoProcesando: "Procesando...", clase: "bodegas-boton-rechazar", ejecutar: b.soltarTraslado },
+            ]}
+          />
+          <PanelTraslados
+            titulo="Traslados en camino"
+            ayuda="Otra bodega ya los despachó hacia la tuya. Cuando lleguen, confírmalo: entran a tu inventario."
+            traslados={b.trasladosEnCamino}
+            procesandoId={b.procesandoTrasladoId}
+            error={b.errorTraslado}
+            mostrar="origen"
+            acciones={[{ texto: "Sí, ya llegó", textoProcesando: "Procesando...", clase: "bodegas-boton-aceptar", ejecutar: b.recibirTraslado }]}
+          />
+          {b.exitoTraslado && <p className="bodegas-exito">{b.exitoTraslado}</p>}
+
           {/* ================== BUSCAR MATERIAL EN OTRA BODEGA ================== */}
           <section className="bodegas-tarjeta">
             <h2>Buscar material en otra bodega</h2>
@@ -180,6 +200,11 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                   </button>
                 </div>
 
+                {b.bodegaSeleccionada.sin_traslado && (
+                  <p className="bodegas-error">
+                    Desde {b.bodegaSeleccionada.nombre} no se hacen traslados a otras bodegas: puedes ver su inventario, pero no pedirlo.
+                  </p>
+                )}
                 <input
                   type="text"
                   className="bodegas-input-producto"
@@ -221,7 +246,7 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                           <td>
                             <button
                               className="bodegas-boton-solicitar"
-                              disabled={p.stock <= 0}
+                              disabled={p.stock <= 0 || Boolean(b.bodegaSeleccionada?.sin_traslado)}
                               onClick={() => b.abrirFormularioSolicitud(p)}
                             >
                               {p.rolloId ? "Solicitar este rollo" : "Solicitar / Intercambio"}
@@ -291,6 +316,20 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                       Se solicitará este rollo completo; no se mezcla con otros rollos del mismo código.
                     </p>
                   )}
+
+                  <label>Para la cotización (opcional)</label>
+                  <input
+                    aria-label="Número de cotización"
+                    type="text"
+                    maxLength={32}
+                    value={b.formularioSolicitud.numeroCotizacion}
+                    onChange={(e) => b.actualizarCampoSolicitud("numeroCotizacion", e.target.value)}
+                    placeholder="Ej: 3950"
+                  />
+                  <p className="bodegas-texto-ayuda">
+                    Al aceptarla, el material queda apartado en {b.productoSeleccionado.bodegaNombre}; sale de allá al despacharlo
+                    y entra a tu bodega cuando confirmes que llegó.
+                  </p>
 
                   <label>Observaciones (opcional)</label>
                   <textarea
@@ -391,6 +430,7 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                     <th>Material</th>
                     <th>Cantidad</th>
                     <th>Bodega dueña</th>
+                    <th>Cotización</th>
                     <th>Tipo</th>
                     <th>Estado</th>
                   </tr>
@@ -404,10 +444,11 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                       </td>
                       <td>{s.cantidad}</td>
                       <td>{s.bodegaPropietariaNombre}</td>
+                      <td>{s.numeroCotizacion || "—"}</td>
                       <td>{s.tipoOperacion}</td>
                       <td>
                         <span className={`bodegas-estado-badge estado-${s.estado}`}>
-                          {ETIQUETAS_ESTADO_SOLICITUD[s.estado]}
+                          {b.ETIQUETAS_ESTADO_TRASLADO[s.estado] || s.estado}
                         </span>
                       </td>
                     </tr>

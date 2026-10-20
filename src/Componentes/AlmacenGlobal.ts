@@ -3,7 +3,7 @@ import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, envioDesdeApi, solicitudDesdeApi } from "./Mapeo";
 import { useUnidadesFamilia } from "../Hooks/useUnidadesFamilia";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
-import { calcularSolicitudesPendientes } from "../Utils/produccion";
+import { cotizacionesParaPlanta } from "../Utils/produccion";
 import type { Bodega, Envio, EnvioApi, Sesion, Solicitud, SolicitudApi } from "../types/dominio";
 
 // Notificaciones de solicitudes/envíos entre bodegas: no hay push del
@@ -107,8 +107,9 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
         `/apartados?${ESTADOS_PRODUCCION_PENDIENTE.map((e) => `estados=${e}`).join("&")}`
       ) || [];
       const apartadosPendientes = datos.map(apartadoDesdeApi).filter((ap) => ESTADOS_PRODUCCION_PENDIENTE.includes(ap.estado));
-      // Cuenta cotizaciones (no líneas), igual que el aviso de Registrar Producción.
-      setProduccionPendienteCount(new Set(calcularSolicitudesPendientes(apartadosPendientes).map((s) => s.apartadoId)).size);
+      // Cuenta cotizaciones (no líneas), igual que el aviso de Registrar
+      // Producción: también las que solo tienen stock por alistar.
+      setProduccionPendienteCount(cotizacionesParaPlanta(apartadosPendientes).size);
     } catch {
       setProduccionPendienteCount(0);
     }
@@ -116,6 +117,23 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
 
   // Cotizaciones aprobadas (las crea Admin Inventario) que la bodega todavía
   // no envía a producción -- badge de "Apartados" para administrativo.
+  // Traslados entre sedes que esta bodega tiene por despachar (los aceptó) o
+  // por recibir (ya vienen en camino): también avisan en la campanita.
+  const [trasladosPendientes, setTrasladosPendientes] = useState<Solicitud[]>([]);
+
+  const refrescarTrasladosPendientes = useCallback(async () => {
+    if (sesion?.rol !== "administrativo") return setTrasladosPendientes([]);
+    try {
+      const [porDespachar, enCamino] = await Promise.all([
+        api.get<SolicitudApi[]>("/bodegas/solicitudes/por-despachar"),
+        api.get<SolicitudApi[]>("/bodegas/solicitudes/en-camino"),
+      ]);
+      setTrasladosPendientes([...(porDespachar || []), ...(enCamino || [])].map((s) => solicitudDesdeApi(s)));
+    } catch {
+      setTrasladosPendientes([]);
+    }
+  }, [sesion?.rol]);
+
   const [apartadosPorEnviarCount, setApartadosPorEnviarCount] = useState(0);
 
   const refrescarApartadosPorEnviar = useCallback(async () => {
@@ -134,16 +152,20 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     refrescarEnviosPendientes();
     refrescarProduccionPendiente();
     refrescarApartadosPorEnviar();
+    refrescarTrasladosPendientes();
     if (sesion?.correo) cargarUnidadesFamilia();
-  }, [cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente, refrescarApartadosPorEnviar, cargarUnidadesFamilia, sesion?.correo]);
+  }, [cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente, refrescarApartadosPorEnviar,
+    refrescarTrasladosPendientes, cargarUnidadesFamilia, sesion?.correo]);
 
   useActualizacionAutomatica(
-    () => Promise.all([refrescarSolicitudesPendientes(), refrescarEnviosPendientes(), refrescarProduccionPendiente(), refrescarApartadosPorEnviar()]),
+    () => Promise.all([refrescarSolicitudesPendientes(), refrescarEnviosPendientes(), refrescarProduccionPendiente(), refrescarApartadosPorEnviar(),
+      refrescarTrasladosPendientes()]),
     { activa: Boolean(sesion?.correo) },
   );
 
   return {
     bodegas, solicitudes, envios, cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes,
+    trasladosPendientes, refrescarTrasladosPendientes,
     produccionPendienteCount, refrescarProduccionPendiente,
     apartadosPorEnviarCount, refrescarApartadosPorEnviar,
     unidadesFamilia, unidadPorFamilia, decimalesPorFamilia, cargarUnidadesFamilia, guardarUnidadFamilia,

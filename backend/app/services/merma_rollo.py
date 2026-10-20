@@ -24,6 +24,7 @@ from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.rollo import HistorialConsumoRollo, Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.services.envios import envio_pendiente_del_rollo
+from app.services.transferencias import traslado_en_curso_del_rollo
 
 MOTIVO_MERMA = "merma"
 MOTIVO_SOBRANTE = "sobrante"
@@ -75,6 +76,9 @@ def _bloquear(db: Session, rollo_id: int, usuario: Usuario) -> Rollo:
     envio = envio_pendiente_del_rollo(db, rollo.id)
     if envio is not None:
         raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} va en el envío #{envio.id}, pendiente de confirmar.")
+    traslado = traslado_en_curso_del_rollo(db, rollo.id)
+    if traslado is not None:
+        raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} está apartado para el traslado #{traslado.id}.")
     return rollo
 
 

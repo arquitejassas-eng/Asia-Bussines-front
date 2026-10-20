@@ -7,9 +7,20 @@ from app.db.base import Base
 
 
 class EstadoSolicitud(str, enum.Enum):
+    """Un traslado entre sedes (ej. Funza -> Ricaurte) tarda días, así que
+    el material no se mueve al aceptar:
+    PENDIENTE -> ACEPTADA (queda apartado en la bodega dueña, sin moverse)
+    -> DESPACHADA (salió de la bodega dueña: va en camino)
+    -> RECIBIDA (llegó: entra a la bodega que lo pidió)."""
     PENDIENTE = "pendiente"
     ACEPTADA = "aceptada"
     RECHAZADA = "rechazada"
+    DESPACHADA = "despachada"
+    RECIBIDA = "recibida"
+
+
+# Lo que la bodega dueña ya aceptó y todavía no llega: sigue apartado para el traslado.
+ESTADOS_TRASLADO_EN_CURSO = (EstadoSolicitud.ACEPTADA, EstadoSolicitud.DESPACHADA)
 
 
 class TipoOperacionSolicitud(str, enum.Enum):
@@ -43,3 +54,12 @@ class Solicitud(Base):
 
     solicitado_por: Mapped[str] = mapped_column(String(150), default="")
     observaciones: Mapped[str] = mapped_column(Text, default="")
+    # Cotización para la que se pide (texto libre, como Apartado.numero_cotizacion).
+    numero_cotizacion: Mapped[str] = mapped_column(String(32), default="", server_default="")
+
+    aceptada_por: Mapped[str] = mapped_column(String(150), default="", server_default="")
+    fecha_aceptada: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    despachada_por: Mapped[str] = mapped_column(String(150), default="", server_default="")
+    fecha_despachada: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recibida_por: Mapped[str] = mapped_column(String(150), default="", server_default="")
+    fecha_recibida: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)

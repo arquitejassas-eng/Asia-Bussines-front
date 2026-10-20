@@ -24,6 +24,7 @@ from app.models.usuario import Usuario
 from app.schemas.apartados import RegistrarSalidaRequest
 from app.services.apartados import ESTADOS_RESERVA_ACTIVA, bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
 from app.services.envios import envio_pendiente_del_rollo
+from app.services.transferencias import traslado_en_curso_del_rollo
 
 TOLERANCIA = 0.005
 
@@ -84,6 +85,9 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
         envio = envio_pendiente_del_rollo(db, rollo.id)
         if envio is not None:
             raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} va en el envío #{envio.id}, pendiente de confirmar.")
+        traslado = traslado_en_curso_del_rollo(db, rollo.id)
+        if traslado is not None:
+            raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} está apartado para el traslado #{traslado.id}.")
         metros = round(linea.metros, 2)
         disponibles = round(rollo.metros_disponibles, 2)
         if item.rollo_id:

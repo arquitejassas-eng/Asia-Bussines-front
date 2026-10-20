@@ -25,8 +25,10 @@ router = APIRouter(prefix="/apartados", tags=["Apartados"])
 def _con_faltantes(db: Session, apartados: list[Apartado]) -> list[Apartado]:
     """Anota en cada apartado lo que le falta por llegar (material en camino)."""
     faltantes = srv.faltantes_de_apartados(db, apartados)
+    partes = srv.otras_partes(db, apartados)
     for apartado in apartados:
         apartado.faltantes = faltantes.get(apartado.id, [])
+        apartado.otras_partes = partes.get(apartado.id, [])
     return apartados
 
 
@@ -240,13 +242,41 @@ def editar_apartado(
             # cotización (si ya tuvo salida, editar_apartado no lo permite)
             # y entra como línea nueva en la otra.
             por_bodega.setdefault(linea.bodega_id, []).append(linea.model_copy(update={"id": None, "bodega_id": None}))
+    if not propias:
+        # Se quitaron todas las líneas de esta parte (o todas pasan a otra
+        # bodega): la parte se borra y queda lo de las otras bodegas.
+        origen = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+        numero, bodega_nombre = origen.numero_cotizacion, origen.bodega_nombre
+        srv.quitar_parte(db, apartado_id, usuario, pasa_a_otra_bodega=bool(por_bodega))
+        _pasar_a_otras_bodegas(db, numero, bodega_nombre, por_bodega, datos, usuario)
+        db.commit()
+        restante = (
+            db.query(Apartado)
+            .filter(Apartado.numero_cotizacion.in_([numero, srv.numero_base(numero)]) | Apartado.numero_cotizacion.like(f"{srv.numero_base(numero)}-%"),
+                    Apartado.estado.in_(srv.ESTADOS_RESERVA_ACTIVA))
+            .order_by(Apartado.id)
+            .first()
+        )
+        if restante is None:
+            raise HTTPException(status_code=500, detail="No se encontró la otra parte de la cotización.")
+        return _con_faltantes(db, [restante])[0]
     apartado = srv.editar_apartado(db, apartado_id, datos.model_copy(update={"items": propias}), usuario)
+    _pasar_a_otras_bodegas(db, apartado.numero_cotizacion, apartado.bodega_nombre, por_bodega, datos, usuario)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
+
+
+def _pasar_a_otras_bodegas(
+    db: Session, numero: str, bodega_nombre: str, por_bodega: dict[int, list], datos: ApartadoEditar, usuario: Usuario,
+) -> None:
+    """Las líneas que al editar pasan a otra bodega se suman a la misma
+    cotización en esa bodega, o se crea ahí."""
     for otra, lineas in por_bodega.items():
         nombre = db.get(Bodega, otra).nombre if db.get(Bodega, otra) else str(otra)
         try:
             hermana = (
                 db.query(Apartado)
-                .filter(Apartado.bodega_id == otra, Apartado.numero_cotizacion == apartado.numero_cotizacion,
+                .filter(Apartado.bodega_id == otra, Apartado.numero_cotizacion == numero,
                         Apartado.estado.in_(srv.ESTADOS_RESERVA_ACTIVA))
                 .first()
             )
@@ -265,16 +295,14 @@ def editar_apartado(
                 ), usuario)
             else:
                 srv.crear_apartado(db, ApartadoCrear(
-                    bodega_id=otra, material_en_camino=datos.material_en_camino, numero_cotizacion=apartado.numero_cotizacion,
+                    bodega_id=otra, material_en_camino=datos.material_en_camino, numero_cotizacion=numero,
                     empresa=datos.empresa, cliente=datos.cliente,
-                    observaciones=f"Parte de la cotización {apartado.numero_cotizacion} de {apartado.bodega_nombre} "
+                    observaciones=f"Parte de la cotización {numero} de {bodega_nombre} "
                     f"con material de {nombre}.",
                     items=lineas,
                 ), usuario)
         except HTTPException as exc:
             raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
-    db.commit(); db.refresh(apartado)
-    return _con_faltantes(db, [apartado])[0]
 
 
 @router.post("/{apartado_id}/separar", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,

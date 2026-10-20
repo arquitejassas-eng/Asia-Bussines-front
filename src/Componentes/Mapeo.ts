@@ -48,7 +48,11 @@ export function solicitudDesdeApi(s: RegistroApi, bodegasPorId: BodegasPorId = {
     rolloId: s.rollo_id == null ? null : numero(s.rollo_id),
     bodegaSolicitanteId: solicitanteId, bodegaSolicitanteNombre: bodegasPorId[solicitanteId] || "",
     bodegaPropietariaId: propietariaId, bodegaPropietariaNombre: bodegasPorId[propietariaId] || "",
-    solicitadoPor: texto(s.solicitado_por), observaciones: texto(s.observaciones) };
+    solicitadoPor: texto(s.solicitado_por), observaciones: texto(s.observaciones),
+    numeroCotizacion: texto(s.numero_cotizacion),
+    fechaAceptada: s.fecha_aceptada == null ? null : texto(s.fecha_aceptada),
+    fechaDespachada: s.fecha_despachada == null ? null : texto(s.fecha_despachada),
+    fechaRecibida: s.fecha_recibida == null ? null : texto(s.fecha_recibida) };
 }
 
 export function rolloDesdeApi(r: RegistroApi) {
@@ -114,6 +118,8 @@ export function apartadoDesdeApi(a: RegistroApi) {
     stockSeparadoEn: a.stock_separado_en == null ? null : texto(a.stock_separado_en),
     // Lo que todavía no llega a la bodega (material en camino).
     faltantes: Array.isArray(a.faltantes) ? a.faltantes.map(texto) : [],
+    // Otras partes activas de la misma cotización ("SANTANDER", "3811-AR (RICAURTE)").
+    otrasPartes: Array.isArray(a.otras_partes) ? a.otras_partes.map(texto) : [],
     items: items.map(apartadoItemDesdeApi) };
 }
 

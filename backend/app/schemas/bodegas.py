@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.schemas.fechas import ModeloConFechasUtc
 
@@ -11,6 +11,8 @@ class BodegaResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     nombre: str
+    # Desde esta bodega no se trasladan materiales (ver Bodega.sin_traslado).
+    sin_traslado: bool = False
 
 
 class BodegaCrear(BaseModel):
@@ -23,6 +25,8 @@ class SolicitudCrear(BaseModel):
     cantidad: float | None = None
     tipo_operacion: TipoOperacionSolicitud = TipoOperacionSolicitud.SOLICITUD
     observaciones: str = ""
+    # Cotización para la que se pide el traslado (opcional).
+    numero_cotizacion: str = Field(default="", max_length=32)
 
 
 class SolicitudResponse(ModeloConFechasUtc):
@@ -39,3 +43,19 @@ class SolicitudResponse(ModeloConFechasUtc):
     bodega_propietaria_id: int
     solicitado_por: str
     observaciones: str
+    empresa: str = ""
+    numero_cotizacion: str = ""
+    aceptada_por: str = ""
+    fecha_aceptada: datetime | None = None
+    despachada_por: str = ""
+    fecha_despachada: datetime | None = None
+    recibida_por: str = ""
+    fecha_recibida: datetime | None = None
+
+    @field_serializer("fecha_aceptada", "fecha_despachada", "fecha_recibida", when_used="json")
+    def _serializar_fechas_traslado(self, valor: datetime | None) -> str | None:
+        if valor is None:
+            return None
+        if valor.tzinfo is None:
+            valor = valor.replace(tzinfo=timezone.utc)
+        return valor.isoformat().replace("+00:00", "Z")

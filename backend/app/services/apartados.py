@@ -60,7 +60,17 @@ def item_que_aparta_rollo(db: Session, rollo_id: int) -> ApartadoItem | None:
 
 def exigir_rollo_libre(db: Session, rollo: Rollo, *, item_id: int | None = None) -> None:
     """Un rollo vendido completo en una cotización solo sale por esa línea:
-    nadie más lo consume, lo produce ni lo traslada."""
+    nadie más lo consume, lo produce ni lo traslada. Lo mismo un rollo
+    aceptado para un traslado a otra bodega, mientras no llegue."""
+    from app.services.transferencias import traslado_en_curso_del_rollo
+
+    traslado = traslado_en_curso_del_rollo(db, rollo.id)
+    if traslado is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El rollo {rollo.identificador_rollo} está apartado para el traslado #{traslado.id} "
+            f"({'va en camino' if traslado.estado.value == 'despachada' else 'aceptado, sin despachar'}): no se puede usar para otra cosa.",
+        )
     item = item_que_aparta_rollo(db, rollo.id)
     if item is not None and item.id != item_id:
         ap = item.apartado
@@ -431,7 +441,10 @@ def disponibilidad_por_codigo(db: Session, *, bodega_id: int, codigo_interno: st
 def cantidad_reservada_producto(db: Session, *, bodega_id: int, producto_id: int) -> float:
     """Análogo a `metros_reservados_codigo`, pero para un `Producto` de stock:
     suma `cantidad` de los ítems POR_STOCK de ese producto en apartados
-    activos. Igual que rollo, nunca un contador aparte — siempre en vivo."""
+    activos, más lo aceptado para un traslado que todavía no sale. Igual que
+    rollo, nunca un contador aparte — siempre en vivo."""
+    from app.services.transferencias import cantidad_en_traslado_producto
+
     total = (
         db.query(func.coalesce(func.sum(ApartadoItem.cantidad), 0))
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
@@ -444,7 +457,9 @@ def cantidad_reservada_producto(db: Session, *, bodega_id: int, producto_id: int
         )
         .scalar()
     )
-    return round(float(total or 0), 2)
+    producto = db.get(Producto, producto_id)
+    en_traslado = cantidad_en_traslado_producto(db, producto) if producto is not None else 0
+    return round(float(total or 0) + en_traslado, 2)
 
 
 def disponibilidad_producto(db: Session, *, bodega_id: int, producto_id: int, bloquear: bool = False) -> dict:
@@ -734,6 +749,66 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
         apartado.salida_pendiente = False
     db.flush()
     return apartado
+
+
+def numero_base(numero_cotizacion: str) -> str:
+    """Número de la cotización sin el sufijo de la parte: "3811-AR", "3811-ABG",
+    "3776-SAL" y "3811-AR-SAL" son partes de la 3811 (ver importar_cotizaciones)."""
+    return re.sub(r"(-(AR|ABG))?(-SAL)?$", "", (numero_cotizacion or "").strip(), flags=re.IGNORECASE)
+
+
+def otras_partes(db: Session, apartados: list[Apartado]) -> dict[int, list[str]]:
+    """Por cada apartado, las OTRAS partes activas de la misma cotización (otra
+    bodega u otra empresa): "SANTANDER" o "3811-AR (RICAURTE)". Así nadie
+    piensa que una parte cancelada o quitada era la cotización completa."""
+    if not apartados:
+        return {}
+    bases = {numero_base(a.numero_cotizacion) for a in apartados}
+    activos = (
+        db.query(Apartado.id, Apartado.numero_cotizacion, Bodega.nombre)
+        .join(Bodega, Bodega.id == Apartado.bodega_id)
+        .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA))
+        .all()
+    )
+    por_base: dict[str, list[tuple[int, str, str]]] = {}
+    for id_, numero, bodega in activos:
+        base = numero_base(numero)
+        if base in bases:
+            por_base.setdefault(base, []).append((id_, numero, bodega))
+    resultado = {}
+    for apartado in apartados:
+        resultado[apartado.id] = [
+            bodega if numero == apartado.numero_cotizacion else f"{numero} ({bodega})"
+            for id_, numero, bodega in por_base.get(numero_base(apartado.numero_cotizacion), []) if id_ != apartado.id
+        ]
+    return resultado
+
+
+def quitar_parte(db: Session, apartado_id: int, usuario: Usuario, *, pasa_a_otra_bodega: bool = False) -> None:
+    """Al editar se quitaron TODAS las líneas de una parte de la cotización (ej.
+    se eliminó lo que salía de Ricaurte y lo de Santander sigue): esa parte se
+    borra, no se cancela, para que en "canceladas" no aparezca la cotización
+    como si se hubiera cancelado completa. Solo si la cotización sigue activa
+    en otra parte (o sus líneas pasan a otra bodega) y si esta parte no tiene
+    nada con salida: lo que ya salió o se produjo no se pierde."""
+    apartado_de_mi_bodega(db, apartado_id, usuario)
+    apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
+    if apartado.estado not in ESTADOS_RESERVA_ACTIVA:
+        raise HTTPException(status_code=400, detail="Solo se pueden editar cotizaciones activas (no terminadas, entregadas ni canceladas).")
+    if not pasa_a_otra_bodega and not otras_partes(db, [apartado])[apartado.id]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La cotización {apartado.numero_cotizacion} solo está en {apartado.bodega_nombre}: no puede quedar sin líneas. "
+            "Si se canceló completa, usa Cancelar.",
+        )
+    for item in apartado.items:
+        if _tiene_salida(item):
+            raise HTTPException(
+                status_code=400,
+                detail=f"No puedes quitar la línea '{item.descripcion or item.codigo_interno}': ya tiene salida registrada.",
+            )
+    db.delete(apartado)
+    db.flush()
 
 
 ESTADOS_CANCELABLES = (EstadoApartado.APARTADO, EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION)

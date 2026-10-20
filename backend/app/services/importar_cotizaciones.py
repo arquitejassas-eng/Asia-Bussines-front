@@ -28,9 +28,10 @@ Reglas acordadas con el negocio:
   cotización que solo tiene productos no se carga.
 - Se aparta aunque no haya material (en el Excel ya estaba en negativo): el
   apartado queda "esperando material" y se cubre solo cuando le den ingreso.
-- Quedan "enviado a producción" (ya estaban en la cola de Planta), también
-  las que esperan material: así no le llegan decenas de avisos de
-  "cotización aprobada" a las bodegas. Su faltante se ve en la lista.
+- Quedan "apartado": la jefe de cada bodega las revisa y las envía a
+  producción; Planta no las ve hasta entonces. Las que esperan material
+  también (su faltante se ve en la lista). Las de "SI" quedan "pendiente por
+  dar salida" y nunca van a Planta.
 - La fecha del apartado es la de la cotización, más un segundo por cada fila
   del Excel: así, dentro del mismo día, conservan el orden en que se
   escribieron (las más antiguas se cubren primero con el material que llegue
@@ -329,8 +330,9 @@ def crear(db: Session, resultado: ResultadoImportacion, usuario: Usuario, nombre
         apartado = Apartado(
             bodega_id=importado.bodega_id, numero_cotizacion=importado.numero_cotizacion, empresa=importado.empresa,
             cliente=importado.cliente, creado_por=usuario.correo, fecha_creacion=importado.fecha,
-            estado=EstadoApartado.EN_PRODUCCION if importado.salida_pendiente else EstadoApartado.ENVIADO_A_PRODUCCION,
-            enviado_a_produccion_por=usuario.correo, fecha_enviado_a_produccion=ahora,
+            estado=EstadoApartado.EN_PRODUCCION if importado.salida_pendiente else EstadoApartado.APARTADO,
+            enviado_a_produccion_por=usuario.correo if importado.salida_pendiente else "",
+            fecha_enviado_a_produccion=ahora if importado.salida_pendiente else None,
             salida_pendiente=importado.salida_pendiente,
             observaciones=f'Cargada desde el Excel "{nombre_archivo}" (hoja SALIDA).'
             + (" El material ya salió (REFERENCIA \"SI\"): falta registrar de qué rollo." if importado.salida_pendiente else "")

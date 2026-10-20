@@ -12,7 +12,7 @@ import PanelSepararCotizacion from "../Componentes/PanelSepararCotizacion";
 import Paginacion from "../Componentes/Paginacion";
 import { useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
-import { calcularSolicitudesPendientes } from "../Utils/produccion";
+import { calcularSolicitudesPendientes, calcularStockParaAlistar, pideCorte } from "../Utils/produccion";
 import "../Style/Inventario.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
@@ -162,6 +162,25 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     titulo: string; mensaje: string; textoConfirmar: string; ejecutar: () => void;
   } | null>(null);
 
+  // Al editar una cotización que también está en otra bodega (u otra empresa)
+  // se le pueden quitar todas las líneas: se borra solo esta parte.
+  const quitaEstaParte = Boolean(a.editandoId) && a.formulario.items.length === 0 && a.parteEditada.otrasPartes.length > 0;
+
+  function guardarFormulario(evento: { preventDefault: () => void }) {
+    evento.preventDefault();
+    if (!quitaEstaParte) {
+      a.crearApartado(evento);
+      return;
+    }
+    setConfirmacion({
+      titulo: `¿Quitar la cotización ${a.formulario.numeroCotizacion} de ${a.parteEditada.bodega}?`,
+      mensaje: `La cotización ${a.formulario.numeroCotizacion} sigue activa en ${a.parteEditada.otrasPartes.join(", ")}. `
+        + `Solo se borra la parte de ${a.parteEditada.bodega}: no queda como cancelada y su material reservado queda libre.`,
+      textoConfirmar: "Sí, quitar",
+      ejecutar: () => a.crearApartado({ preventDefault: () => {} }),
+    });
+  }
+
   // "Iniciar Producción" solo puede navegar de verdad si quien hace clic es
   // jefe_planta (el único rol con acceso a /produccion) -- para
   // administrativo (que también ve Apartados) es informativo, ya que
@@ -208,7 +227,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           {a.errorAccionApartado && <p className="inventario-error">{a.errorAccionApartado}</p>}
 
           {a.mostrarFormularioApartado && (
-            <form className="inventario-form" onSubmit={a.crearApartado} noValidate>
+            <form className="inventario-form" onSubmit={guardarFormulario} noValidate>
               <h2 className="inventario-form-subtitulo">
                 {a.editandoId ? `Editar cotización ${a.formulario.numeroCotizacion}` : "Nuevo apartado"}
               </h2>
@@ -457,7 +476,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       />
                     </div>
                   )}
-                  {a.formulario.items.length > 1 && !(item.metrosConsumidos || item.stockDescontado) && (
+                  {(a.formulario.items.length > 1 || a.parteEditada.otrasPartes.length > 0) && !(item.metrosConsumidos || item.stockDescontado) && (
                     <div style={{ alignSelf: "end" }}>
                       <button type="button" className="inventario-boton-cancelar" onClick={() => a.quitarItemApartado(indice)}>
                         Quitar
@@ -494,11 +513,18 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </label>
               )}
 
+              {quitaEstaParte && (
+                <p style={{ color: "#b3261e", fontSize: "0.9rem", margin: "0 0 0.75rem" }}>
+                  Quitaste todas las líneas: al guardar se quita la cotización {a.formulario.numeroCotizacion} de{" "}
+                  <strong>{a.parteEditada.bodega}</strong>. Sigue activa en <strong>{a.parteEditada.otrasPartes.join(", ")}</strong>.
+                </p>
+              )}
+
               {a.errorFormularioApartado && <p className="inventario-error">{a.errorFormularioApartado}</p>}
 
               <div className="inventario-form-botones">
                 <button type="submit" className="inventario-boton" disabled={a.guardandoApartado}>
-                  {a.guardandoApartado ? "Guardando..." : a.editandoId ? "Guardar cambios" : "Crear apartado"}
+                  {a.guardandoApartado ? "Guardando..." : quitaEstaParte ? `Quitar de ${a.parteEditada.bodega}` : a.editandoId ? "Guardar cambios" : "Crear apartado"}
                 </button>
                 <button type="button" className="inventario-boton-cancelar" onClick={a.cerrarFormularioApartado}>
                   Cancelar
@@ -618,19 +644,33 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           // UniqueConstraint bodega+numero_cotizacion en el backend) que
                           // puede mezclar ítems de stock y de rollo -- se ven en la misma
                           // fila, no en pantallas separadas.
+                          // Lámina por producir o productos de stock por alistar (una
+                          // cotización solo de stock, ej. UPVC con corte, también va a Planta).
                           const tieneProduccionPendiente = (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion")
-                            && !ap.salidaPendiente && calcularSolicitudesPendientes([ap]).length > 0;
+                            && !ap.salidaPendiente
+                            && (calcularSolicitudesPendientes([ap]).length > 0 || calcularStockParaAlistar([ap]).length > 0);
+                          const activa = ESTADOS_CANCELABLES.includes(ap.estado);
                           return (
                           <Fragment key={ap.id}>
                           <tr>
                             {esAdminInventario && <td className="ap-col-bodega" data-etiqueta="Bodega">{ap.bodegaNombre || "—"}</td>}
-                            <td className="ap-col-cotizacion">{ap.numeroCotizacion}</td>
+                            <td className="ap-col-cotizacion">
+                              {ap.numeroCotizacion}
+                              {ap.otrasPartes.length > 0 && (
+                                <span style={{ display: "block", fontSize: "0.75rem", opacity: 0.75 }} title="Otras partes activas de esta misma cotización">
+                                  También en: {ap.otrasPartes.join(", ")}
+                                </span>
+                              )}
+                            </td>
                             <td className="ap-col-empresa" data-etiqueta="Empresa">{EMPRESAS[ap.empresa] || ap.empresa || "—"}</td>
                             <td className="ap-col-cliente">{ap.cliente || "—"}</td>
                             <td className="ap-col-productos" style={{ minWidth: 340 }}>
                               <ul className="apartado-lineas">
                                 {(lineasExpandidas.has(ap.id) ? ap.items : ap.items.slice(0, LINEAS_VISIBLES)).map((it) => {
-                                  const lista = it.modalidad === "por_stock" ? it.stockDescontado : (it.metrosPendientes ?? 0) <= 0;
+                                  // Stock cargado del Excel: ya descontado, pero mientras la
+                                  // cotización siga activa todavía hay que alistarlo y despacharlo.
+                                  const stockPorAlistar = it.modalidad === "por_stock" && it.stockDescontado && activa;
+                                  const lista = it.modalidad === "por_stock" ? it.stockDescontado && !stockPorAlistar : (it.metrosPendientes ?? 0) <= 0;
                                   const codigo = it.modalidad === "por_stock" ? "" : it.codigoInterno;
                                   const texto = it.descripcion || (it.modalidad === "por_stock" ? `producto #${it.productoId}` : "");
                                   return (
@@ -638,7 +678,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                       <div className="apartado-linea-cabeza">
                                         <strong>{cantidadLinea(it)}</strong>
                                         {codigo && <span className="apartado-linea-codigo">{codigo}</span>}
-                                        {lista
+                                        {it.modalidad === "por_stock" && pideCorte(it.descripcion) && <span className="apartado-linea-cortar">CORTAR</span>}
+                                        {stockPorAlistar
+                                          ? <span className="apartado-linea-estado" title="El inventario ya lo descontó; falta alistarlo y despacharlo">stock ya descontado</span>
+                                          : lista
                                           ? <span className="apartado-linea-estado" title="Ya tiene salida">✓ con salida</span>
                                           : it.modalidad === "por_rollo" && (it.metrosConsumidos ?? 0) > 0
                                             ? <span className="apartado-linea-estado">faltan {it.metrosPendientes} m</span>
@@ -721,7 +764,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                 <button onClick={() => { setSalidaAbierta(null); setSepararAbierta(ap.id); }}>Separar</button>
                               )}
                               {tieneProduccionPendiente && !esAdminInventario && (
-                                <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>Iniciar Producción</button>
+                                <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>
+                                  {itemsRollo.some((it) => (it.metrosPendientes ?? 0) > 0) ? "Iniciar Producción" : "Alistar pedido"}
+                                </button>
                               )}
                               {a.puedeMarcarTerminado && !ap.salidaPendiente && (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion") && (
                                 <button onClick={() => setConfirmacion({

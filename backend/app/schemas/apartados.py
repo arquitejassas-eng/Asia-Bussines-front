@@ -197,6 +197,8 @@ class ApartadoResponse(ModeloConFechasUtc):
     items: list[ApartadoItemResponse] = []
     # Lo que todavía no ha llegado a la bodega (ej. "faltan 200 m de LA50170,50").
     faltantes: list[str] = []
+    # Otras partes activas de la misma cotización: "SANTANDER", "3811-AR (RICAURTE)".
+    otras_partes: list[str] = []
 
     @field_serializer("fecha_creacion", "fecha_enviado_a_produccion", "fecha_cancelado", "fecha_entregado", "stock_separado_en", when_used="json")
     def _serializar_fechas_opcionales(self, valor: datetime | None) -> str | None:

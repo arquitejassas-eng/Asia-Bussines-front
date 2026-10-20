@@ -15,6 +15,14 @@ const FORM_SOLICITUD_VACIO = {
   cantidad: "",
   tipoOperacion: "solicitud",
   observaciones: "",
+  // Cotización para la que se pide el traslado (opcional).
+  numeroCotizacion: "",
+};
+
+// Pasos del traslado (ver backend EstadoSolicitud).
+const ETIQUETAS_ESTADO_TRASLADO: Record<string, string> = {
+  pendiente: "Pendiente", aceptada: "Aceptada · por despachar", despachada: "En camino",
+  recibida: "Recibida", rechazada: "Rechazada",
 };
 
 type FormularioSolicitud = typeof FORM_SOLICITUD_VACIO;
@@ -141,6 +149,7 @@ export function useControladorBodegas(sesion: Sesion | null | undefined, almacen
         cantidad: cantidadNum,
         tipo_operacion: formularioSolicitud.tipoOperacion,
         observaciones: formularioSolicitud.observaciones,
+        numero_cotizacion: formularioSolicitud.numeroCotizacion.trim(),
       });
 
       await cargarMisSolicitudesEnviadas();
@@ -194,9 +203,12 @@ export function useControladorBodegas(sesion: Sesion | null | undefined, almacen
     setErrorRespuesta("");
     try {
       await api.patch(`/bodegas/solicitudes/${idSolicitud}/aceptar`);
+      // Aceptada no se mueve todavía: pasa a "Traslados por despachar".
       await Promise.all([
         cargarSolicitudesPendientesParaMi(),
+        cargarTraslados(),
         almacen?.refrescarSolicitudesPendientes?.(),
+        almacen?.refrescarTrasladosPendientes?.(),
       ]);
     } catch (err) {
       setErrorRespuesta(
@@ -300,9 +312,58 @@ export function useControladorBodegas(sesion: Sesion | null | undefined, almacen
 
   useEffect(() => { cargarEnviosPendientes(); }, [cargarEnviosPendientes]);
 
+  // ---------- Traslados entre sedes: por despachar (los acepté) y en camino hacia mí ----------
+  const [trasladosPorDespachar, setTrasladosPorDespachar] = useState<Solicitud[]>([]);
+  const [trasladosEnCamino, setTrasladosEnCamino] = useState<Solicitud[]>([]);
+
+  const cargarTraslados = useCallback(async (silenciosa = false) => {
+    try {
+      const [porDespachar, enCamino] = await Promise.all([
+        api.get<SolicitudApi[]>("/bodegas/solicitudes/por-despachar"),
+        api.get<SolicitudApi[]>("/bodegas/solicitudes/en-camino"),
+      ]);
+      setTrasladosPorDespachar((porDespachar || []).map((s) => solicitudDesdeApi(s, bodegasPorId)));
+      setTrasladosEnCamino((enCamino || []).map((s) => solicitudDesdeApi(s, bodegasPorId)));
+    } catch {
+      if (!silenciosa) { setTrasladosPorDespachar([]); setTrasladosEnCamino([]); }
+    }
+  }, [bodegasPorId]);
+
+  useEffect(() => { cargarTraslados(); }, [cargarTraslados]);
+
+  const [procesandoTrasladoId, setProcesandoTrasladoId] = useState<number | null>(null);
+  const [errorTraslado, setErrorTraslado] = useState("");
+  const [exitoTraslado, setExitoTraslado] = useState("");
+
+  // despachar (sale de mi bodega), recibir (entra a la mía) o soltar (rechazar
+  // uno aceptado que todavía no salió: el material deja de estar apartado).
+  async function accionTraslado(idSolicitud: number, accion: "despachar" | "recibir" | "rechazar") {
+    setProcesandoTrasladoId(idSolicitud);
+    setErrorTraslado("");
+    setExitoTraslado("");
+    try {
+      const respuesta = await api.patch<SolicitudApi>(`/bodegas/solicitudes/${idSolicitud}/${accion}`);
+      const t = respuesta ? solicitudDesdeApi(respuesta, bodegasPorId) : null;
+      // Un rollo: sus metros y cuál es ("1259 m de LA50170,38 (rollo 13ARLA50170,38-01)").
+      const que = !t ? "el material"
+        : t.rolloId ? `${t.cantidad} m de ${t.productoCodigo} ${t.productoDescripcion.match(/\(rollo [^)]+\)/)?.[0] || ""}`.trim()
+        : `${t.cantidad} de ${t.productoCodigo}`;
+      setExitoTraslado(
+        accion === "despachar" ? `Traslado #${idSolicitud} despachado: ${que} salió de tu bodega y va en camino a ${t?.bodegaSolicitanteNombre || "la otra bodega"}.`
+        : accion === "recibir" ? `Traslado #${idSolicitud} recibido: ${que} ya está en tu inventario.`
+        : `Traslado #${idSolicitud} cancelado: ${que} deja de estar apartado.`
+      );
+      await Promise.all([cargarTraslados(), cargarMisSolicitudesEnviadas(), almacen?.refrescarTrasladosPendientes?.()]);
+    } catch (err) {
+      setErrorTraslado(err instanceof ErrorApi ? err.message : "No se pudo registrar el traslado. Intenta de nuevo.");
+    } finally {
+      setProcesandoTrasladoId(null);
+    }
+  }
+
   // Una solicitud o un envío que llega de otra sede aparece sin recargar.
   useActualizacionAutomatica(() => Promise.all([
-    cargarSolicitudesPendientesParaMi(true), cargarMisSolicitudesEnviadas(true), cargarEnviosPendientes(true),
+    cargarSolicitudesPendientesParaMi(true), cargarMisSolicitudesEnviadas(true), cargarEnviosPendientes(true), cargarTraslados(true),
   ]));
 
   const [procesandoEnvioId, setProcesandoEnvioId] = useState<number | null>(null);
@@ -379,5 +440,15 @@ export function useControladorBodegas(sesion: Sesion | null | undefined, almacen
     errorRespuestaEnvio,
     confirmarEnvioRecibido,
     marcarEnvioNoLlego,
+
+    ETIQUETAS_ESTADO_TRASLADO,
+    trasladosPorDespachar,
+    trasladosEnCamino,
+    procesandoTrasladoId,
+    errorTraslado,
+    exitoTraslado,
+    despacharTraslado: (id: number) => accionTraslado(id, "despachar"),
+    recibirTraslado: (id: number) => accionTraslado(id, "recibir"),
+    soltarTraslado: (id: number) => accionTraslado(id, "rechazar"),
   };
 }

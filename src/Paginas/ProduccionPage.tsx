@@ -25,6 +25,12 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
   const solicitudesDeLaCotizacion = p.solicitudesPendientes.filter((s) =>
     p.cotizacionResaltada ? s.numeroCotizacion === p.cotizacionResaltada : s.itemId === p.apartadoItemId
   );
+  // Lo de stock de esa misma cotización (tornillos, perfiles, UPVC...): se
+  // alista con el pedido. Una cotización solo de stock también llega aquí.
+  const apartadoDeLaCotizacion = solicitudesDeLaCotizacion[0]?.apartadoId
+    ?? p.stockParaAlistar.find((l) => l.numeroCotizacion === p.cotizacionResaltada)?.apartadoId;
+  const stockDeLaCotizacion = p.stockParaAlistar.filter((l) => l.apartadoId === apartadoDeLaCotizacion);
+  const hayTrabajo = solicitudesDeLaCotizacion.length > 0 || stockDeLaCotizacion.length > 0;
   const lineaVinculada = p.solicitudesPendientes.find((s) => s.itemId === p.apartadoItemId);
   const { limpiarSolicitud } = p;
   useEffect(() => {
@@ -48,18 +54,19 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
 
           {p.puedeRegistrarProduccion && (
             <>
-          {!p.produccionConfirmada && solicitudesDeLaCotizacion.length === 0 && (
+          {!p.produccionConfirmada && !hayTrabajo && (
             <p className="produccion-aviso-apartados">
               {p.cotizacionResaltada && <>La cotización <strong>{p.cotizacionResaltada}</strong> ya no tiene líneas pendientes de producir. </>}
-              {p.solicitudesPendientes.length > 0
-                ? <>Tienes {new Set(p.solicitudesPendientes.map((s) => s.apartadoId)).size} cotizaciones enviadas a producción. </>
+              {p.cotizacionesConTrabajo > 0
+                ? <>Tienes {p.cotizacionesConTrabajo} cotizaciones enviadas a producción. </>
                 : <>No tienes cotizaciones pendientes de producir. </>}
               Para producir una, búscala en <Link to="/apartados">Apartados</Link> y presiona <strong>Iniciar Producción</strong>.
             </p>
           )}
-          {!p.produccionConfirmada && solicitudesDeLaCotizacion.length > 0 && (
+          {!p.produccionConfirmada && hayTrabajo && (
             <PanelSolicitudesPendientes
               solicitudesPendientes={solicitudesDeLaCotizacion}
+              stockParaAlistar={stockDeLaCotizacion}
               cotizacionResaltada={p.cotizacionResaltada}
               errorSolicitudPendiente={p.errorSolicitudPendiente}
               apartadoItemId={p.apartadoItemId}

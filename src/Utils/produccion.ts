@@ -12,7 +12,7 @@ export const NOMBRE_POR_TIPO_PRODUCTO: Record<string, string> = { caballete: "ca
 type ApartadoItemPendiente = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string;
   cantidad: number; medida: number | null; metrosPendientes: number | null;
-  rolloId?: number | null; rolloReferencia?: string;
+  rolloId?: number | null; rolloReferencia?: string; stockDescontado?: boolean;
 };
 type ApartadoParaProduccion = { id: number; numeroCotizacion: string; cliente: string; empresa?: string; items: ApartadoItemPendiente[] };
 export type SolicitudProduccionPendiente = {
@@ -41,6 +41,37 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
         rolloCompleto: Boolean(it.rolloId), rolloReferencia: it.rolloReferencia || "",
       }))
   );
+}
+
+export type LineaParaAlistar = {
+  itemId: number; apartadoId: number; numeroCotizacion: string; cliente: string; empresa: string;
+  descripcion: string; cantidad: number; stockDescontado: boolean; cortar: boolean;
+};
+
+// "CORTE A 7 MTR", "CORTAR A LA MITAD"...: la línea de stock lleva un corte que hace Planta.
+const PIDE_CORTE = /\bCORT(E|AR|ADA|ADAS|ADO|ADOS)\b/;
+export function pideCorte(descripcion: string) {
+  return PIDE_CORTE.test((descripcion || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase());
+}
+
+/** Líneas de stock (tornillos, capuchones, perfiles, tejas UPVC...) de las
+ * cotizaciones enviadas a producción: Planta las alista con el pedido y hace
+ * los cortes que digan. Las de stock ya descontado (cargadas del Excel) se
+ * alistan igual; el stock solo se descuenta una vez. */
+export function calcularStockParaAlistar(apartados: ApartadoParaProduccion[]): LineaParaAlistar[] {
+  return apartados.filter((ap) => !(ap as { salidaPendiente?: boolean }).salidaPendiente).flatMap((ap) =>
+    ap.items
+      .filter((it) => it.modalidad === "por_stock")
+      .map((it) => ({
+        itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, empresa: ap.empresa || "",
+        descripcion: it.descripcion, cantidad: it.cantidad, stockDescontado: Boolean(it.stockDescontado), cortar: pideCorte(it.descripcion),
+      }))
+  );
+}
+
+/** Cotizaciones con trabajo para Planta: lámina por producir o stock por alistar. */
+export function cotizacionesParaPlanta(apartados: ApartadoParaProduccion[]): Set<number> {
+  return new Set([...calcularSolicitudesPendientes(apartados), ...calcularStockParaAlistar(apartados)].map((s) => s.apartadoId));
 }
 
 /** `ancho_rollo` (m) de un stock, dividido por el número de secciones que

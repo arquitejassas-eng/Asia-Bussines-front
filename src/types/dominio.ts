@@ -1,9 +1,11 @@
 export type Sesion = { correo: string; bodegaId: number | null; bodegaNombre: string; rol: string };
-export type Bodega = { id: number; nombre: string };
+// sinTraslado: desde esa bodega no se trasladan materiales (ej. San Gil).
+export type Bodega = { id: number; nombre: string; sin_traslado?: boolean };
 export type SolicitudApi = {
   id: number; estado: string; tipo_operacion: string; cantidad: number; producto_codigo: string;
   producto_descripcion: string; rollo_id: number | null; bodega_solicitante_id: number; bodega_propietaria_id: number;
   solicitado_por: string; observaciones: string; fecha: string;
+  numero_cotizacion?: string; fecha_aceptada?: string | null; fecha_despachada?: string | null; fecha_recibida?: string | null;
 };
 export type Producto = {
   // null = material de Admin Inventario, sin repartir a ninguna sede todavía.
@@ -33,12 +35,16 @@ export type Solicitud = {
   productoDescripcion: string; rolloId: number | null; bodegaSolicitanteId: number; bodegaSolicitanteNombre: string;
   bodegaPropietariaId: number; bodegaPropietariaNombre: string; solicitadoPor: string;
   observaciones: string; fecha: string;
+  // Traslado en pasos: pendiente -> aceptada -> despachada (en camino) -> recibida.
+  numeroCotizacion: string; fechaAceptada: string | null; fechaDespachada: string | null; fechaRecibida: string | null;
 };
 export type UnidadFamilia = { id: number; familia: string; unidad: string; permiteDecimales: boolean };
 export type UsuarioApi = { id: number; correo: string; rol: string; bodega_id: number | null; activo: boolean };
 export type Usuario = { id: number; correo: string; rol: string; bodegaId: number | null; activo: boolean };
 export type AlmacenGlobal = {
   bodegas: Bodega[]; solicitudes: Solicitud[]; envios: Envio[]; unidadesFamilia: UnidadFamilia[];
+  // Traslados que esta bodega tiene por despachar o por recibir (campanita).
+  trasladosPendientes: Solicitud[]; refrescarTrasladosPendientes: () => Promise<void>;
   unidadPorFamilia: Record<string, string>; decimalesPorFamilia: Record<string, boolean>;
   cargarBodegas: () => Promise<void>; refrescarSolicitudesPendientes: () => Promise<void>;
   refrescarEnviosPendientes: () => Promise<void>; cargarUnidadesFamilia: () => Promise<void>;

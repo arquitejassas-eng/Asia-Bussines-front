@@ -15,8 +15,9 @@ function PanelSolicitudesPendientes({
   limpiarSolicitud,
   seleccionarSolicitud,
   marcarProduccionTerminada,
+  stockParaAlistar = [],
 }) {
-  const primera = solicitudesPendientes[0];
+  const primera = solicitudesPendientes[0] || stockParaAlistar[0];
   return (
     <section className="produccion-tarjeta">
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -92,6 +93,24 @@ function PanelSolicitudesPendientes({
           </tbody>
         </table>
       </div>
+      {stockParaAlistar.length > 0 && (
+        <>
+          <h3 style={{ margin: "1rem 0 0.25rem" }}>Para alistar con el pedido</h3>
+          <p className="produccion-vacio" style={{ margin: "0 0 0.5rem" }}>
+            Productos de stock de esta cotización: sepáralos para el despacho y haz los cortes que digan <strong>CORTAR</strong>.
+            {solicitudesPendientes.length === 0 && <> Cuando esté listo, dale "Marcar producción terminada".</>}
+          </p>
+          <ul className="apartado-lineas">
+            {stockParaAlistar.map((l) => (
+              <li key={l.itemId}>
+                <strong>{l.cantidad}</strong>{" "}
+                {l.cortar && <span className="produccion-error" style={{ display: "inline", fontWeight: 700 }}>CORTAR </span>}
+                {l.descripcion || "—"}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   );
 }

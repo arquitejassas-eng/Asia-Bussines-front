@@ -8,7 +8,7 @@ from app.models.bodega import Bodega
 from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.producto import Producto
 from app.models.rollo import Rollo
-from app.models.solicitud import EstadoSolicitud, Solicitud
+from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, EstadoSolicitud, Solicitud
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.bodegas import BodegaCrear, BodegaResponse, SolicitudCrear, SolicitudResponse
 from app.schemas.inventario import ProductoResponse
@@ -17,7 +17,9 @@ from app.services.clasificacion import formatear_calibre, peso_actual_toneladas
 from app.services.transferencias import (
     aceptar_solicitud_transferencia,
     crear_solicitud_transferencia,
+    despachar_solicitud,
     rechazar_solicitud_transferencia,
+    recibir_solicitud,
 )
 
 router = APIRouter(prefix="/bodegas", tags=["Bodegas"])
@@ -127,8 +129,42 @@ def mis_solicitudes_enviadas(
     desde = datetime.now(timezone.utc) - timedelta(days=DIAS_HISTORIAL_SOLICITUDES)
     return db.query(Solicitud).filter(
         Solicitud.bodega_solicitante_id == usuario.bodega_id,
-        (Solicitud.estado == EstadoSolicitud.PENDIENTE) | (Solicitud.fecha >= desde),
+        Solicitud.estado.in_((EstadoSolicitud.PENDIENTE, *ESTADOS_TRASLADO_EN_CURSO)) | (Solicitud.fecha >= desde),
     ).order_by(Solicitud.fecha.desc()).all()
+
+
+@router.get("/solicitudes/por-despachar", response_model=list[SolicitudResponse])
+def traslados_por_despachar(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> list[Solicitud]:
+    """Lo que esta bodega aceptó trasladar y todavía no ha salido."""
+    return db.query(Solicitud).filter(
+        Solicitud.bodega_propietaria_id == usuario.bodega_id, Solicitud.estado == EstadoSolicitud.ACEPTADA,
+    ).order_by(Solicitud.fecha_aceptada).all()
+
+
+@router.get("/solicitudes/en-camino", response_model=list[SolicitudResponse])
+def traslados_en_camino(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> list[Solicitud]:
+    """Lo que otras bodegas ya despacharon hacia esta y falta recibir."""
+    return db.query(Solicitud).filter(
+        Solicitud.bodega_solicitante_id == usuario.bodega_id, Solicitud.estado == EstadoSolicitud.DESPACHADA,
+    ).order_by(Solicitud.fecha_despachada).all()
+
+
+@router.patch("/solicitudes/{solicitud_id}/despachar", response_model=SolicitudResponse,
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO))])
+def despachar(solicitud_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Solicitud:
+    solicitud = despachar_solicitud(db, solicitud_id, usuario)
+    db.commit()
+    db.refresh(solicitud)
+    return solicitud
+
+
+@router.patch("/solicitudes/{solicitud_id}/recibir", response_model=SolicitudResponse,
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO))])
+def recibir(solicitud_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Solicitud:
+    solicitud = recibir_solicitud(db, solicitud_id, usuario)
+    db.commit()
+    db.refresh(solicitud)
+    return solicitud
 
 
 @router.patch("/solicitudes/{solicitud_id}/aceptar", response_model=SolicitudResponse,
