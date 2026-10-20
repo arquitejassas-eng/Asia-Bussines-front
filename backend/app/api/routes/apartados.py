@@ -106,7 +106,12 @@ def buscar_productos_para_apartar(
         clave = (p.codigo, p.empresa)
         if clave not in ya and clave not in otros and p.bodega_id not in sin_traslado:
             otros[clave] = p
-    return (propios + list(otros.values()))[:12]
+    resultado = (propios + list(otros.values()))[:12]
+    # Cuánto se puede prometer de cada uno en toda la empresa: la pantalla no
+    # deja escoger lo que no tiene (ej. un caballete en negativo).
+    for p in resultado:
+        p.disponible_empresa, _ = srv.disponible_empresa_producto(db, producto=p, bodega_despacho=bodega)
+    return resultado
 
 
 @router.get("/reservas", response_model=list[ReservaCodigoResponse])

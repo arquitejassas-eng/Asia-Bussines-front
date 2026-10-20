@@ -46,6 +46,8 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
 export type LineaParaAlistar = {
   itemId: number; apartadoId: number; numeroCotizacion: string; cliente: string; empresa: string;
   descripcion: string; cantidad: number; stockDescontado: boolean; cortar: boolean;
+  // Medida a la que se corta cada unidad (m), si la cotización la indicó.
+  medidaCorte: number | null;
 };
 
 // "CORTE A 7 MTR", "CORTAR A LA MITAD"...: la línea de stock lleva un corte que hace Planta.
@@ -64,7 +66,8 @@ export function calcularStockParaAlistar(apartados: ApartadoParaProduccion[]): L
       .filter((it) => it.modalidad === "por_stock")
       .map((it) => ({
         itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, empresa: ap.empresa || "",
-        descripcion: it.descripcion, cantidad: it.cantidad, stockDescontado: Boolean(it.stockDescontado), cortar: pideCorte(it.descripcion),
+        descripcion: it.descripcion, cantidad: it.cantidad, stockDescontado: Boolean(it.stockDescontado),
+        cortar: Boolean(it.medida) || pideCorte(it.descripcion), medidaCorte: it.medida || null,
       }))
   );
 }

@@ -64,6 +64,9 @@ class ProductoResponse(ProductoBase):
     # "abierto" y los kilos que le quedan según sus metros.
     estado_rollo: str = ""
     peso_actual_kg: float | None = None
+    # Solo al buscar productos para una cotización: cuánto se puede prometer
+    # de ese producto en toda la empresa (ver apartados.disponible_empresa_producto).
+    disponible_empresa: float | None = None
     # Solo poblados para el stock adicional que genera Producción (ver
     # Producto.color/ral/calidad/... en app/models/producto.py) — vacíos/None
     # para cualquier producto que no venga de ese flujo.

@@ -104,7 +104,11 @@ function PanelSolicitudesPendientes({
             {stockParaAlistar.map((l) => (
               <li key={l.itemId}>
                 <strong>{l.cantidad}</strong>{" "}
-                {l.cortar && <span className="produccion-error" style={{ display: "inline", fontWeight: 700 }}>CORTAR </span>}
+                {l.cortar && (
+                  <span className="produccion-error" style={{ display: "inline", fontWeight: 700 }}>
+                    CORTAR{l.medidaCorte ? ` a ${l.medidaCorte} m` : ""}{" "}
+                  </span>
+                )}
                 {l.descripcion || "—"}
               </li>
             ))}

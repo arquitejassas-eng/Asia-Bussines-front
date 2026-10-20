@@ -119,7 +119,9 @@ class ApartadoItem(Base):
     codigo_interno: Mapped[str | None] = mapped_column(String(60), nullable=True)
     descripcion: Mapped[str] = mapped_column(String(255), default="")
     cantidad: Mapped[float] = mapped_column(Float, nullable=False)
-    medida: Mapped[float | None] = mapped_column(Float, nullable=True)  # metros por unidad (solo POR_ROLLO)
+    # POR_ROLLO: metros por unidad. POR_STOCK (opcional): cortar cada unidad a
+    # esta medida en metros (ej. teja UPVC de 11,80 cortada a 7); lo hace Planta.
+    medida: Mapped[float | None] = mapped_column(Float, nullable=True)
     metros_requeridos: Mapped[float | None] = mapped_column(Float, nullable=True)  # cantidad * medida (solo POR_ROLLO)
     metros_consumidos: Mapped[float] = mapped_column(Float, default=0)
 

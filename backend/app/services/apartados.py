@@ -700,6 +700,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
             db.add(ApartadoItem(
                 apartado_id=apartado.id, modalidad=ModalidadApartado.POR_STOCK,
                 producto_id=item.producto_id, descripcion=item.descripcion, cantidad=item.cantidad,
+                medida=item.medida,  # opcional: cortar cada unidad a esta medida (m)
             ))
         else:
             db.add(ApartadoItem(
@@ -825,14 +826,14 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             item = actuales[linea.id]
             item.descripcion = linea.descripcion
             if item.modalidad == ModalidadApartado.POR_STOCK:
-                item.producto_id, item.cantidad = linea.producto_id, linea.cantidad
+                item.producto_id, item.cantidad, item.medida = linea.producto_id, linea.cantidad, linea.medida
             else:
                 item.codigo_interno, item.cantidad, item.medida = linea.codigo_interno, linea.cantidad, linea.medida
                 item.metros_requeridos = round(linea.cantidad * linea.medida, 2)
         elif linea.modalidad == ModalidadApartado.POR_STOCK:
             apartado.items.append(ApartadoItem(
                 modalidad=ModalidadApartado.POR_STOCK, producto_id=linea.producto_id,
-                descripcion=linea.descripcion, cantidad=linea.cantidad,
+                descripcion=linea.descripcion, cantidad=linea.cantidad, medida=linea.medida,
             ))
         else:
             apartado.items.append(ApartadoItem(

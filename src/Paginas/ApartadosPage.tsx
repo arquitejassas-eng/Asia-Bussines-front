@@ -418,10 +418,19 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                   type="button"
                                   key={p.id}
                                   className="inventario-resultado-busqueda"
-                                  style={{ display: "block", width: "100%", textAlign: "left", padding: "0.4rem" }}
+                                  style={{ display: "block", width: "100%", textAlign: "left", padding: "0.4rem", opacity: (p.disponible_empresa ?? 1) > 0 ? 1 : 0.55 }}
+                                  disabled={(p.disponible_empresa ?? 1) <= 0}
+                                  title={(p.disponible_empresa ?? 1) <= 0 ? "No hay de este producto sin prometer en toda la empresa" : undefined}
                                   onClick={() => a.seleccionarProductoParaItem(indice, p)}
                                 >
-                                  <strong>{p.codigo}</strong> — {p.descripcion} (stock: {p.stock})
+                                  <strong>{p.codigo}</strong> — {p.descripcion} · {EMPRESAS[p.empresa] || p.empresa || "sin empresa"} (stock: {p.stock})
+                                  {p.disponible_empresa != null && (
+                                    <em style={{ display: "block", fontSize: "0.8rem", color: p.disponible_empresa > 0 ? undefined : "#b3261e" }}>
+                                      {p.disponible_empresa > 0
+                                        ? `Disponible en toda la empresa: ${p.disponible_empresa}`
+                                        : "Sin stock disponible en la empresa: no se puede apartar"}
+                                    </em>
+                                  )}
                                   {p.bodega_id !== Number(item.bodegaId || a.formulario.bodegaId) && (
                                     <em style={{ display: "block", fontSize: "0.8rem" }}>
                                       Está en {almacen.bodegas.find((b) => b.id === p.bodega_id)?.nombre || "otra bodega"}: se pide con un traslado.
@@ -477,6 +486,18 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       <input
                         type="number" min="0" step="0.01"
                         value={item.medida}
+                        onChange={(e) => a.actualizarItemApartado(indice, "medida", e.target.value)}
+                      />
+                    </div>
+                  )}
+                  {item.modalidad === "por_stock" && (
+                    <div>
+                      <label>Cortar a (m) — opcional</label>
+                      <input
+                        type="number" min="0" step="0.01"
+                        placeholder="Sin corte"
+                        value={item.medida}
+                        disabled={Boolean(item.id && item.stockDescontado)}
                         onChange={(e) => a.actualizarItemApartado(indice, "medida", e.target.value)}
                       />
                     </div>
@@ -676,7 +697,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                       <div className="apartado-linea-cabeza">
                                         <strong>{cantidadLinea(it)}</strong>
                                         {codigo && <span className="apartado-linea-codigo">{codigo}</span>}
-                                        {it.modalidad === "por_stock" && pideCorte(it.descripcion) && <span className="apartado-linea-cortar">CORTAR</span>}
+                                        {it.modalidad === "por_stock" && (it.medida || pideCorte(it.descripcion)) && (
+                                          <span className="apartado-linea-cortar">CORTAR{it.medida ? ` a ${it.medida} m` : ""}</span>
+                                        )}
                                         {stockPorAlistar
                                           ? <span className="apartado-linea-estado" title="El inventario ya lo descontó; falta alistarlo y despacharlo">stock ya descontado</span>
                                           : lista

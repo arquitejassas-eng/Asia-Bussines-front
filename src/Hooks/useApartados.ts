@@ -435,7 +435,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
               codigo_interno: i.codigoInterno || undefined, medida: Number(i.medida) || undefined };
           }
           return i.modalidad === "por_stock"
-            ? { id: i.id, bodega_id, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad) }
+            // "Cortar a (m)" es opcional en una línea de stock (ej. teja UPVC de 11,80 cortada a 7).
+            ? { id: i.id, bodega_id, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad),
+                medida: Number(String(i.medida).replace(",", ".")) > 0 ? Number(String(i.medida).replace(",", ".")) : undefined }
             : { id: i.id, bodega_id, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida) };
         }),
       });
