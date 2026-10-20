@@ -31,6 +31,9 @@ function PanelSolicitudesPendientes({
           Marcar producción terminada
         </button>
       </div>
+      {errorSolicitudPendiente && <p className="produccion-error">{errorSolicitudPendiente}</p>}
+      {/* Una cotización solo de stock (ej. caballetes con corte) no tiene lámina por producir. */}
+      {solicitudesPendientes.length > 0 && (<>
       <p className="produccion-vacio" style={{ margin: "0.75rem 0" }}>
         Elige la línea a producir con "Iniciar producción": se llenan los datos del producto y abajo
         aparecen los rollos de ese código para que elijas cuál(es) usar. Si otra línea es del mismo modelo,
@@ -40,7 +43,6 @@ function PanelSolicitudesPendientes({
           dale "Marcar producción terminada".</>
         )}
       </p>
-      {errorSolicitudPendiente && <p className="produccion-error">{errorSolicitudPendiente}</p>}
       <div className="produccion-tabla-wrap">
         <table className="produccion-tabla produccion-tabla-tarjetas produccion-tarjetas-solicitudes produccion-tabla-resultados">
           <thead>
@@ -93,6 +95,7 @@ function PanelSolicitudesPendientes({
           </tbody>
         </table>
       </div>
+      </>)}
       {stockParaAlistar.length > 0 && (
         <>
           <h3 style={{ margin: "1rem 0 0.25rem" }}>Para alistar con el pedido</h3>
