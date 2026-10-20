@@ -54,6 +54,17 @@ function PanelFiltrosRollos({
           />
         </div>
         <div>
+          <label htmlFor="rollos-f-kilos">Kilos</label>
+          <input
+            id="rollos-f-kilos"
+            type="text"
+            inputMode="numeric"
+            value={filtros.kilos}
+            onChange={(e) => actualizarFiltro("kilos", e.target.value)}
+            placeholder="Ej. 4446"
+          />
+        </div>
+        <div>
           <label htmlFor="rollos-f-codigo-proveedor">Código del proveedor</label>
           <input
             id="rollos-f-codigo-proveedor"

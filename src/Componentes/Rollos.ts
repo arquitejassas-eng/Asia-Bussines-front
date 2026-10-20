@@ -4,6 +4,7 @@ import { api, ErrorApi } from "./Api";
 import { rolloDesdeApi, reservaCodigoDesdeApi, movimientoDesdeApi } from "./Mapeo";
 import { useCargaRollosInventario } from "../Hooks/useCargaRollosInventario";
 import { finDelDiaColombia, inicioDelDiaColombia } from "../Utils/fechas";
+import { kilosBuscados } from "../Utils/kilos";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 
 export const ESTADOS_ROLLO = {
@@ -23,6 +24,8 @@ const FILTROS_VACIOS = {
   estado: "",
   proveedor: "",
   empresa: "",
+  // Kilos de la etiqueta: "4446", "4.446" o "4446 kg".
+  kilos: "",
   fechaDesde: "",
   fechaHasta: "",
 };
@@ -71,6 +74,9 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
       if (filtros.calibre) parametros.set("calibre", filtros.calibre);
       if (filtros.proveedor) parametros.set("proveedor", filtros.proveedor);
       if (filtros.empresa) parametros.set("empresa", filtros.empresa);
+      // Solo cuando ya son kilos (3 dígitos o más), para no buscar con cada tecla.
+      const kilos = kilosBuscados(filtros.kilos);
+      if (kilos) parametros.set("kilos", kilos);
       // En la vista "Rollos acabados" el estado queda fijo en agotado, sin
       // importar el filtro de Estado (se oculta en esa vista); en "Activos"
       // no se manda nada y el backend ya excluye agotados por defecto.

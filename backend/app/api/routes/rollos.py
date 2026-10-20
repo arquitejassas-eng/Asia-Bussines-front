@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from sqlalchemy import Integer, String, case, cast, func
 from sqlalchemy.orm import Session
 
 from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
@@ -36,6 +37,7 @@ def _rollo_de_mi_bodega(db: Session, rollo_id: int, usuario: Usuario) -> Rollo:
 def listar_rollos(
     codigo_interno: str = "", identificador_rollo: str = "", codigo_proveedor: str = "", descripcion: str = "", familia: str = "",
     color_material: str = "", calibre: str = "", estado: str = "", proveedor: str = "", empresa: str = "",
+    kilos: str = "",
     fecha_desde: datetime | None = None,
     fecha_hasta: datetime | None = None, pagina: int = Query(1, ge=1), tamano: int = Query(30, ge=1, le=100),
     paginado: bool = False, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
@@ -53,6 +55,7 @@ def listar_rollos(
     if calibre: consulta = consulta.filter(Rollo.calibre == float(calibre))
     if proveedor: consulta = consulta.filter(Rollo.proveedor.ilike(f"%{proveedor}%"))
     if empresa: consulta = consulta.filter(Rollo.empresa == filtro_empresa(empresa))
+    if kilos: consulta = consulta.filter(filtro_kilos(kilos))
     # Sin filtro de estado explícito = "inventario activo": los agotados no
     # deben hacer bulto en la búsqueda normal. Para verlos, se pide el estado
     # explícitamente (ej. estado=agotado), igual que cualquier otro filtro.
@@ -77,6 +80,18 @@ def filtro_empresa(empresa: str) -> str:
     "sin_empresa" busca los rollos cuya referencia no traía empresa (los que
     hay que corregir a mano)."""
     return "" if empresa == "sin_empresa" else empresa.strip().upper()
+
+
+def filtro_kilos(texto: str):
+    """Rollos que pesan esos kilos ("4446", "4.446", "4446 kg"), por el
+    comienzo, igual que los buscadores de la pantalla (src/Utils/kilos.ts):
+    el peso neto de los rollos del Excel viene en kilos y el de Recepción en
+    toneladas (por debajo de 100 se toma como toneladas)."""
+    digitos = "".join(c for c in texto if c.isdigit())
+    if len(digitos) < 3:
+        raise HTTPException(status_code=400, detail="Escribe al menos 3 dígitos de los kilos.")
+    kilos = case((Rollo.peso_neto < 100, Rollo.peso_neto * 1000), else_=Rollo.peso_neto)
+    return cast(cast(func.round(kilos), Integer), String).like(f"{digitos}%")
 
 
 def asignar_peso_actual(db: Session, rollos: list[Rollo]) -> None:
