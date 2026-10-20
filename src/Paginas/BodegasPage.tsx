@@ -12,6 +12,20 @@ const ETIQUETAS_ESTADO_SOLICITUD: Record<string, string> = {
   rechazada: "Rechazada",
 };
 
+const kg = (valor: number) => `${Math.round(valor).toLocaleString("es-CO")} kg`;
+
+/** Kilos de la etiqueta (peso neto al ingresar) y, si el rollo ya se usó, los que le quedan. */
+function KilosRollo({ producto }: { producto: { pesoNeto: number | null; pesoActualKg?: number | null; estadoRollo?: string } }) {
+  const { pesoNeto, pesoActualKg, estadoRollo } = producto;
+  if (pesoNeto == null && pesoActualKg == null) return <>—</>;
+  if (estadoRollo !== "abierto" || pesoActualKg == null || pesoNeto == null) return <>{kg(pesoNeto ?? pesoActualKg ?? 0)}</>;
+  return <>{kg(pesoNeto)} <span className="bodegas-texto-ayuda" style={{ margin: 0 }}>(quedan ≈ {kg(pesoActualKg)})</span></>;
+}
+
+function EstadoRollo({ estado }: { estado: string }) {
+  return <span className={`bodegas-estado-badge estado-rollo-${estado}`}>{estado === "abierto" ? "Abierto" : estado === "cerrado" ? "Cerrado" : estado}</span>;
+}
+
 function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const b = useControladorBodegas(sesion, almacen);
 
@@ -169,7 +183,7 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                 <input
                   type="text"
                   className="bodegas-input-producto"
-                  placeholder="Buscar producto por nombre o código..."
+                  placeholder="Buscar por nombre, código, rollo o kilos..."
                   value={b.busquedaProductoBodega}
                   onChange={(e) => b.setBusquedaProductoBodega(e.target.value)}
                 />
@@ -189,6 +203,8 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                         <th>Rollo</th>
                         <th>Descripción</th>
                         <th>Stock disponible</th>
+                        <th>Kilos</th>
+                        <th>Estado</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -200,6 +216,8 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                           <td>{p.identificadorRollo || "—"}</td>
                           <td>{p.descripcion}</td>
                           <td>{p.stock} {almacen?.unidadPorFamilia?.[p.familia] || ""}</td>
+                          <td>{p.rolloId ? <KilosRollo producto={p} /> : "—"}</td>
+                          <td>{p.rolloId && p.estadoRollo ? <EstadoRollo estado={p.estadoRollo} /> : "—"}</td>
                           <td>
                             <button
                               className="bodegas-boton-solicitar"
@@ -236,6 +254,12 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                   <strong>
                     {b.productoSeleccionado.stock} {almacen?.unidadPorFamilia?.[b.productoSeleccionado.familia] || ""}
                   </strong>
+                  {b.productoSeleccionado.rolloId && (
+                    <>
+                      {" · "}<KilosRollo producto={b.productoSeleccionado} />
+                      {b.productoSeleccionado.estadoRollo && <>{" · "}<EstadoRollo estado={b.productoSeleccionado.estadoRollo} /></>}
+                    </>
+                  )}
                 </p>
 
                 <form onSubmit={b.enviarSolicitud} noValidate>

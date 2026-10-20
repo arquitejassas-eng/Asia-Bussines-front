@@ -60,6 +60,10 @@ class ProductoResponse(ProductoBase):
     rollo_id: int | None = None
     identificador_rollo: str = ""
     peso_neto: float | None = None
+    # Solo para filas de rollo (inventario de otra bodega): "cerrado" /
+    # "abierto" y los kilos que le quedan según sus metros.
+    estado_rollo: str = ""
+    peso_actual_kg: float | None = None
     # Solo poblados para el stock adicional que genera Producción (ver
     # Producto.color/ral/calidad/... en app/models/producto.py) — vacíos/None
     # para cualquier producto que no venga de ese flujo.

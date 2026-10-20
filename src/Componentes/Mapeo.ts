@@ -21,6 +21,7 @@ export function productoDesdeApi(p: RegistroApi) {
     entrada: numero(p.entrada), stock: numero(p.stock), stockMinimo: numeroOpcional(p.stock_minimo),
     pesoNeto: p.peso_neto == null ? null : numero(p.peso_neto), rolloId: p.rollo_id == null ? null : numero(p.rollo_id),
     identificadorRollo: texto(p.identificador_rollo),
+    estadoRollo: texto(p.estado_rollo), pesoActualKg: p.peso_actual_kg == null ? null : numero(p.peso_actual_kg),
     // Solo poblados para el stock adicional que genera Producción — ver
     // Producto.color/ral/calidad/... en el backend.
     color: texto(p.color), ral: texto(p.ral), calidad: p.calidad == null ? null : texto(p.calidad),

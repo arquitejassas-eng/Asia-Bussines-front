@@ -351,6 +351,17 @@
   color: var(--at-red, #C23B2C);
 }
 
+/* Estado del rollo en el inventario de otra bodega */
+.bodegas-estado-badge.estado-rollo-cerrado {
+  background: var(--at-green-dim, rgba(46, 125, 79, 0.12));
+  color: var(--at-green, #2E7D4F);
+}
+
+.bodegas-estado-badge.estado-rollo-abierto {
+  background: var(--at-amber-dim, rgba(184, 114, 10, 0.12));
+  color: var(--at-amber, #B8720A);
+}
+
 /* ── Modal de solicitud ───────────────────────────────────────────────────── */
 .bodegas-modal-fondo {
   position: fixed;

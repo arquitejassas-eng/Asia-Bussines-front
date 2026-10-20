@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
 from app.models.bodega import Bodega
+from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.solicitud import EstadoSolicitud, Solicitud
@@ -12,7 +13,7 @@ from app.models.usuario import RolUsuario, Usuario
 from app.schemas.bodegas import BodegaCrear, BodegaResponse, SolicitudCrear, SolicitudResponse
 from app.schemas.inventario import ProductoResponse
 from app.services import bodegas as srv_bodegas
-from app.services.clasificacion import formatear_calibre
+from app.services.clasificacion import formatear_calibre, peso_actual_toneladas
 from app.services.transferencias import (
     aceptar_solicitud_transferencia,
     crear_solicitud_transferencia,
@@ -60,20 +61,38 @@ def inventario_de_bodega(
         consulta = consulta.filter(Producto.descripcion.ilike(termino) | Producto.codigo.ilike(termino))
     productos = list(consulta.all())
     rollos = db.query(Rollo).filter(Rollo.bodega_id == bodega_id, Rollo.metros_disponibles > 0).all()
-    filas_rollos = [{
-        "id": -rollo.id, "bodega_id": rollo.bodega_id,
-        "codigo_importacion": rollo.codigo_proveedor or "", "codigo": rollo.codigo_interno,
-        "descripcion": rollo.descripcion, "familia": "Rollos de acero", "calibre": formatear_calibre(rollo.calibre),
-        "peso_neto": rollo.peso_neto, "entrada": round(rollo.metros_disponibles + rollo.metros_consumidos, 2),
-        "stock": rollo.metros_disponibles, "rollo_id": rollo.id,
-        "identificador_rollo": rollo.identificador_rollo,
-    } for rollo in rollos]
+    espesores = {e.espesor: e for e in db.query(TablaEspesorEquivalencia).all()}
+    filas_rollos = []
+    for rollo in rollos:
+        toneladas = peso_actual_toneladas(rollo.calibre, rollo.metros_disponibles, espesores)
+        filas_rollos.append({
+            "id": -rollo.id, "bodega_id": rollo.bodega_id, "empresa": rollo.empresa or "",
+            "codigo_importacion": rollo.codigo_proveedor or "", "codigo": rollo.codigo_interno,
+            "descripcion": rollo.descripcion, "familia": "Rollos de acero", "calibre": formatear_calibre(rollo.calibre),
+            "peso_neto": rollo.peso_neto, "entrada": round(rollo.metros_disponibles + rollo.metros_consumidos, 2),
+            "stock": round(rollo.metros_disponibles, 2), "rollo_id": rollo.id,
+            "identificador_rollo": rollo.identificador_rollo,
+            # Varios rollos del mismo código pueden tener los mismos metros: el
+            # estado y los kilos (los de la etiqueta y los que le quedan) ayudan
+            # a saber cuál es cuál al pedirlo.
+            "estado_rollo": rollo.estado.value if rollo.estado else "",
+            "peso_actual_kg": round(toneladas * 1000) if toneladas is not None else None,
+        })
     if busqueda:
         termino = busqueda.lower()
         filas_rollos = [fila for fila in filas_rollos if termino in fila["codigo"].lower()
                          or termino in fila["descripcion"].lower()
-                         or termino in fila["identificador_rollo"].lower()]
+                         or termino in fila["identificador_rollo"].lower()
+                         or _kilos_coinciden(termino, fila["peso_neto"], fila["peso_actual_kg"])]
     return [*productos, *filas_rollos]
+
+
+def _kilos_coinciden(termino: str, *pesos: float | None) -> bool:
+    """Buscar "4458" o "4.458" encuentra el rollo de 4458 kg (etiqueta o actual)."""
+    digitos = termino.replace(".", "").replace(",", "").strip()
+    if not digitos.isdigit():
+        return False
+    return any(peso is not None and digitos in str(round(peso)) for peso in pesos)
 
 
 @router.post("/solicitudes", response_model=SolicitudResponse, status_code=status.HTTP_201_CREATED,

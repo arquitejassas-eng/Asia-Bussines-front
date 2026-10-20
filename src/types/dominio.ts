@@ -10,6 +10,8 @@ export type Producto = {
   id: number; bodegaId: number | null; codigoImportacion: string; codigo: string; referencia: string; descripcion: string;
   familia: string; calibre: string; entrada: number; stock: number; stockMinimo: number | null; pesoNeto: number | null;
   rolloId: number | null; identificadorRollo: string; bodegaNombre?: string;
+  // Solo filas de rollo del inventario de otra bodega.
+  estadoRollo?: string; pesoActualKg?: number | null;
 };
 export type EnvioItemApi = {
   id: number; rollo_id: number | null; producto_codigo: string | null; descripcion: string; cantidad: number | null;
