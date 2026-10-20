@@ -422,6 +422,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                   onClick={() => a.seleccionarProductoParaItem(indice, p)}
                                 >
                                   <strong>{p.codigo}</strong> — {p.descripcion} (stock: {p.stock})
+                                  {p.bodega_id !== Number(item.bodegaId || a.formulario.bodegaId) && (
+                                    <em style={{ display: "block", fontSize: "0.8rem" }}>
+                                      Está en {almacen.bodegas.find((b) => b.id === p.bodega_id)?.nombre || "otra bodega"}: se pide con un traslado.
+                                    </em>
+                                  )}
                                 </button>
                               ))}
                             </div>
@@ -499,18 +504,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               </div>
 
               {ofrecerMaterialEnCamino && (
-                <label style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", margin: "0.75rem 0" }}>
-                  <input
-                    type="checkbox"
-                    style={{ width: "auto", marginTop: "0.2rem" }}
-                    checked={a.formulario.materialEnCamino}
-                    onChange={(e) => a.marcarMaterialEnCamino(e.target.checked)}
-                  />
-                  <span>
-                    <strong>El material viene en camino.</strong> En la bodega no alcanza, pero ya está comprado.
-                    El apartado queda "esperando material" y la bodega podrá enviarlo a producción cuando le dé ingreso.
-                  </span>
-                </label>
+                <p className="inventario-carga-ayuda" style={{ margin: "0.75rem 0" }}>
+                  <strong>En esta bodega no alcanza.</strong> Si hay en otras bodegas de la empresa (o viene en camino), la cotización
+                  se crea y queda "esperando material": la bodega de despacho pide el traslado y la envía a producción cuando llegue.
+                  Si no alcanza ni sumando toda la empresa, no se puede crear.
+                </p>
               )}
 
               {quitaEstaParte && (

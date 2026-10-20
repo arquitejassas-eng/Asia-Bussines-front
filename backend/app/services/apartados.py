@@ -38,6 +38,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.services.material_en_camino import metros_en_camino_codigo, metros_por_repartir_codigo
+from app.services.productos import nuevo_producto_en_bodega
 from app.schemas.apartados import SepararApartadoRequest, ApartadoCrear, ApartadoEditar
 
 ESTADOS_RESERVA_ACTIVA = (
@@ -305,12 +306,14 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
                     coberturas_producto[producto.id] = cobertura_producto(db, producto=producto)
                 falta = round(item.cantidad - coberturas_producto[producto.id].get(item.id, 0), 2)
                 if falta > 0.005:
-                    faltantes.append(f"faltan {falta:g} de {producto.codigo}")
+                    _, donde = disponible_empresa_producto(db, producto=producto, bodega_despacho=apartado.bodega_id)
+                    faltantes.append(f"faltan {falta:g} de {producto.codigo}" + (f" (hay en {_texto_donde(donde)})" if donde else ""))
             else:
                 pendiente = (item.metros_requeridos or 0) - (item.metros_consumidos or 0)
                 falta = round(pendiente - coberturas.get((apartado.bodega_id, item.codigo_interno), {}).get(item.id, 0), 2)
                 if falta > 0.005:
-                    faltantes.append(f"faltan {falta:g} m de {item.codigo_interno}")
+                    _, donde = disponible_empresa_codigo(db, codigo_interno=item.codigo_interno, bodega_despacho=apartado.bodega_id)
+                    faltantes.append(f"faltan {falta:g} m de {item.codigo_interno}" + (f" (hay en {_texto_donde(donde, ' m')})" if donde else ""))
         resultado[apartado.id] = faltantes
     return resultado
 
@@ -438,7 +441,7 @@ def disponibilidad_por_codigo(db: Session, *, bodega_id: int, codigo_interno: st
     }
 
 
-def cantidad_reservada_producto(db: Session, *, bodega_id: int, producto_id: int) -> float:
+def cantidad_reservada_producto(db: Session, *, bodega_id: int, producto_id: int, incluir_traslados: bool = True) -> float:
     """Análogo a `metros_reservados_codigo`, pero para un `Producto` de stock:
     suma `cantidad` de los ítems POR_STOCK de ese producto en apartados
     activos, más lo aceptado para un traslado que todavía no sale. Igual que
@@ -457,7 +460,7 @@ def cantidad_reservada_producto(db: Session, *, bodega_id: int, producto_id: int
         )
         .scalar()
     )
-    producto = db.get(Producto, producto_id)
+    producto = db.get(Producto, producto_id) if incluir_traslados else None
     en_traslado = cantidad_en_traslado_producto(db, producto) if producto is not None else 0
     return round(float(total or 0) + en_traslado, 2)
 
@@ -504,51 +507,138 @@ def apartado_de_mi_bodega(db: Session, apartado_id: int, usuario: Usuario) -> Ap
     return apartado
 
 
+def _bodegas_por_id(db: Session) -> dict[int, Bodega]:
+    return {b.id: b for b in db.query(Bodega).all()}
+
+
+def _libre_que_cuenta(libre: float, bodega: Bodega | None, bodega_despacho: int) -> float:
+    """Lo libre de una bodega que cuenta para la empresa: lo de una bodega
+    desde la que no se traslada (San Gil) solo sirve para despachar allá
+    mismo; lo que le falta (negativo) sí resta, porque ya está prometido."""
+    if bodega is not None and bodega.sin_traslado and bodega.id != bodega_despacho:
+        return min(libre, 0)
+    return libre
+
+
+def disponible_empresa_codigo(db: Session, *, codigo_interno: str, bodega_despacho: int) -> tuple[float, list[tuple[str, float]]]:
+    """Metros de un código que se pueden prometer en TODA la empresa: por cada
+    bodega lo físico menos lo apartado (una cotización que espera material
+    deja su bodega en negativo, así que lo que ya está prometido de otra
+    bodega se resta solo), más lo que viene en camino o está por repartir.
+    Devuelve también dónde hay libre fuera de la bodega de despacho."""
+    fisico = dict(
+        db.query(Rollo.bodega_id, func.sum(Rollo.metros_disponibles))
+        .filter(Rollo.codigo_interno == codigo_interno, Rollo.bodega_id.isnot(None))
+        .group_by(Rollo.bodega_id).all()
+    )
+    reservado = dict(
+        db.query(Apartado.bodega_id, func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
+        .join(ApartadoItem, ApartadoItem.apartado_id == Apartado.id)
+        .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.codigo_interno == codigo_interno)
+        .group_by(Apartado.bodega_id).all()
+    )
+    bodegas = _bodegas_por_id(db)
+    total, donde = 0.0, []
+    for bodega_id in set(fisico) | set(reservado):
+        libre = float(fisico.get(bodega_id) or 0) - float(reservado.get(bodega_id) or 0)
+        total += _libre_que_cuenta(libre, bodegas.get(bodega_id), bodega_despacho)
+        bodega = bodegas.get(bodega_id)
+        if bodega_id != bodega_despacho and libre > 0.005 and bodega is not None and not bodega.sin_traslado:
+            donde.append((bodega.nombre, round(libre, 2)))
+    total += metros_en_camino_codigo(db, codigo_interno=codigo_interno) + metros_por_repartir_codigo(db, codigo_interno=codigo_interno)
+    return round(total, 2), sorted(donde, key=lambda d: -d[1])
+
+
+def disponible_empresa_producto(db: Session, *, producto: Producto, bodega_despacho: int) -> tuple[float, list[tuple[str, float]]]:
+    """Lo mismo para un producto de stock (mismo código y empresa en todas las
+    bodegas). Lo apartado para un traslado no se resta aquí: ese material ya
+    está prometido a la cotización que lo espera (que deja su bodega en
+    negativo); lo que va en camino (despachado, sin recibir) sí se suma."""
+    from app.models.solicitud import EstadoSolicitud, Solicitud
+
+    bodegas = _bodegas_por_id(db)
+    total, donde = 0.0, []
+    for p in db.query(Producto).filter(Producto.codigo == producto.codigo, Producto.empresa == (producto.empresa or "")).all():
+        libre = float(p.stock) - cantidad_reservada_producto(db, bodega_id=p.bodega_id, producto_id=p.id, incluir_traslados=False)
+        total += _libre_que_cuenta(libre, bodegas.get(p.bodega_id), bodega_despacho)
+        bodega = bodegas.get(p.bodega_id)
+        if p.bodega_id != bodega_despacho and libre > 0.005 and (bodega is None or not bodega.sin_traslado):
+            donde.append((bodega.nombre if bodega else "Admin Inventario", round(libre, 2)))
+    en_camino = (
+        db.query(func.coalesce(func.sum(Solicitud.cantidad), 0))
+        .filter(Solicitud.rollo_id.is_(None), Solicitud.producto_codigo == producto.codigo,
+                Solicitud.empresa == (producto.empresa or ""), Solicitud.estado == EstadoSolicitud.DESPACHADA)
+        .scalar()
+    )
+    total += float(en_camino or 0)
+    return round(total, 2), sorted(donde, key=lambda d: -d[1])
+
+
+def _texto_donde(donde: list[tuple[str, float]], unidad: str = "") -> str:
+    return ", ".join(f"{nombre} {cantidad:g}{unidad}" for nombre, cantidad in donde)
+
+
+def producto_en_bodega(db: Session, producto_id: int | None, bodega_id: int) -> int | None:
+    """Una línea de stock puede pedir un producto que hoy solo está en otra
+    bodega (se trae con un traslado): la cotización usa la fila de ESE
+    producto en la bodega de despacho, y si no existe la crea en 0."""
+    if producto_id is None:
+        return None
+    producto = db.get(Producto, producto_id)
+    if producto is None or producto.bodega_id == bodega_id:
+        return producto_id
+    propio = (
+        db.query(Producto)
+        .filter(Producto.bodega_id == bodega_id, Producto.codigo == producto.codigo, Producto.empresa == (producto.empresa or ""))
+        .first()
+    )
+    if propio is None:
+        propio = nuevo_producto_en_bodega(producto, bodega_id=bodega_id, cantidad=0)
+        db.add(propio)
+        db.flush()
+    return propio.id
+
+
 def _validar_que_quepa(
     db: Session, *, bodega_id: int, solicitado_por_codigo: dict[str, float],
     solicitado_por_producto: dict[int, float], material_en_camino: bool,
 ) -> None:
     """Lo que se va a apartar (o lo que se aumenta al editar) tiene que caber
-    en lo libre de la bodega; con `material_en_camino`, también en lo que
-    viene en camino o está por repartir. Misma regla al crear y al editar."""
+    en lo libre de TODA la empresa: la bodega de despacho, las otras bodegas
+    (desde donde se trae con un traslado; San Gil no traslada) y lo que viene
+    en camino o está por repartir. Nunca se promete más de lo que hay. Si en
+    la bodega de despacho no alcanza, la cotización queda "esperando
+    material" (no se puede enviar a producción hasta que llegue). Misma regla
+    al crear y al editar. `material_en_camino` ya no hace falta: se deja por
+    compatibilidad con la pantalla."""
     for codigo_interno, metros_solicitados in solicitado_por_codigo.items():
-        resumen = disponibilidad_por_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, bloquear=True)
-        if metros_solicitados <= resumen["metros_disponibles"]:
-            continue
-        en_bodega = max(resumen["metros_disponibles"], 0)
-        de_la_bolsa = round(resumen["metros_para_apartar"] - en_bodega, 2)
-        if metros_solicitados > resumen["metros_para_apartar"]:
-            # Ni con lo que viene en camino alcanza: solo se aparta material
-            # que existe o que está en un checklist ya cargado.
-            puede = resumen["metros_para_apartar"]
+        # Bloquea los rollos del código en la bodega (serializa apartados
+        # simultáneos). Siempre se mira la empresa, aunque la bodega lo tenga:
+        # su material puede estar prometido a una cotización de otra bodega
+        # que lo está esperando.
+        disponibilidad_por_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, bloquear=True)
+        empresa, _ = disponible_empresa_codigo(db, codigo_interno=codigo_interno, bodega_despacho=bodega_id)
+        if metros_solicitados > empresa + 0.005:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Del código '{codigo_interno}' solo puedes apartar {puede} m: {en_bodega} m libres en esta bodega "
-                    f"+ {de_la_bolsa} m libres de lo que viene en camino o está por repartir en Admin Inventario. "
-                    f"Pediste {metros_solicitados} m: faltan {round(metros_solicitados - puede, 2)} m que no están "
-                    "ni en la bodega ni en camino. Si viene otro pedido, sube su checklist en Recepción."
-                ),
-            )
-        if not material_en_camino:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"El código '{codigo_interno}' no tiene material suficiente en esta bodega: "
-                    f"libres {en_bodega} m, solicitados {metros_solicitados} m ({de_la_bolsa} m libres en camino o por repartir). "
-                    "Para apartar lo que viene en camino, marca 'El material viene en camino'."
+                    f"No hay suficiente '{codigo_interno}' en toda la empresa: pediste {metros_solicitados:g} m y solo hay "
+                    f"{max(round(empresa, 2), 0) + 0:g} m sin prometer (sumando todas las bodegas y lo que viene en camino). "
+                    f"Faltan {round(metros_solicitados - max(empresa, 0), 2) + 0:g} m."
                 ),
             )
 
     for producto_id, cantidad_solicitada in solicitado_por_producto.items():
         resumen = disponibilidad_producto(db, bodega_id=bodega_id, producto_id=producto_id, bloquear=True)
-        if cantidad_solicitada > resumen["cantidad_disponible"] and not material_en_camino:
+        producto = db.get(Producto, producto_id)
+        empresa, _ = disponible_empresa_producto(db, producto=producto, bodega_despacho=bodega_id)
+        if cantidad_solicitada > empresa + 0.005:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"El producto '{resumen['codigo']}' no tiene stock suficiente: "
-                    f"disponibles {max(resumen['cantidad_disponible'], 0)}, solicitados {cantidad_solicitada}. "
-                    "Si ese material ya viene en camino, marca 'El material viene en camino'."
+                    f"No hay suficiente '{resumen['codigo']}' en toda la empresa: pediste {cantidad_solicitada:g} y solo hay "
+                    f"{max(round(empresa, 2), 0) + 0:g} sin prometer (sumando todas las bodegas). "
+                    f"Faltan {round(cantidad_solicitada - max(empresa, 0), 2) + 0:g}."
                 ),
             )
 
@@ -573,6 +663,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     for item in datos.items:
         if item.rollo_id:
             preparar_rollo_completo(db, item, bodega_id)
+        if item.modalidad == ModalidadApartado.POR_STOCK:
+            item.producto_id = producto_en_bodega(db, item.producto_id, bodega_id)
 
     solicitado_por_codigo: dict[str, float] = {}
     solicitado_por_producto: dict[int, float] = {}
@@ -637,6 +729,9 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
         raise HTTPException(status_code=400, detail="El apartado debe tener al menos un producto solicitado.")
     bodega_id = bodega_de_consulta(db, usuario, datos.bodega_id)
     actuales = {item.id: item for item in apartado.items}
+    for linea in datos.items:
+        if linea.modalidad == ModalidadApartado.POR_STOCK:
+            linea.producto_id = producto_en_bodega(db, linea.producto_id, bodega_id)
     con_salida = [item for item in apartado.items if _tiene_salida(item)]
     if bodega_id != apartado.bodega_id and con_salida:
         raise HTTPException(status_code=400, detail="No se puede cambiar la bodega: esta cotización ya tiene salidas registradas.")

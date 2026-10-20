@@ -83,14 +83,30 @@ def buscar_productos_para_apartar(
     Inventario no tiene bodega propia, por eso no sirve /inventario/productos."""
     bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
     termino = f"%{busqueda.strip()}%"
-    return (
+    coincide = Producto.codigo.ilike(termino) | Producto.codigo_importacion.ilike(termino) | Producto.descripcion.ilike(termino)
+    propios = (
         db.query(Producto)
-        .filter(Producto.bodega_id == bodega, Producto.familia != FAMILIA_ROLLOS)
-        .filter(Producto.codigo.ilike(termino) | Producto.codigo_importacion.ilike(termino) | Producto.descripcion.ilike(termino))
+        .filter(Producto.bodega_id == bodega, Producto.familia != FAMILIA_ROLLOS, coincide)
         .order_by(Producto.id.desc())
         .limit(8)
         .all()
     )
+    # Lo que no está en esta bodega pero sí en otra (se trae con un traslado;
+    # San Gil no traslada): una fila por código y empresa, la de más stock.
+    ya = {(p.codigo, p.empresa) for p in propios}
+    sin_traslado = {b.id for b in db.query(Bodega).all() if b.sin_traslado}
+    otros: dict[tuple, Producto] = {}
+    for p in (
+        db.query(Producto)
+        .filter(Producto.bodega_id.isnot(None), Producto.bodega_id != bodega, Producto.familia != FAMILIA_ROLLOS,
+                Producto.stock > 0, coincide)
+        .order_by(Producto.stock.desc())
+        .limit(40)
+    ):
+        clave = (p.codigo, p.empresa)
+        if clave not in ya and clave not in otros and p.bodega_id not in sin_traslado:
+            otros[clave] = p
+    return (propios + list(otros.values()))[:12]
 
 
 @router.get("/reservas", response_model=list[ReservaCodigoResponse])
