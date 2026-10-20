@@ -15,6 +15,9 @@ const ITEM_VACIO = {
   rolloId: null, rolloResumen: "", busquedaRollo: "",
   productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
   descripcion: "", cantidad: "",
+  // Solo por rollo: "" = teja; "caballete" o "flanche" se cortan a lo ancho
+  // del rollo (3 o 5 por corte) y apartan cortes × medida, no cantidad × medida.
+  tipoProducto: "",
   // "" = sale de la bodega de la cotización; si no, de esta otra bodega.
   bodegaId: "",
 };
@@ -26,6 +29,7 @@ type ItemFormulario = {
   rolloId: number | null; rolloResumen: string; busquedaRollo: string;
   productoId: number | null; productoCodigo: string; productoDescripcion: string; busquedaProducto: string;
   descripcion: string; cantidad: string | number;
+  tipoProducto: string;
   // Bodega de esta línea si es distinta a la de la cotización ("" = la misma).
   bodegaId?: string;
   // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
@@ -39,7 +43,7 @@ type ApartadoItem = {
   medida: number | null; metrosRequeridos: number | null; metrosConsumidos: number;
   productoId: number | null; stockDescontado: boolean;
   metrosPendientes: number | null; tieneProduccionRegistrada: boolean;
-  rolloId: number | null; rolloReferencia: string;
+  rolloId: number | null; rolloReferencia: string; tipoProducto: string;
 };
 export type RolloParaApartar = {
   id: number; identificadorRollo: string; codigoInterno: string; descripcion: string;
@@ -151,7 +155,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         ...ITEM_VACIO,
         id: it.id, modalidad: it.rolloId ? "rollo_completo" : it.modalidad, descripcion: it.descripcion, cantidad: String(it.cantidad),
         rolloId: it.rolloId, rolloResumen: it.rolloReferencia,
-        codigoInterno: it.codigoInterno || "", medida: it.medida == null ? "" : String(it.medida),
+        codigoInterno: it.codigoInterno || "", medida: it.medida == null ? "" : String(it.medida), tipoProducto: it.tipoProducto || "",
         productoId: it.productoId, productoDescripcion: it.modalidad === "por_stock" ? it.descripcion : "",
         metrosConsumidos: it.metrosConsumidos, stockDescontado: it.stockDescontado,
       })),
@@ -440,7 +444,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
             // "Cortar a (m)" es opcional en una línea de stock (ej. teja UPVC de 11,80 cortada a 7).
             ? { id: i.id, bodega_id, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad),
                 medida: Number(String(i.medida).replace(",", ".")) > 0 ? Number(String(i.medida).replace(",", ".")) : undefined }
-            : { id: i.id, bodega_id, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida) };
+            : { id: i.id, bodega_id, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida),
+                tipo_producto: i.tipoProducto || "" };
         }),
       });
       await cargarApartados();

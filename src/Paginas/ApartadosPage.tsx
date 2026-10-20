@@ -12,7 +12,7 @@ import PanelSepararCotizacion from "../Componentes/PanelSepararCotizacion";
 import Paginacion from "../Componentes/Paginacion";
 import { useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
-import { calcularSolicitudesPendientes, calcularStockParaAlistar, pideCorte } from "../Utils/produccion";
+import { calcularSolicitudesPendientes, calcularStockParaAlistar, metrosDeLinea, pideCorte } from "../Utils/produccion";
 import "../Style/Inventario.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
@@ -26,8 +26,9 @@ const LINEAS_VISIBLES = 4;
 
 /** Cantidad legible de una línea: metros para rollo (con la cuenta si son
  * piezas de una medida, ej. "18 × 6 m = 108 m"), unidades para producto. */
-function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null }) {
+function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null; tipoProducto?: string }) {
   if (it.modalidad === "por_stock") return `${it.cantidad} und`;
+  if (it.tipoProducto && it.medida) return `${it.cantidad} ${it.tipoProducto}${it.cantidad === 1 ? "" : "s"} de ${it.medida} m = ${it.metrosRequeridos} m de lámina`;
   if (it.medida && it.medida !== 1) return `${it.cantidad} × ${it.medida} m = ${it.metrosRequeridos} m`;
   return `${it.metrosRequeridos ?? it.cantidad} m`;
 }
@@ -88,7 +89,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const datos = disponibilidadItems[indice]?.datos;
     if (!datos) return false;
     if (item.modalidad === "por_stock") return Number(item.cantidad) > (datos.cantidadDisponible ?? 0);
-    return datos.cantidadRollos === 0 || Number(item.cantidad) * Number(item.medida) > (datos.metrosDisponibles ?? 0);
+    return datos.cantidadRollos === 0
+      || metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto).metros > (datos.metrosDisponibles ?? 0);
   });
   const ofrecerMaterialEnCamino = lineaSinMaterial || a.formulario.materialEnCamino
     || a.errorFormularioApartado.includes("viene en camino");
@@ -491,6 +493,30 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       />
                     </div>
                   )}
+                  {item.modalidad === "por_rollo" && (
+                    <div>
+                      <label>Tipo</label>
+                      <select
+                        aria-label="Tipo de producto de la línea"
+                        value={item.tipoProducto}
+                        disabled={Boolean(item.metrosConsumidos)}
+                        onChange={(e) => a.actualizarItemApartado(indice, "tipoProducto", e.target.value)}
+                      >
+                        <option value="">Teja / lámina</option>
+                        <option value="caballete">Caballete (3 por corte)</option>
+                        <option value="flanche">Flanche (5 por corte)</option>
+                      </select>
+                    </div>
+                  )}
+                  {item.modalidad === "por_rollo" && item.tipoProducto && Number(item.cantidad) > 0 && Number(item.medida) > 0 && (() => {
+                    const { metros, cortes, sobrantes } = metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto);
+                    return (
+                      <p className="inventario-carga-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                        Se apartan <strong>{metros} m de lámina</strong>: {cortes} corte{cortes === 1 ? "" : "s"} de {item.medida} m
+                        {sobrantes > 0 && <> · sobra{sobrantes === 1 ? "" : "n"} {sobrantes} {item.tipoProducto}{sobrantes === 1 ? "" : "s"} que queda{sobrantes === 1 ? "" : "n"} como stock</>}.
+                      </p>
+                    );
+                  })()}
                   {item.modalidad === "por_stock" && (
                     <div>
                       <label>Cortar a (m) — opcional</label>

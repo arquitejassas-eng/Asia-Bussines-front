@@ -122,7 +122,11 @@ class ApartadoItem(Base):
     # POR_ROLLO: metros por unidad. POR_STOCK (opcional): cortar cada unidad a
     # esta medida en metros (ej. teja UPVC de 11,80 cortada a 7); lo hace Planta.
     medida: Mapped[float | None] = mapped_column(Float, nullable=True)
-    metros_requeridos: Mapped[float | None] = mapped_column(Float, nullable=True)  # cantidad * medida (solo POR_ROLLO)
+    metros_requeridos: Mapped[float | None] = mapped_column(Float, nullable=True)  # ver seccionados.metros_de_linea (solo POR_ROLLO)
+    # Solo POR_ROLLO: "" = teja / lámina por metro; "caballete" o "flanche" se
+    # cortan a lo ancho del rollo (3 o 5 por corte), así que la lámina que se
+    # aparta es cortes × medida y no cantidad × medida.
+    tipo_producto: Mapped[str] = mapped_column(String(20), default="", server_default="")
     metros_consumidos: Mapped[float] = mapped_column(Float, default=0)
 
     producto_id: Mapped[int | None] = mapped_column(ForeignKey("productos.id"), nullable=True)  # solo POR_STOCK

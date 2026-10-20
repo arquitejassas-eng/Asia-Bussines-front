@@ -40,6 +40,7 @@ from app.models.usuario import RolUsuario, Usuario
 from app.services.material_en_camino import metros_en_camino_codigo, metros_por_repartir_codigo
 from app.services.empresas import EMPRESAS_CONOCIDAS
 from app.services.productos import nuevo_producto_en_bodega
+from app.services.seccionados import metros_de_linea
 from app.schemas.apartados import SepararApartadoRequest, ApartadoCrear, ApartadoEditar
 
 ESTADOS_RESERVA_ACTIVA = (
@@ -687,7 +688,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         if item.modalidad == ModalidadApartado.POR_STOCK:
             solicitado_por_producto[item.producto_id] = solicitado_por_producto.get(item.producto_id, 0) + item.cantidad
         else:
-            metros = round(item.cantidad * item.medida, 2)
+            metros = metros_de_linea(item.cantidad, item.medida, item.tipo_producto)
             solicitado_por_codigo[item.codigo_interno] = solicitado_por_codigo.get(item.codigo_interno, 0) + metros
     # Un rollo completo es material que ya está en la bodega: no puede ser "en camino".
     _validar_que_quepa(db, bodega_id=bodega_id, solicitado_por_codigo=solicitado_por_codigo,
@@ -721,7 +722,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
             db.add(ApartadoItem(
                 apartado_id=apartado.id, modalidad=ModalidadApartado.POR_ROLLO,
                 codigo_interno=item.codigo_interno, descripcion=item.descripcion,
-                cantidad=item.cantidad, medida=item.medida, metros_requeridos=round(item.cantidad * item.medida, 2),
+                cantidad=item.cantidad, medida=item.medida, metros_requeridos=metros_de_linea(item.cantidad, item.medida, item.tipo_producto),
+                tipo_producto=item.tipo_producto,
                 rollo_id=item.rollo_id,
             ))
 
@@ -797,7 +799,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
         else:
             if linea.codigo_interno != item.codigo_interno:
                 raise HTTPException(status_code=400, detail=f"La línea de {item.codigo_interno} ya tiene salida: no se puede cambiar el código.")
-            nuevos = round(linea.cantidad * linea.medida, 2)
+            nuevos = metros_de_linea(linea.cantidad, linea.medida, linea.tipo_producto)
             if nuevos + 0.005 < (item.metros_consumidos or 0):
                 raise HTTPException(
                     status_code=400,
@@ -824,7 +826,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
                 continue
             despues_producto[linea.producto_id] = despues_producto.get(linea.producto_id, 0) + linea.cantidad
         else:
-            despues_codigo[linea.codigo_interno] = despues_codigo.get(linea.codigo_interno, 0) + round(linea.cantidad * linea.medida, 2)
+            despues_codigo[linea.codigo_interno] = despues_codigo.get(linea.codigo_interno, 0) + metros_de_linea(linea.cantidad, linea.medida, linea.tipo_producto)
     aumento_codigo = {c: round(m - antes_codigo.get(c, 0), 2) for c, m in despues_codigo.items() if m - antes_codigo.get(c, 0) > 0.005}
     aumento_producto = {p: round(q - antes_producto.get(p, 0), 2) for p, q in despues_producto.items() if q - antes_producto.get(p, 0) > 0.005}
     _validar_que_quepa(db, bodega_id=bodega_id, solicitado_por_codigo=aumento_codigo,
@@ -847,7 +849,8 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
                 item.producto_id, item.cantidad, item.medida = linea.producto_id, linea.cantidad, linea.medida
             else:
                 item.codigo_interno, item.cantidad, item.medida = linea.codigo_interno, linea.cantidad, linea.medida
-                item.metros_requeridos = round(linea.cantidad * linea.medida, 2)
+                item.tipo_producto = linea.tipo_producto
+                item.metros_requeridos = metros_de_linea(linea.cantidad, linea.medida, linea.tipo_producto)
         elif linea.modalidad == ModalidadApartado.POR_STOCK:
             apartado.items.append(ApartadoItem(
                 modalidad=ModalidadApartado.POR_STOCK, producto_id=linea.producto_id,
@@ -856,7 +859,8 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
         else:
             apartado.items.append(ApartadoItem(
                 modalidad=ModalidadApartado.POR_ROLLO, codigo_interno=linea.codigo_interno, descripcion=linea.descripcion,
-                cantidad=linea.cantidad, medida=linea.medida, metros_requeridos=round(linea.cantidad * linea.medida, 2),
+                cantidad=linea.cantidad, medida=linea.medida, metros_requeridos=metros_de_linea(linea.cantidad, linea.medida, linea.tipo_producto),
+                tipo_producto=linea.tipo_producto,
                 rollo_id=linea.rollo_id,
             ))
     if apartado.estado == EstadoApartado.APARTADO:
@@ -955,6 +959,7 @@ def _partir_linea(item: ApartadoItem, cantidad: float, nueva_id: int) -> Apartad
         apartado_id=nueva_id, modalidad=item.modalidad, codigo_interno=item.codigo_interno,
         descripcion=_cantidad_en_descripcion(item.descripcion, item.cantidad, cantidad),
         cantidad=cantidad, medida=item.medida, producto_id=item.producto_id, stock_descontado=item.stock_descontado,
+        tipo_producto=item.tipo_producto,
     )
     if item.metros_requeridos is not None:
         copia.metros_requeridos = round(item.metros_requeridos * proporcion, 2)

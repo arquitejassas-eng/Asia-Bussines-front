@@ -16,6 +16,7 @@ from app.models.usuario import Usuario
 from app.schemas.produccion import ProduccionCrear, StockAdicionalItemCrear
 from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
 from app.services.modelos_teja import modelo_en_descripcion, normalizar_modelo_teja
+from app.services.seccionados import SECCIONES_POR_TIPO_PRODUCTO
 
 # Regla física de los productos "seccionados": el ancho del rollo se divide
 # siempre en N partes iguales según el tipo (3 para caballetes, 5 para
@@ -28,7 +29,6 @@ from app.services.modelos_teja import modelo_en_descripcion, normalizar_modelo_t
 # Familia fija por tipo para que el stock se agrupe junto en Inventario, sin
 # mezclarse entre sí ni con tejas — el rollo de origen se conserva aparte en
 # `Producto.codigo_rollo_origen`.
-SECCIONES_POR_TIPO_PRODUCTO = {"caballete": 3, "flanche": 5}
 FAMILIA_POR_TIPO_PRODUCTO = {"caballete": "CABALLETES", "flanche": "FLANCHES"}
 NOMBRE_POR_TIPO_PRODUCTO = {"caballete": "caballete", "flanche": "flanche"}
 
@@ -413,11 +413,19 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     if datos.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO:
         unidades_excedentes_apartado = 0
         if apartado_item is not None:
-            longitud = datos.metros_por_unidad
+            # Metros que vale cada unidad en la línea: si la línea ya es de
+            # caballete/flanche, apartó cortes × medida (5 de 3 m = 6 m, o
+            # sea 1,2 m por unidad); una línea vieja de teja apartó cantidad ×
+            # medida (la longitud). Así, entregar las 5 unidades cierra la
+            # línea en los dos casos.
+            if apartado_item.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO and apartado_item.cantidad:
+                por_unidad = apartado_item.metros_requeridos / apartado_item.cantidad
+            else:
+                por_unidad = datos.metros_por_unidad
             pendiente_metros = max(0.0, round(apartado_item.metros_requeridos - apartado_item.metros_consumidos, 2))
-            pendiente_unidades = round(pendiente_metros / longitud) if longitud else 0
+            pendiente_unidades = round(pendiente_metros / por_unidad) if por_unidad else 0
             unidades_hacia_apartado = min(datos.cantidad_productos, max(0, pendiente_unidades))
-            aplicado_al_apartado = round(unidades_hacia_apartado * longitud, 2)
+            aplicado_al_apartado = min(round(unidades_hacia_apartado * por_unidad, 2), pendiente_metros)
             unidades_excedentes_apartado = datos.cantidad_productos - unidades_hacia_apartado
         else:
             aplicado_al_apartado = 0.0

@@ -101,7 +101,9 @@ export function apartadoItemDesdeApi(i: RegistroApi) {
     productoId: i.producto_id == null ? null : numero(i.producto_id), stockDescontado: Boolean(i.stock_descontado),
     metrosPendientes: i.metros_pendientes == null ? null : numero(i.metros_pendientes),
     tieneProduccionRegistrada: Boolean(i.tiene_produccion_registrada),
-    rolloId: i.rollo_id == null ? null : numero(i.rollo_id), rolloReferencia: texto(i.rollo_referencia) };
+    rolloId: i.rollo_id == null ? null : numero(i.rollo_id), rolloReferencia: texto(i.rollo_referencia),
+    // Solo por rollo: "" = teja; "caballete" / "flanche" (apartan cortes × medida).
+    tipoProducto: texto(i.tipo_producto) };
 }
 
 export function apartadoDesdeApi(a: RegistroApi) {

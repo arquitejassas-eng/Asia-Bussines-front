@@ -9,10 +9,22 @@
 export const SECCIONES_POR_TIPO_PRODUCTO: Record<string, number> = { caballete: 3, flanche: 5 };
 export const NOMBRE_POR_TIPO_PRODUCTO: Record<string, string> = { caballete: "caballete", flanche: "flanche" };
 
+/** Metros de lámina que necesita una línea por rollo de la cotización (misma
+ * regla que backend app/services/seccionados.py::metros_de_linea): teja =
+ * cantidad × medida; caballete/flanche = cortes × medida, con cortes =
+ * cantidad entre las secciones, hacia arriba (5 caballetes de 3 m = 2 cortes
+ * = 6 m, y sobra 1). */
+export function metrosDeLinea(cantidad: number, medida: number, tipoProducto = ""): { metros: number; cortes: number; sobrantes: number } {
+  const secciones = SECCIONES_POR_TIPO_PRODUCTO[tipoProducto];
+  if (!secciones) return { metros: Math.round(cantidad * medida * 100) / 100, cortes: 0, sobrantes: 0 };
+  const cortes = Math.ceil(Math.round((cantidad / secciones) * 1e6) / 1e6);
+  return { metros: Math.round(cortes * medida * 100) / 100, cortes, sobrantes: cortes * secciones - cantidad };
+}
+
 type ApartadoItemPendiente = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string;
   cantidad: number; medida: number | null; metrosPendientes: number | null;
-  rolloId?: number | null; rolloReferencia?: string; stockDescontado?: boolean;
+  rolloId?: number | null; rolloReferencia?: string; stockDescontado?: boolean; tipoProducto?: string;
 };
 type ApartadoParaProduccion = { id: number; numeroCotizacion: string; cliente: string; empresa?: string; items: ApartadoItemPendiente[] };
 export type SolicitudProduccionPendiente = {
@@ -20,6 +32,8 @@ export type SolicitudProduccionPendiente = {
   codigoInterno: string | null; descripcion: string; cantidad: number; medida: number | null; metrosPendientes: number;
   // Rollo completo: Planta no lo produce, solo lo alista y lo mueve.
   rolloCompleto?: boolean; rolloReferencia?: string;
+  // "" = teja; "caballete" / "flanche": se corta a lo ancho del rollo.
+  tipoProducto?: string;
 };
 
 /** Ítems POR_ROLLO de apartados ya enviados a producción que todavía tienen
@@ -39,6 +53,7 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
         codigoInterno: it.codigoInterno, descripcion: it.descripcion, cantidad: it.cantidad, medida: it.medida,
         metrosPendientes: it.metrosPendientes ?? 0,
         rolloCompleto: Boolean(it.rolloId), rolloReferencia: it.rolloReferencia || "",
+        tipoProducto: it.tipoProducto || "",
       }))
   );
 }

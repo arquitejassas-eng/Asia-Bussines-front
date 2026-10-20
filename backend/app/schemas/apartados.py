@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
+from app.services.seccionados import TIPOS_LINEA_ROLLO
 from app.models.apartado import EstadoApartado, ModalidadApartado
 from app.services.empresas import EMPRESAS_CONOCIDAS
 from app.schemas.fechas import ModeloConFechasUtc
@@ -18,6 +19,8 @@ class ApartadoItemCrear(BaseModel):
     # Solo para POR_ROLLO.
     codigo_interno: str | None = None
     medida: float | None = Field(default=None, gt=0)
+    # Solo POR_ROLLO: "" / "teja", "caballete" o "flanche" (ver seccionados).
+    tipo_producto: str = ""
 
     # Solo para POR_STOCK.
     producto_id: int | None = None
@@ -33,6 +36,11 @@ class ApartadoItemCrear(BaseModel):
 
     @model_validator(mode="after")
     def _exigir_campos_segun_modalidad(self) -> "ApartadoItemCrear":
+        self.tipo_producto = (self.tipo_producto or "").strip().lower()
+        if self.tipo_producto == "teja" or self.modalidad != ModalidadApartado.POR_ROLLO:
+            self.tipo_producto = ""
+        if self.tipo_producto not in TIPOS_LINEA_ROLLO:
+            raise ValueError("El tipo de la línea debe ser teja, caballete o flanche.")
         if self.modalidad == ModalidadApartado.POR_ROLLO and self.rollo_id:
             return self
         if self.modalidad == ModalidadApartado.POR_ROLLO:
@@ -120,6 +128,7 @@ class ApartadoItemResponse(BaseModel):
     tiene_produccion_registrada: bool = False
     rollo_id: int | None = None
     rollo_referencia: str | None = None
+    tipo_producto: str = ""
 
 
 class RolloParaApartarResponse(BaseModel):

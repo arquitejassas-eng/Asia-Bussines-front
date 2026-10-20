@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, produccionDesdeApi, rolloDesdeApi } from "./Mapeo";
 import {
-  calcularSolicitudesPendientes, calcularStockParaAlistar, cotizacionesParaPlanta, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO,
+  calcularSolicitudesPendientes, calcularStockParaAlistar, cotizacionesParaPlanta, metrosDeLinea, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO,
 } from "../Utils/produccion";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import { coincideKilos, kilosBuscados } from "../Utils/kilos";
@@ -233,7 +233,13 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     const solicitud = apartadoItemId ? solicitudesPendientes.find((s) => s.itemId === apartadoItemId) : null;
     let unidadesExcedentesApartado = 0;
     if (solicitud) {
-      const pendienteUnidades = Math.round(solicitud.metrosPendientes / longitud);
+      // Metros que vale cada unidad en la línea (igual que el backend): una
+      // línea de caballete/flanche apartó cortes × medida (5 de 3 m = 6 m);
+      // una vieja de teja, cantidad × medida (la longitud).
+      const porUnidad = SECCIONES_POR_TIPO_PRODUCTO[solicitud.tipoProducto] && solicitud.cantidad
+        ? metrosDeLinea(solicitud.cantidad, solicitud.medida, solicitud.tipoProducto).metros / solicitud.cantidad
+        : longitud;
+      const pendienteUnidades = Math.round(solicitud.metrosPendientes / porUnidad);
       const unidadesHaciaApartado = Math.min(necesidad, Math.max(0, pendienteUnidades));
       unidadesExcedentesApartado = necesidad - unidadesHaciaApartado;
     }
@@ -340,6 +346,14 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     const enUnidades = solicitud.medida != null && solicitud.medida !== 1 && Number.isInteger(solicitud.cantidad);
     setMedidaProducto(enUnidades ? String(solicitud.medida) : "");
     setCantidadProductos(enUnidades ? String(solicitud.cantidad) : "");
+    // Una línea de caballete/flanche ya dice el tipo y la longitud: se llenan
+    // solos, con las unidades que todavía le faltan a la línea.
+    if (SECCIONES_POR_TIPO_PRODUCTO[solicitud.tipoProducto] && solicitud.medida) {
+      const porUnidad = metrosDeLinea(solicitud.cantidad, solicitud.medida, solicitud.tipoProducto).metros / solicitud.cantidad;
+      setTipoProducto(solicitud.tipoProducto);
+      setMetrosPorUnidad(String(solicitud.medida));
+      setCantidadProductos(String(Math.max(1, Math.round(solicitud.metrosPendientes / porUnidad))));
+    }
     setCodigoBusqueda(solicitud.codigoInterno); // llena la tabla de "rollos disponibles" con este código.
     setEmpresaFiltro(solicitud.empresa || ""); // y solo los rollos de la empresa de la cotización.
 
