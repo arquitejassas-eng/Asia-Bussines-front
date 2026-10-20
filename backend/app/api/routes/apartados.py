@@ -76,7 +76,7 @@ def consultar_disponibilidad_producto(
 
 @router.get("/productos", response_model=list[ProductoResponse])
 def buscar_productos_para_apartar(
-    busqueda: str = Query(..., min_length=1), bodega_id: int | None = None,
+    busqueda: str = Query(..., min_length=1), bodega_id: int | None = None, empresa: str = "",
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Producto]:
     """Productos de stock de la bodega elegida para una línea POR_STOCK. Admin
@@ -84,6 +84,10 @@ def buscar_productos_para_apartar(
     bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
     termino = f"%{busqueda.strip()}%"
     coincide = Producto.codigo.ilike(termino) | Producto.codigo_importacion.ilike(termino) | Producto.descripcion.ilike(termino)
+    # Una cotización de Asia Business solo usa material de Asia (y una de
+    # Arquitejas, de Arquitejas): los de la otra empresa no salen.
+    if empresa.strip():
+        coincide = coincide & (Producto.empresa == empresa.strip().upper())
     propios = (
         db.query(Producto)
         .filter(Producto.bodega_id == bodega, Producto.familia != FAMILIA_ROLLOS, coincide)

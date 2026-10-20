@@ -406,8 +406,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       ) : (
                         <>
                           <input
-                            placeholder={(item.bodegaId || a.formulario.bodegaId) ? "Buscar por código o descripción..." : "Elige primero la bodega"}
-                            disabled={!(item.bodegaId || a.formulario.bodegaId)}
+                            placeholder={!(item.bodegaId || a.formulario.bodegaId) ? "Elige primero la bodega"
+                              : !a.formulario.empresa ? "Elige primero la empresa" : "Buscar por código o descripción..."}
+                            disabled={!(item.bodegaId || a.formulario.bodegaId) || !a.formulario.empresa}
                             value={item.busquedaProducto}
                             onChange={(e) => a.buscarProductoParaItem(indice, e.target.value)}
                           />

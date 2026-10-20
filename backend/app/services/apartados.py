@@ -38,6 +38,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.services.material_en_camino import metros_en_camino_codigo, metros_por_repartir_codigo
+from app.services.empresas import EMPRESAS_CONOCIDAS
 from app.services.productos import nuevo_producto_en_bodega
 from app.schemas.apartados import SepararApartadoRequest, ApartadoCrear, ApartadoEditar
 
@@ -578,6 +579,19 @@ def _texto_donde(donde: list[tuple[str, float]], unidad: str = "") -> str:
     return ", ".join(f"{nombre} {cantidad:g}{unidad}" for nombre, cantidad in donde)
 
 
+def exigir_producto_de_la_empresa(db: Session, producto_id: int | None, empresa: str) -> None:
+    """Una cotización de Asia Business solo lleva productos de Asia (y una de
+    Arquitejas, de Arquitejas): el mismo código existe en las dos empresas."""
+    producto = db.get(Producto, producto_id) if producto_id is not None else None
+    if producto is not None and producto.empresa and empresa and producto.empresa != empresa:
+        del_producto, de_la_cotizacion = (EMPRESAS_CONOCIDAS.get(e, e) for e in (producto.empresa, empresa))
+        raise HTTPException(
+            status_code=400,
+            detail=f"El producto {producto.codigo} que escogiste es de {del_producto} y la cotización es de "
+            f"{de_la_cotizacion}: escoge el de {de_la_cotizacion}.",
+        )
+
+
 def producto_en_bodega(db: Session, producto_id: int | None, bodega_id: int) -> int | None:
     """Una línea de stock puede pedir un producto que hoy solo está en otra
     bodega (se trae con un traslado): la cotización usa la fila de ESE
@@ -664,6 +678,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         if item.rollo_id:
             preparar_rollo_completo(db, item, bodega_id)
         if item.modalidad == ModalidadApartado.POR_STOCK:
+            exigir_producto_de_la_empresa(db, item.producto_id, datos.empresa)
             item.producto_id = producto_en_bodega(db, item.producto_id, bodega_id)
 
     solicitado_por_codigo: dict[str, float] = {}
@@ -732,6 +747,9 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     actuales = {item.id: item for item in apartado.items}
     for linea in datos.items:
         if linea.modalidad == ModalidadApartado.POR_STOCK:
+            # Solo lo nuevo o cambiado: las cotizaciones cargadas del Excel pueden traer productos mezclados.
+            if not linea.id or actuales.get(linea.id) is None or actuales[linea.id].producto_id != linea.producto_id:
+                exigir_producto_de_la_empresa(db, linea.producto_id, datos.empresa)
             linea.producto_id = producto_en_bodega(db, linea.producto_id, bodega_id)
     con_salida = [item for item in apartado.items if _tiene_salida(item)]
     if bodega_id != apartado.bodega_id and con_salida:

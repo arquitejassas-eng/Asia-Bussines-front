@@ -348,7 +348,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       return;
     }
     try {
-      const datos = await api.get(`/apartados/productos?busqueda=${encodeURIComponent(consulta)}&bodega_id=${bodegaDeItem(indice)}`);
+      // Solo productos de la empresa de la cotización (el mismo código existe en las dos).
+      const datos = await api.get(`/apartados/productos?busqueda=${encodeURIComponent(consulta)}&bodega_id=${bodegaDeItem(indice)}`
+        + `&empresa=${encodeURIComponent(formulario.empresa)}`);
       setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: datos as Record<string, unknown>[] }));
     } catch {
       setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: [] }));
