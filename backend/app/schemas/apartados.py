@@ -110,6 +110,10 @@ class ApartadoItemEditar(ApartadoItemCrear):
 
 class ApartadoEditar(ApartadoCrear):
     items: list[ApartadoItemEditar]
+    # Edición de la cotización COMPLETA (Admin Inventario): las otras partes
+    # (otras bodegas, mismo número) que se editan junto con esta. Cada línea
+    # trae su bodega_id y al guardar se reparte entre las partes.
+    otras_partes_ids: list[int] = []
 
 
 class ApartadoItemResponse(BaseModel):

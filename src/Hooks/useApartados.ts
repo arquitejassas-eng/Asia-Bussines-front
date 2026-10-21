@@ -133,9 +133,14 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   // tiene otras partes, se le pueden quitar todas las líneas (se borra solo
   // esta parte; ver backend quitar_parte).
   const [parteEditada, setParteEditada] = useState<{ bodega: string; otrasPartes: string[] }>({ bodega: "", otrasPartes: [] });
+  // Al editar la cotización completa: las otras partes (otras bodegas, mismo
+  // número) que se guardan junto con la que se abrió (ver backend
+  // _editar_cotizacion_completa). Vacío = se edita solo esta parte.
+  const [otrasPartesIds, setOtrasPartesIds] = useState<number[]>([]);
 
   function abrirFormularioApartado() {
     setEditandoId(null);
+    setOtrasPartesIds([]);
     setParteEditada({ bodega: "", otrasPartes: [] });
     setFormulario(FORMULARIO_VACIO);
     setErrorFormularioApartado("");
@@ -144,21 +149,31 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     setMostrarFormularioApartado(true);
   }
 
-  /** Abre el mismo formulario con los datos de la cotización para corregirla. */
-  function abrirEdicionApartado(ap: Apartado) {
+  /** Abre el mismo formulario con los datos de la cotización para corregirla.
+   *  Con varias partes (la misma cotización en varias bodegas) se abre
+   *  completa: cada línea con su bodega, y al guardar se reparte sola. */
+  function abrirEdicionApartado(ap: Apartado, otras: Apartado[] = []) {
+    const partes = [ap, ...otras.filter((o) => o.id !== ap.id)];
+    const nombresPartes = new Set(partes.map((p) => p.bodegaNombre));
     setEditandoId(ap.id);
-    setParteEditada({ bodega: ap.bodegaNombre, otrasPartes: ap.otrasPartes });
+    setOtrasPartesIds(partes.slice(1).map((p) => p.id));
+    setParteEditada({
+      bodega: ap.bodegaNombre,
+      // Las partes que se editan juntas ya no cuentan como "otras".
+      otrasPartes: partes.length > 1 ? [] : ap.otrasPartes.filter((o) => !nombresPartes.has(o)),
+    });
     setFormulario({
-      bodegaId: String(ap.bodegaId), empresa: ap.empresa, materialEnCamino: (ap.faltantes?.length ?? 0) > 0,
+      bodegaId: String(ap.bodegaId), empresa: ap.empresa, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
       numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, observaciones: ap.observaciones,
-      items: ap.items.map((it) => ({
+      items: partes.flatMap((parte) => parte.items.map((it) => ({
         ...ITEM_VACIO,
         id: it.id, modalidad: it.rolloId ? "rollo_completo" : it.modalidad, descripcion: it.descripcion, cantidad: String(it.cantidad),
         rolloId: it.rolloId, rolloResumen: it.rolloReferencia,
         codigoInterno: it.codigoInterno || "", medida: it.medida == null ? "" : String(it.medida), tipoProducto: it.tipoProducto || "",
         productoId: it.productoId, productoDescripcion: it.modalidad === "por_stock" ? it.descripcion : "",
         metrosConsumidos: it.metrosConsumidos, stockDescontado: it.stockDescontado,
-      })),
+        bodegaId: parte.id === ap.id ? "" : String(parte.bodegaId),
+      }))),
     });
     setErrorFormularioApartado("");
     setDisponibilidadItems({});
@@ -168,6 +183,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
   function cerrarFormularioApartado() {
     setEditandoId(null);
+    setOtrasPartesIds([]);
     setMostrarFormularioApartado(false);
     setErrorFormularioApartado("");
     setDisponibilidadItems({});
@@ -446,6 +462,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         empresa: formulario.empresa,
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
+        ...(editandoId && otrasPartesIds.length ? { otras_partes_ids: otrasPartesIds } : {}),
         items: formulario.items.map((i) => {
           // Una línea de otra bodega va a la misma cotización en esa bodega
           // (mismo número), al crear y al editar: ver backend crear/editar_apartado.
@@ -465,6 +482,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       await cargarApartados();
       setMostrarFormularioApartado(false);
       setEditandoId(null);
+      setOtrasPartesIds([]);
     } catch (err) {
       setErrorFormularioApartado(err instanceof ErrorApi ? err.message : editandoId ? "No se pudieron guardar los cambios." : "No se pudo crear el apartado.");
     } finally {
@@ -530,7 +548,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     filtroEstado, setFiltroEstado,
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
-    editandoId, abrirEdicionApartado, parteEditada,
+    editandoId, abrirEdicionApartado, parteEditada, otrasPartesIds,
     actualizarCampoApartado, cambiarBodegaApartado, cambiarBodegaItem, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
     cambiarModalidadItem, rollosParaApartar, cargarRollosParaApartar, seleccionarRolloCompleto,
     guardandoApartado, errorFormularioApartado, crearApartado,
