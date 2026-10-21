@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import coincide_bodega
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
-from app.models.usuario import Usuario
+from app.models.usuario import RolUsuario, Usuario
 from app.schemas.inventario import MovimientoCrear
 from app.services.apartados import validar_reserva_producto
 from app.services.empresas import sigla_empresa_desde_nombre
@@ -102,6 +102,11 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
 
     # Una entrada manual puede crear el producto en la misma transaccion.
     producto_nuevo = datos.tipo == TipoMovimiento.ENTRADA and datos.producto_id is None
+    if producto_nuevo and usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+        raise HTTPException(
+            status_code=403,
+            detail="Los productos nuevos los crea Admin Inventario. Pídele que lo cree y luego registra aquí la entrada.",
+        )
     if producto_nuevo:
         codigo = datos.codigo.strip()
         descripcion = datos.descripcion.strip()

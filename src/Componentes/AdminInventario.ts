@@ -363,7 +363,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   }, [cargarEnviosEnviados, soloLectura]);
 
   return {
-    soloLectura,
+    soloLectura, cargarComparativo,
     comparativo, cargandoComparativo, errorComparativo, empresaResumen, setEmpresaResumen,
 
     rollosResumenPagina, paginacionRollos, paginaRollos, setPaginaRollos,

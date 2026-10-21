@@ -71,7 +71,7 @@ class ResultadoCarga:
     omitidas: list[FilaOmitida] = field(default_factory=list)
 
 
-def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int | None) -> ResultadoCarga:
+def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int | None, *, puede_crear: bool = True) -> ResultadoCarga:
     resultado = ResultadoCarga(filas_totales=len(df))
 
     # Una sola consulta para toda la bodega en vez de un SELECT por fila del
@@ -131,6 +131,9 @@ def procesar_filas(df: pd.DataFrame, mapeo: dict[str, str], db, bodega_id: int |
             if calibre: existente.calibre = calibre
             if codigo_importacion: existente.codigo_importacion = codigo_importacion
             resultado.actualizados += 1
+        elif not puede_crear:
+            resultado.omitidas.append(FilaOmitida(
+                numero_fila, codigo, "Ese producto no existe en tu bodega: los productos nuevos los crea Admin Inventario."))
         else:
             # Si el Excel no trae código de importación, se genera uno único
             # en vez de dejarlo en blanco (el campo lo espera el resto de la

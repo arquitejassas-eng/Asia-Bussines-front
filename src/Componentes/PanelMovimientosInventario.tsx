@@ -132,9 +132,6 @@ function PanelMovimientosInventario({
                 onChange={(e) => actualizarCampoMov("productoId", e.target.value)}
               >
                 <option value="">Selecciona un producto</option>
-                {formularioMov.tipo === "entrada" && (
-                  <option value="nuevo">+ Registrar producto nuevo</option>
-                )}
                 {productos.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.codigo} — {p.descripcion}{p.empresa ? ` (${nombreEmpresa(p.empresa)})` : ""}
@@ -163,7 +160,7 @@ function PanelMovimientosInventario({
                   />
                 </div>
                 <div>
-                  <label>Calibre</label>
+                  <label>Espesor</label>
                   <input value={formularioMov.calibreNuevo} onChange={(e) => actualizarCampoMov("calibreNuevo", e.target.value)} />
                 </div>
                 <div>

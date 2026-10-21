@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import func
@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
 from app.core.config import settings
+from app.models.apartado import Apartado, ApartadoItem
+from app.models.bodega import Bodega
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.unidad_familia import TablaUnidadFamilia
@@ -37,12 +39,15 @@ def _producto_de_mi_bodega(db: Session, producto_id: int, usuario: Usuario) -> P
 @router.get("/productos", response_model=list[ProductoResponse] | PaginaProductos)
 def listar_productos(
     busqueda: str = "", pagina: int = Query(1, ge=1), tamano: int = Query(30, ge=1, le=100),
-    paginado: bool = False, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+    paginado: bool = False, bodega_id: int | None = None,
+    db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Producto] | PaginaProductos:
     # Los rollos (materia prima) ya no aparecen aquí como filas individuales:
     # su detalle vive en /rollos ("Rollos almacenados"). Este listado es solo
-    # el catálogo de `Producto`.
-    consulta = db.query(Producto).filter(coincide_bodega(Producto.bodega_id, usuario.bodega_id), Producto.familia != "Rollos de acero")
+    # el catálogo de `Producto`. Admin Inventario puede pedir los de una
+    # bodega (para eliminar uno).
+    bodega = bodega_id if usuario.rol == RolUsuario.ADMIN_INVENTARIO and bodega_id is not None else usuario.bodega_id
+    consulta = db.query(Producto).filter(coincide_bodega(Producto.bodega_id, bodega), Producto.familia != "Rollos de acero")
     if busqueda:
         termino = f"%{busqueda.lower()}%"
         consulta = consulta.filter(Producto.codigo.ilike(termino) | Producto.codigo_importacion.ilike(termino) | Producto.descripcion.ilike(termino))
@@ -65,20 +70,39 @@ def listar_productos_bajo_minimo(
 
 
 @router.post("/productos", response_model=ProductoResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def crear_producto(datos: ProductoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Producto:
-    validar_cantidad_entera_si_aplica(db, datos.familia, datos.entrada)
-    validar_cantidad_entera_si_aplica(db, datos.familia, datos.stock)
+    """Solo Admin Inventario crea productos (códigos nuevos), en la bodega que
+    elige: así nadie inventa códigos. `stock` es lo que entró al crearlo y
+    queda como una ENTRADA en el historial de esa bodega; lo que llegue
+    después lo registra la bodega en Movimientos."""
+    bodega = db.get(Bodega, datos.bodega_id) if datos.bodega_id else None
+    if bodega is None:
+        raise HTTPException(status_code=400, detail="Elige la bodega donde queda el producto.")
+    if not datos.empresa:
+        raise HTTPException(status_code=400, detail="Elige la empresa del producto: Arquitejas o Asia Business.")
     codigo = datos.codigo.strip()
+    if not codigo or not datos.descripcion.strip():
+        raise HTTPException(status_code=400, detail="Código y descripción son obligatorios.")
     existente = (
         db.query(Producto)
-        .filter(coincide_bodega(Producto.bodega_id, usuario.bodega_id), Producto.codigo == codigo, Producto.empresa == datos.empresa)
+        .filter(Producto.bodega_id == bodega.id, Producto.codigo == codigo, Producto.empresa == datos.empresa)
         .with_for_update()
         .first()
     )
     if existente:
-        raise HTTPException(status_code=409, detail=f"Ya existe un producto con el código '{codigo}' y esa empresa en tu bodega.")
-    producto = Producto(bodega_id=usuario.bodega_id, **{**datos.model_dump(), "codigo": codigo})
+        raise HTTPException(status_code=409, detail=f"Ya existe el producto '{codigo}' de esa empresa en {bodega.nombre}.")
+    cantidad = float(datos.stock or 0)
+    validar_cantidad_entera_si_aplica(db, datos.familia, cantidad)
+    campos = datos.model_dump(exclude={"bodega_id"})
+    producto = Producto(bodega_id=bodega.id, **{**campos, "codigo": codigo, "stock": cantidad, "entrada": cantidad})
+    if cantidad > 0:
+        db.add(Movimiento(
+            fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.ENTRADA, motivo="compra_proveedor",
+            producto_codigo=codigo, producto_descripcion=datos.descripcion.strip(),
+            bodega_origen_id=None, bodega_destino_id=bodega.id, cantidad=cantidad,
+            usuario=usuario.correo, observaciones="Ingreso al crear el producto (Admin Inventario).",
+        ))
     # Producto.tipo_producto es la fuente estructural de qué tipo de stock es
     # esta fila (ver Producción: "caballete"/"flanche") — un producto creado
     # aquí (a mano) NUNCA viene de Producción, así que si además configuraron
@@ -99,9 +123,15 @@ def actualizar_producto(producto_id: int, datos: ProductoActualizar, db: Session
     _producto_de_mi_bodega(db, producto_id, usuario)
     # Bloqueado: el stock se decide con el valor actual (ver aplicar_stock_editado).
     producto = db.query(Producto).filter(Producto.id == producto_id).with_for_update().populate_existing().one()
+    # El código y la empresa los decide Admin Inventario (quien crea los productos).
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO and (
+        datos.codigo.strip() != producto.codigo
+        or ("empresa" in datos.model_fields_set and datos.empresa != (producto.empresa or ""))
+    ):
+        raise HTTPException(status_code=403, detail="El código y la empresa de un producto solo los cambia Admin Inventario.")
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.entrada)
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.stock)
-    campos_de_stock = {"stock", "entrada", "stock_anterior", "entrada_anterior"}
+    campos_de_stock = {"stock", "entrada", "stock_anterior", "entrada_anterior", "bodega_id"}
     # La empresa solo cambia si el formulario la manda (una pantalla vieja
     # que no la conoce no la borra).
     if "empresa" not in datos.model_fields_set:
@@ -123,9 +153,25 @@ def actualizar_producto(producto_id: int, datos: ProductoActualizar, db: Session
 
 
 @router.delete("/productos/{producto_id}", status_code=status.HTTP_204_NO_CONTENT,
-               dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
-def eliminar_producto(producto_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> None:
-    db.delete(_producto_de_mi_bodega(db, producto_id, usuario)); db.commit()
+               dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def eliminar_producto(producto_id: int, db: Session = Depends(get_db)) -> None:
+    """Solo Admin Inventario elimina productos (de cualquier bodega), y solo
+    si está en 0 y ninguna cotización lo usa: no se pierde stock ni se rompe
+    una cotización."""
+    producto = db.query(Producto).filter(Producto.id == producto_id).with_for_update().first()
+    if producto is None or producto.familia == "Rollos de acero":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Producto no encontrado.")
+    if abs(float(producto.stock or 0)) > 0.0001:
+        raise HTTPException(status_code=400, detail=f"{producto.codigo} tiene {float(producto.stock):g} en stock: para eliminarlo primero debe quedar en 0.")
+    usado = (
+        db.query(Apartado.numero_cotizacion)
+        .join(ApartadoItem, ApartadoItem.apartado_id == Apartado.id)
+        .filter(ApartadoItem.producto_id == producto.id)
+        .first()
+    )
+    if usado:
+        raise HTTPException(status_code=400, detail=f"{producto.codigo} está en la cotización {usado[0]}: no se puede eliminar.")
+    db.delete(producto); db.commit()
 
 
 @router.post("/productos/carga/previsualizar", response_model=PrevisualizacionCargaProductosResponse,
@@ -226,7 +272,9 @@ def confirmar_carga_productos(
         raise HTTPException(status_code=400, detail=f"Faltan columnas obligatorias: {', '.join(faltantes)}")
 
     df = en_proceso["hojas"][en_proceso["hoja_principal"]]
-    resultado = srv_carga.procesar_filas(df, datos.mapeo, db, usuario.bodega_id)
+    # Una bodega solo actualiza sus productos: los códigos nuevos los crea Admin Inventario.
+    resultado = srv_carga.procesar_filas(df, datos.mapeo, db, usuario.bodega_id,
+                                         puede_crear=usuario.rol == RolUsuario.ADMIN_INVENTARIO)
     db.commit()
     archivos_carga_productos.eliminar(usuario.id)
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ElegirRolloCompleto from "../Componentes/ElegirRolloCompleto";
+import CrearProductoEnLinea from "../Componentes/CrearProductoEnLinea";
 import { descripcionRolloCompleto } from "../Utils/rolloCompleto";
 import { useNavigate } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
@@ -178,6 +179,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       </div>
     );
   }
+
+  // Línea de stock en la que se está creando un producto que no existía.
+  const [creandoProductoEn, setCreandoProductoEn] = useState<number | null>(null);
 
   const navigate = useNavigate();
 
@@ -760,6 +764,32 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             value={item.busquedaProducto}
                             onChange={(e) => a.buscarProductoParaItem(indice, e.target.value)}
                           />
+                          {(() => {
+                            // El producto no existe: Admin Inventario lo crea aquí mismo.
+                            const texto = item.busquedaProducto.trim();
+                            const resultados = a.resultadosBusquedaProducto[indice] as Record<string, unknown>[] | undefined;
+                            const yaExiste = resultados?.some((p) => String(p.codigo ?? "").toUpperCase() === texto.toUpperCase());
+                            if (!esAdminInventario || texto.length < 2 || !resultados || yaExiste || !item.bodegaId) return null;
+                            if (creandoProductoEn === indice) {
+                              return (
+                                <CrearProductoEnLinea
+                                  codigoInicial={texto}
+                                  bodegaId={item.bodegaId}
+                                  bodegaNombre={almacen.bodegas.find((b) => String(b.id) === String(item.bodegaId))?.nombre || ""}
+                                  empresa={item.empresa || a.formulario.empresa}
+                                  familias={(almacen?.unidadesFamilia || []).map((u) => u.familia)}
+                                  alCrear={(producto) => { setCreandoProductoEn(null); a.seleccionarProductoParaItem(indice, producto); }}
+                                  alCancelar={() => setCreandoProductoEn(null)}
+                                />
+                              );
+                            }
+                            return (
+                              <button type="button" className="inventario-boton-cancelar" style={{ marginTop: "0.35rem" }}
+                                onClick={() => setCreandoProductoEn(indice)}>
+                                + Crear producto "{texto.toUpperCase()}"
+                              </button>
+                            );
+                          })()}
                           {a.resultadosBusquedaProducto[indice]?.length > 0 && (
                             <div className="inventario-tabla-contenedor" style={{ maxHeight: "180px", overflowY: "auto" }}>
                               {a.resultadosBusquedaProducto[indice].map((p: Record<string, any>) => (

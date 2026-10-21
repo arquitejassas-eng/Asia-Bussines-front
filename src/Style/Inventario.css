@@ -740,6 +740,16 @@
 .apartado-aviso-otra-bodega p {
   margin: 0 0 0.35rem;
 }
+.apartado-crear-producto {
+  margin-top: 0.4rem;
+  padding: 0.6rem;
+  border-radius: var(--at-r-sm, 8px);
+  border: 1px dashed var(--at-border, #E1D5C0);
+  font-size: 0.85rem;
+}
+.apartado-crear-producto p {
+  margin: 0 0 0.4rem;
+}
 .apartado-aviso-botones {
   display: flex;
   flex-wrap: wrap;

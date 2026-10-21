@@ -10,6 +10,8 @@ import PanelBuscarRollos from "../Componentes/PanelBuscarRollos";
 import CeldaApartado from "../Componentes/CeldaApartado";
 import PanelResumenProductos from "../Componentes/PanelResumenProductos";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
+import PanelNuevoProducto from "../Componentes/PanelNuevoProducto";
+import PanelEliminarProducto from "../Componentes/PanelEliminarProducto";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
 import { formatearCalibre } from "../Utils/calibre";
@@ -473,6 +475,14 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                     </p>
                   )}
 
+                  {!c.soloLectura && (
+                    <PanelNuevoProducto
+                      bodegas={bodegas}
+                      familias={(almacen?.unidadesFamilia || []).map((u) => u.familia)}
+                      alCrear={() => c.cargarComparativo()}
+                    />
+                  )}
+                  {!c.soloLectura && <PanelEliminarProducto bodegas={bodegas} alEliminar={() => c.cargarComparativo()} />}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Resumen — productos por código en toda la empresa — Unidades</h2>
                     {c.comparativo.productos.length > 0 && (

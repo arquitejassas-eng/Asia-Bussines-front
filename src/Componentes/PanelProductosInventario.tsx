@@ -15,7 +15,6 @@ import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
 function PanelProductosInventario({
   almacen,
   mostrarFormularioProducto,
-  abrirFormularioNuevoProducto,
   busquedaProducto,
   cambiarBusquedaProducto,
   guardarProducto,
@@ -64,9 +63,7 @@ function PanelProductosInventario({
             >
               {mostrarAdminUnidades ? "Ocultar" : "Administrar"} unidades por familia
             </button>
-            <button className="inventario-boton" onClick={abrirFormularioNuevoProducto}>
-              + Agregar producto
-            </button>
+            {/* Los productos nuevos los crea Admin Inventario; aquí solo se editan. */}
           </div>
         )}
       </div>
@@ -100,12 +97,15 @@ function PanelProductosInventario({
               <label>Código</label>
               <input
                 value={formularioProducto.codigo}
+                disabled={Boolean(editandoProductoId)}
+                title="El código solo lo cambia Admin Inventario"
                 onChange={(e) => actualizarCampoProducto("codigo", e.target.value)}
               />
             </div>
             <div>
               <label>Empresa</label>
-              <select value={formularioProducto.empresa || ""} onChange={(e) => actualizarCampoProducto("empresa", e.target.value)}>
+              <select value={formularioProducto.empresa || ""} disabled={Boolean(editandoProductoId)}
+                title="La empresa solo la cambia Admin Inventario" onChange={(e) => actualizarCampoProducto("empresa", e.target.value)}>
                 <option value="">Sin empresa</option>
                 {Object.entries(EMPRESAS).map(([sigla, nombre]) => <option key={sigla} value={sigla}>{nombre}</option>)}
               </select>
@@ -135,7 +135,7 @@ function PanelProductosInventario({
               />
             </div>
             <div>
-              <label>Calibre</label>
+              <label>Espesor</label>
               <input
                 value={formularioProducto.calibre}
                 onChange={(e) => actualizarCampoProducto("calibre", e.target.value)}
@@ -367,12 +367,7 @@ function PanelProductosInventario({
                               <button className="inventario-boton-cancelar" onClick={() => abrirFormularioEdicionProducto(p)}>
                                 Editar
                               </button>
-                              <button
-                                className="inventario-boton-eliminar"
-                                onClick={() => setProductoAEliminar(p)}
-                              >
-                                Eliminar
-                              </button>
+                              {/* Eliminar productos: solo Admin Inventario. */}
                             </td>
                           </tr>
                         ))}

@@ -35,6 +35,8 @@ class ProductoCrear(ProductoBase):
     # respuesta también hereda de ahí y hay stock histórico en negativo.)
     entrada: float = Field(default=0, ge=0)
     stock: float = Field(default=0, ge=0)
+    # Solo al crear (Admin Inventario): bodega donde queda el producto.
+    bodega_id: int | None = None
 
     @field_validator("empresa")
     @classmethod
