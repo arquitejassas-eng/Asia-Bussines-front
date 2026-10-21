@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from sqlalchemy import case
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
@@ -100,8 +101,12 @@ def buscar_productos_para_apartar(
     """Productos de stock de la bodega elegida para una línea POR_STOCK. Admin
     Inventario no tiene bodega propia, por eso no sirve /inventario/productos."""
     bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
-    termino = f"%{busqueda.strip()}%"
+    texto = busqueda.strip()
+    termino = f"%{texto}%"
     coincide = Producto.codigo.ilike(termino) | Producto.codigo_importacion.ilike(termino) | Producto.descripcion.ilike(termino)
+    # Primero lo que EMPIEZA con lo buscado ("perfil" -> PERFIL...), después lo
+    # que solo lo tiene en medio ("per" también está en SUPERMIL).
+    empieza = case((Producto.codigo.ilike(f"{texto}%") | Producto.descripcion.ilike(f"{texto}%"), 0), else_=1)
     # Una cotización de Asia Business solo usa material de Asia (y una de
     # Arquitejas, de Arquitejas): los de la otra empresa no salen.
     if empresa.strip():
@@ -109,8 +114,8 @@ def buscar_productos_para_apartar(
     propios = (
         db.query(Producto)
         .filter(Producto.bodega_id == bodega, Producto.familia != FAMILIA_ROLLOS, coincide)
-        .order_by(Producto.id.desc())
-        .limit(8)
+        .order_by(empieza, Producto.codigo)
+        .limit(20)
         .all()
     )
     # Lo que no está en esta bodega pero sí en otra (se trae con un traslado;
@@ -122,13 +127,17 @@ def buscar_productos_para_apartar(
         db.query(Producto)
         .filter(Producto.bodega_id.isnot(None), Producto.bodega_id != bodega, Producto.familia != FAMILIA_ROLLOS,
                 Producto.stock > 0, coincide)
-        .order_by(Producto.stock.desc())
+        .order_by(empieza, Producto.stock.desc())
         .limit(40)
     ):
         clave = (p.codigo, p.empresa)
         if clave not in ya and clave not in otros and p.bodega_id not in sin_traslado:
             otros[clave] = p
-    resultado = (propios + list(otros.values()))[:12]
+    def empieza_con(p: Producto) -> bool:
+        return any((v or "").lower().startswith(texto.lower()) for v in (p.codigo, p.descripcion))
+
+    # Lo de esta bodega primero dentro de cada grupo (los que empiezan y los demás).
+    resultado = sorted(propios + list(otros.values()), key=lambda p: (not empieza_con(p), p.bodega_id != bodega))[:20]
     # Cuánto se puede prometer de cada uno en toda la empresa: la pantalla no
     # deja escoger lo que no tiene (ej. un caballete en negativo).
     for p in resultado:

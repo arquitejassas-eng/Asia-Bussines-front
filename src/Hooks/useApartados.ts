@@ -341,27 +341,41 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
   // Busca productos por texto libre (código o descripción) para elegir uno
   // como línea POR_STOCK -- mismo endpoint que ya usa Inventario.
-  async function buscarProductoParaItem(indice: number, texto: string) {
+  // Búsqueda de productos: espera a que se deje de escribir y solo muestra la
+  // respuesta de lo ÚLTIMO escrito en esa línea. Antes buscaba con cada letra
+  // y la respuesta de "p" (casi todo) llegaba después que la de "perfil" y
+  // reemplazaba la lista.
+  const busquedaPendiente = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const ultimaBusqueda = useRef<Record<number, string>>({});
+
+  function buscarProductoParaItem(indice: number, texto: string) {
     actualizarItemApartado(indice, "busquedaProducto", texto);
     const consulta = texto.trim();
-    if (!consulta || !bodegaDeItem(indice)) {
+    ultimaBusqueda.current[indice] = consulta;
+    clearTimeout(busquedaPendiente.current[indice]);
+    if (consulta.length < 2 || !bodegaDeItem(indice)) {
       setResultadosBusquedaProducto((actual) => {
         const { [indice]: _quitado, ...resto } = actual;
         return resto;
       });
       return;
     }
-    try {
-      // Solo productos de la empresa de la cotización (el mismo código existe en las dos).
-      const datos = await api.get(`/apartados/productos?busqueda=${encodeURIComponent(consulta)}&bodega_id=${bodegaDeItem(indice)}`
-        + `&empresa=${encodeURIComponent(formulario.empresa)}`);
-      setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: datos as Record<string, unknown>[] }));
-    } catch {
-      setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: [] }));
-    }
+    busquedaPendiente.current[indice] = setTimeout(async () => {
+      try {
+        // Solo productos de la empresa de la cotización (el mismo código existe en las dos).
+        const datos = await api.get(`/apartados/productos?busqueda=${encodeURIComponent(consulta)}&bodega_id=${bodegaDeItem(indice)}`
+          + `&empresa=${encodeURIComponent(formulario.empresa)}`);
+        if (ultimaBusqueda.current[indice] !== consulta) return; // ya escribió otra cosa
+        setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: datos as Record<string, unknown>[] }));
+      } catch {
+        if (ultimaBusqueda.current[indice] === consulta) setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: [] }));
+      }
+    }, 300);
   }
 
   function seleccionarProductoParaItem(indice: number, productoApi: Record<string, unknown>) {
+    clearTimeout(busquedaPendiente.current[indice]);
+    ultimaBusqueda.current[indice] = "";
     const producto = productoDesdeApi(productoApi);
     setFormulario((actual) => ({
       ...actual,
