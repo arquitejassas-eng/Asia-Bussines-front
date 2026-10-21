@@ -10,7 +10,7 @@ from app.services.productos import FAMILIA_ROLLOS
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.apartados import (
     ApartadoCrear, ApartadoResponse, DisponibilidadCodigoResponse, DisponibilidadProductoResponse, ReservaCodigoResponse,
-    RolloParaApartarResponse,
+    RolloParaApartarResponse, SiguienteNumeroResponse,
 )
 from app.models.rollo import Rollo
 from app.core.config import settings
@@ -42,7 +42,34 @@ def consultar_disponibilidad(
     de apartarlo: rollos, metros disponibles, reservados y consumidos. Con
     `empresa` (la de la cotización), solo lo de esa empresa."""
     bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
-    return srv.disponibilidad_por_codigo(db, bodega_id=bodega, codigo_interno=codigo_interno, empresa=empresa.strip().upper())
+    empresa = empresa.strip().upper()
+    resultado = srv.disponibilidad_por_codigo(db, bodega_id=bodega, codigo_interno=codigo_interno, empresa=empresa)
+    total_empresa, donde = srv.disponible_empresa_codigo(db, codigo_interno=codigo_interno, bodega_despacho=bodega, empresa=empresa)
+    # La otra empresa: lo libre en ESTA bodega y en todas.
+    otras_empresas = []
+    for otra in srv.EMPRESAS_CONOCIDAS:
+        if empresa and otra != empresa:
+            aqui = srv.disponibilidad_por_codigo(db, bodega_id=bodega, codigo_interno=codigo_interno, empresa=otra)["metros_disponibles"]
+            total, _ = srv.disponible_empresa_codigo(db, codigo_interno=codigo_interno, bodega_despacho=bodega, empresa=otra)
+            if aqui > 0.005 or total > 0.005:
+                otras_empresas.append({"empresa": otra, "cantidad": max(aqui, 0), "total": max(total, 0)})
+    return {**resultado, "disponible_empresa": total_empresa, "otras_bodegas": _con_id_de_bodega(db, donde),
+            "otras_empresas": otras_empresas}
+
+
+def _con_id_de_bodega(db: Session, donde: list[tuple[str, float]]) -> list[dict]:
+    """[("SANTANDER", 1200)] -> [{bodega_id, bodega, cantidad}] para que la
+    pantalla ofrezca "Despachar desde SANTANDER"."""
+    ids = {b.nombre: b.id for b in db.query(Bodega)}
+    return [{"bodega_id": ids[n], "bodega": n, "cantidad": c} for n, c in donde if n in ids]
+
+
+@router.get("/siguiente-numero", response_model=SiguienteNumeroResponse,
+            dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def consultar_siguiente_numero(empresa: str = Query(..., min_length=1), db: Session = Depends(get_db)) -> dict:
+    """El número que sigue en las cotizaciones de esa empresa (cada una lleva
+    su consecutivo). Se puede cambiar a mano en el formulario."""
+    return {"numero": srv.siguiente_numero(db, empresa.strip().upper())}
 
 
 @router.get("/rollos-para-apartar", response_model=list[RolloParaApartarResponse])
@@ -91,7 +118,16 @@ def consultar_disponibilidad_producto(
     else:
         resumen = srv.disponibilidad_producto(db, bodega_id=bodega, producto_id=producto_id)
     empresa, donde = srv.disponible_empresa_producto(db, producto=producto, bodega_despacho=bodega)
-    return {**resumen, "disponible_empresa": empresa, "en_otras_bodegas": ", ".join(f"{n} {c:g}" for n, c in donde)}
+    # El mismo producto de la otra empresa en ESTA bodega, si tiene libre.
+    otras_empresas = []
+    for otro in (db.query(Producto).filter(Producto.bodega_id == bodega, Producto.codigo == producto.codigo,
+                                           Producto.empresa != (producto.empresa or ""), Producto.empresa != "")):
+        libre = srv.disponibilidad_producto(db, bodega_id=bodega, producto_id=otro.id)["cantidad_disponible"]
+        total, _ = srv.disponible_empresa_producto(db, producto=otro, bodega_despacho=bodega)
+        if libre > 0.005 or total > 0.005:
+            otras_empresas.append({"empresa": otro.empresa, "cantidad": max(libre, 0), "total": max(total, 0)})
+    return {**resumen, "disponible_empresa": empresa, "en_otras_bodegas": ", ".join(f"{n} {c:g}" for n, c in donde),
+            "otras_bodegas": _con_id_de_bodega(db, donde), "otras_empresas": otras_empresas}
 
 
 @router.get("/productos", response_model=list[ProductoResponse])
@@ -202,26 +238,34 @@ def registrar_salida_con_hoja_de_vida(
 @router.post("", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
-    """Si las líneas salen de varias bodegas, se crea una cotización por
-    bodega con el mismo número (cada bodega despacha su parte), todo junto o
-    nada. Devuelve la de la bodega principal."""
-    por_bodega: dict[int | None, list] = {}
+    """Cada línea dice de qué bodega y de qué empresa sale su material: se
+    crea una parte por cada (bodega, empresa), todo junto o nada. La parte de
+    la empresa de la cotización lleva su número; la de la otra empresa,
+    "<número>-AR" o "<número>-ABG". Devuelve la parte de la primera línea."""
+    por_parte: dict[tuple[int | None, str], list] = {}
     for item in datos.items:
-        por_bodega.setdefault(item.bodega_id or datos.bodega_id, []).append(item)
-    if len(por_bodega) == 1:
-        partes = [datos.model_copy(update={"bodega_id": next(iter(por_bodega))})]
+        clave = (item.bodega_id or datos.bodega_id, item.empresa or datos.empresa)
+        por_parte.setdefault(clave, []).append(item.model_copy(update={"bodega_id": None, "empresa": ""}))
+    nombres = {b.id: b.nombre for b in db.query(Bodega).filter(Bodega.id.in_([b for b, _ in por_parte if b]))}
+    if len(por_parte) == 1:
+        (bodega, empresa), items = next(iter(por_parte.items()))
+        partes = [datos.model_copy(update={
+            "bodega_id": bodega, "empresa": empresa, "items": items,
+            "numero_cotizacion": srv.numero_de_parte(datos.numero_cotizacion, empresa, datos.empresa),
+        })]
     else:
-        nombres = {b.id: b.nombre for b in db.query(Bodega).filter(Bodega.id.in_([b for b in por_bodega if b]))}
-        principal = datos.bodega_id if datos.bodega_id in por_bodega else next(iter(por_bodega))
-        orden = [principal] + [b for b in por_bodega if b != principal]
-        todas = ", ".join(nombres.get(b, str(b)) for b in orden)
+        def nombre(clave):
+            bodega, empresa = clave
+            return f"{nombres.get(bodega, bodega)}" + (f" ({srv.EMPRESAS_CONOCIDAS.get(empresa, empresa)})" if empresa != datos.empresa else "")
+        todas = ", ".join(nombre(c) for c in por_parte)
         partes = [
             datos.model_copy(update={
-                "bodega_id": b, "items": por_bodega[b],
+                "bodega_id": clave[0], "empresa": clave[1], "items": items,
+                "numero_cotizacion": srv.numero_de_parte(datos.numero_cotizacion, clave[1], datos.empresa),
                 "observaciones": (f"{datos.observaciones} · " if datos.observaciones else "")
-                + f"Cotización con material de varias bodegas ({todas}): esta es la parte de {nombres.get(b, b)}.",
+                + f"Cotización con material de varias partes ({todas}): esta es la de {nombre(clave)}.",
             })
-            for b in orden
+            for clave, items in por_parte.items()
         ]
     creados = []
     for parte in partes:
@@ -286,7 +330,7 @@ def editar_apartado(
     """Admin Inventario corrige una cotización activa (ver srv.editar_apartado).
     Las líneas que salen de OTRA bodega se pasan a la misma cotización en esa
     bodega: se le suman si ya existe ahí, o se crea. Todo junto o nada."""
-    if datos.otras_partes_ids:
+    if datos.items:
         apartado = _editar_cotizacion_completa(db, apartado_id, datos, usuario)
         db.commit(); db.refresh(apartado)
         return _con_faltantes(db, [apartado])[0]
@@ -324,18 +368,20 @@ def editar_apartado(
 
 
 def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEditar, usuario: Usuario) -> Apartado:
-    """Admin Inventario edita la cotización completa (todas sus bodegas a la
-    vez): cada línea dice de qué bodega sale y aquí se reparte. La parte que
-    se queda sin líneas se borra, la bodega nueva recibe su parte y las demás
-    se editan. Lo que se reduce va primero, para que lo que se libera alcance
-    a lo que aumenta en otra bodega. Sin commit: todo junto o nada."""
+    """Admin Inventario edita la cotización completa (todas sus partes a la
+    vez): cada línea dice de qué bodega y de qué empresa sale y aquí se
+    reparte, una parte por (bodega, empresa). La parte que se queda sin
+    líneas se borra, la nueva se crea y las demás se editan. Lo que se
+    reduce va primero, para que lo que se libera alcance a lo que aumenta en
+    otra parte. Sin commit: todo junto o nada."""
     principal = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
     partes = [principal]
     for otro_id in dict.fromkeys(datos.otras_partes_ids):
         if otro_id == apartado_id:
             continue
         parte = srv.apartado_de_mi_bodega(db, otro_id, usuario)
-        if parte.numero_cotizacion != principal.numero_cotizacion or parte.bodega_id in {p.bodega_id for p in partes}:
+        if (srv.numero_sin_empresa(parte.numero_cotizacion) != srv.numero_sin_empresa(principal.numero_cotizacion)
+                or (parte.bodega_id, parte.empresa) in {(p.bodega_id, p.empresa) for p in partes}):
             raise HTTPException(status_code=400, detail="Las partes no son de la misma cotización. Recarga e intenta de nuevo.")
         partes.append(parte)
     if any(p.estado not in srv.ESTADOS_RESERVA_ACTIVA for p in partes):
@@ -345,61 +391,76 @@ def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEd
 
     bodega_principal = srv.bodega_de_consulta(db, usuario, datos.bodega_id)
     parte_de_item = {item.id: parte for parte in partes for item in parte.items}
-    por_bodega: dict[int, list] = {}
+    por_parte: dict[tuple[int, str], list] = {}
     for linea in datos.items:
-        bodega = linea.bodega_id or bodega_principal
+        clave = (linea.bodega_id or bodega_principal, linea.empresa or datos.empresa)
         if linea.id:
             duena = parte_de_item.get(linea.id)
             if duena is None:
                 raise HTTPException(status_code=400, detail="Alguna línea no pertenece a esta cotización. Recarga e intenta de nuevo.")
-            if duena.bodega_id != bodega:
-                # Cambió de bodega: sale de su parte y entra como nueva en la otra.
+            if (duena.bodega_id, duena.empresa or datos.empresa) != clave:
+                # Cambió de bodega o de empresa: sale de su parte y entra como nueva en la otra.
                 linea = linea.model_copy(update={"id": None})
-        por_bodega.setdefault(bodega, []).append(linea.model_copy(update={"bodega_id": None}))
+        por_parte.setdefault(clave, []).append(linea.model_copy(update={"bodega_id": None, "empresa": ""}))
 
-    nombres = {b.id: b.nombre for b in db.query(Bodega).filter(Bodega.id.in_(list(por_bodega) + [p.bodega_id for p in partes]))}
-    parte_por_bodega = {p.bodega_id: p for p in partes}
+    nombres = {b.id: b.nombre for b in db.query(Bodega)}
+    parte_por_clave = {(p.bodega_id, p.empresa or datos.empresa): p for p in partes}
+    base_nueva = srv.numero_sin_empresa(datos.numero_cotizacion)
 
-    def con_bodega(nombre: str, accion):
+    def numero(clave: tuple[int, str]) -> str:
+        """El de la parte si ya existe (con el número nuevo si se cambió); si
+        no, el que le toca por la empresa de su material."""
+        existente = parte_por_clave.get(clave)
+        if existente is not None:
+            return base_nueva + existente.numero_cotizacion.strip()[len(srv.numero_sin_empresa(existente.numero_cotizacion)):]
+        return srv.numero_de_parte(base_nueva, clave[1], datos.empresa)
+
+    def con_parte(nombre: str, accion):
         try:
             return accion()
         except HTTPException as exc:
+            if len(partes) == 1 and len(por_parte) == 1:
+                raise
             raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
 
     # 1. Las partes que quedan sin líneas se borran (su material queda libre).
-    for parte in partes:
-        if parte.bodega_id not in por_bodega:
-            con_bodega(parte.bodega_nombre, lambda: srv.quitar_parte(db, parte.id, usuario, pasa_a_otra_bodega=True))
+    for clave, parte in parte_por_clave.items():
+        if clave not in por_parte:
+            con_parte(parte.bodega_nombre, lambda: srv.quitar_parte(db, parte.id, usuario, pasa_a_otra_bodega=True))
 
     # 2. Las que siguen se editan, primero las que piden menos que antes.
-    def cambio(parte: Apartado) -> float:
+    def cambio(clave: tuple[int, str]) -> float:
+        parte = parte_por_clave[clave]
         antes = sum((it.metros_requeridos or 0) if it.modalidad == ModalidadApartado.POR_ROLLO else it.cantidad for it in parte.items)
         despues = sum(srv.metros_de_linea(l.cantidad, l.medida, l.tipo_producto) if l.modalidad == ModalidadApartado.POR_ROLLO else l.cantidad
-                      for l in por_bodega[parte.bodega_id])
+                      for l in por_parte[clave])
         return despues - antes
-    for parte in sorted((p for p in partes if p.bodega_id in por_bodega), key=cambio):
+    for clave in sorted((c for c in parte_por_clave if c in por_parte), key=cambio):
+        parte = parte_por_clave[clave]
         cambios = datos.model_copy(update={
-            "bodega_id": parte.bodega_id, "items": por_bodega[parte.bodega_id], "otras_partes_ids": [],
+            "bodega_id": clave[0], "empresa": clave[1], "items": por_parte[clave], "otras_partes_ids": [],
+            "numero_cotizacion": numero(clave),
             "observaciones": datos.observaciones if parte.id == principal.id else parte.observaciones,
         })
-        con_bodega(parte.bodega_nombre, lambda: srv.editar_apartado(db, parte.id, cambios, usuario))
+        con_parte(parte.bodega_nombre, lambda: srv.editar_apartado(db, parte.id, cambios, usuario))
 
-    # 3. Las bodegas nuevas reciben su parte.
+    # 3. Las partes nuevas (otra bodega u otra empresa) se crean.
     nuevas = []
-    for bodega, lineas in por_bodega.items():
-        if bodega in parte_por_bodega:
+    for clave, lineas in por_parte.items():
+        if clave in parte_por_clave:
             continue
-        nombre = nombres.get(bodega, str(bodega))
-        nuevas.append(con_bodega(nombre, lambda: srv.crear_apartado(db, ApartadoCrear(
-            bodega_id=bodega, material_en_camino=datos.material_en_camino, numero_cotizacion=datos.numero_cotizacion,
-            empresa=datos.empresa, cliente=datos.cliente,
-            observaciones=f"Parte de la cotización {datos.numero_cotizacion} con material de {nombre}.",
+        nombre = nombres.get(clave[0], str(clave[0]))
+        nuevas.append(con_parte(nombre, lambda: srv.crear_apartado(db, ApartadoCrear(
+            bodega_id=clave[0], material_en_camino=datos.material_en_camino, numero_cotizacion=numero(clave),
+            empresa=clave[1], cliente=datos.cliente,
+            observaciones=f"Parte de la cotización {base_nueva} con material de {nombre}.",
             items=lineas,
         ), usuario)))
     db.flush()
-    if principal.bodega_id in por_bodega:
-        return principal
-    restantes = [p for p in partes if p.bodega_id in por_bodega] + nuevas
+    principal_sigue = next((p for c, p in parte_por_clave.items() if p.id == principal.id and c in por_parte), None)
+    if principal_sigue is not None:
+        return principal_sigue
+    restantes = [p for c, p in parte_por_clave.items() if c in por_parte] + nuevas
     return restantes[0]
 
 

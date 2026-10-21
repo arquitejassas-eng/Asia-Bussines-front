@@ -729,6 +729,22 @@
   border: 1px solid var(--at-border, #E1D5C0);
   color: var(--at-text-2, #4A392C);
 }
+.apartado-aviso-otra-bodega {
+  margin-top: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--at-r-sm, 8px);
+  background: rgba(194, 59, 44, 0.08);
+  border: 1px solid rgba(194, 59, 44, 0.25);
+  font-size: 0.8rem;
+}
+.apartado-aviso-otra-bodega p {
+  margin: 0 0 0.35rem;
+}
+.apartado-aviso-botones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
 .apartado-estado-bodega {
   display: flex;
   flex-direction: column;

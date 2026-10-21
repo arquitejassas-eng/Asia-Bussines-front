@@ -18,8 +18,10 @@ const ITEM_VACIO = {
   // Solo por rollo: "" = teja; "caballete" o "flanche" se cortan a lo ancho
   // del rollo (3 o 5 por corte) y apartan cortes × medida, no cantidad × medida.
   tipoProducto: "",
-  // "" = sale de la bodega de la cotización; si no, de esta otra bodega.
+  // Bodega de donde sale esta línea (cada línea elige la suya).
   bodegaId: "",
+  // Empresa de la que sale el material ("" = la de la cotización).
+  empresa: "",
 };
 const FORMULARIO_VACIO = { bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
 
@@ -30,8 +32,10 @@ type ItemFormulario = {
   productoId: number | null; productoCodigo: string; productoDescripcion: string; busquedaProducto: string;
   descripcion: string; cantidad: string | number;
   tipoProducto: string;
-  // Bodega de esta línea si es distinta a la de la cotización ("" = la misma).
+  // Bodega de donde sale esta línea.
   bodegaId?: string;
+  // Empresa de la que sale su material ("" = la de la cotización).
+  empresa?: string;
   // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
   id?: number; metrosConsumidos?: number; stockDescontado?: boolean;
 };
@@ -56,6 +60,11 @@ type Apartado = {
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;
   faltantes: string[]; otrasPartes: string[]; items: ApartadoItem[];
 };
+
+/** "3811-AR" / "3811-ABG" -> "3811" (ver backend numero_sin_empresa). */
+export function numeroSinEmpresa(numero: string) {
+  return numero.trim().replace(/-(AR|ABG)$/i, "");
+}
 
 /** Quita la posición `indice` de un objeto indexado por posición y corre
  * una posición hacia arriba todo lo que estaba después. */
@@ -139,6 +148,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   const [otrasPartesIds, setOtrasPartesIds] = useState<number[]>([]);
 
   function abrirFormularioApartado() {
+    numeroAutomatico.current = "";
     setEditandoId(null);
     setOtrasPartesIds([]);
     setParteEditada({ bodega: "", otrasPartes: [] });
@@ -162,9 +172,11 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       // Las partes que se editan juntas ya no cuentan como "otras".
       otrasPartes: partes.length > 1 ? [] : ap.otrasPartes.filter((o) => !nombresPartes.has(o)),
     });
+    // La empresa de la cotización es la de la parte sin "-AR"/"-ABG" (si la hay).
+    const empresaCotizacion = (partes.find((p) => p.numeroCotizacion === numeroSinEmpresa(p.numeroCotizacion)) ?? ap).empresa;
     setFormulario({
-      bodegaId: String(ap.bodegaId), empresa: ap.empresa, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
-      numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, observaciones: ap.observaciones,
+      bodegaId: String(ap.bodegaId), empresa: empresaCotizacion, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
+      numeroCotizacion: numeroSinEmpresa(ap.numeroCotizacion), cliente: ap.cliente, observaciones: ap.observaciones,
       items: partes.flatMap((parte) => parte.items.map((it) => ({
         ...ITEM_VACIO,
         id: it.id, modalidad: it.rolloId ? "rollo_completo" : it.modalidad, descripcion: it.descripcion, cantidad: String(it.cantidad),
@@ -172,7 +184,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         codigoInterno: it.codigoInterno || "", medida: it.medida == null ? "" : String(it.medida), tipoProducto: it.tipoProducto || "",
         productoId: it.productoId, productoDescripcion: it.modalidad === "por_stock" ? it.descripcion : "",
         metrosConsumidos: it.metrosConsumidos, stockDescontado: it.stockDescontado,
-        bodegaId: parte.id === ap.id ? "" : String(parte.bodegaId),
+        bodegaId: String(parte.bodegaId),
+        empresa: parte.empresa && parte.empresa !== empresaCotizacion ? parte.empresa : "",
       }))),
     });
     setErrorFormularioApartado("");
@@ -194,32 +207,70 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     setFormulario((actual) => ({ ...actual, materialEnCamino: valor }));
   }
 
+  // El número que la pantalla puso sola: si no lo cambiaron a mano, al
+  // cambiar la empresa se reemplaza por el consecutivo de la otra.
+  const numeroAutomatico = useRef("");
+  async function ponerSiguienteNumero(empresa: string) {
+    if (!empresa) return;
+    try {
+      const numero = (await api.get<{ numero: string }>(`/apartados/siguiente-numero?empresa=${encodeURIComponent(empresa)}`))?.numero ?? "";
+      if (!numero) return;
+      setFormulario((actual) => {
+        if (actual.numeroCotizacion.trim() && actual.numeroCotizacion !== numeroAutomatico.current) return actual;
+        numeroAutomatico.current = numero;
+        return { ...actual, numeroCotizacion: numero };
+      });
+    } catch {
+      // Sin número sugerido: lo escriben a mano.
+    }
+  }
+
   function actualizarCampoApartado(campo: keyof FormularioApartado, valor: string) {
-    setFormulario((actual) => ({ ...actual, [campo]: valor }));
-    // Otra empresa: lo disponible de cada línea de rollo cambia.
-    if (campo === "empresa") {
-      formulario.items.forEach((item, indice) => {
-        if (item.modalidad === "por_rollo" && item.codigoInterno) {
-          consultarDisponibilidadItem(indice, item.codigoInterno, item.bodegaId || formulario.bodegaId, valor);
-        }
+    if (campo !== "empresa") {
+      setFormulario((actual) => ({ ...actual, [campo]: valor }));
+      return;
+    }
+    // "Esta cotización es de": las líneas sin empresa propia siguen a la
+    // cotización, así que su producto de stock (que es de una empresa) se
+    // vuelve a elegir y su disponibilidad se vuelve a consultar.
+    setFormulario((actual) => ({
+      ...actual, empresa: valor,
+      items: actual.items.map((item) => (item.empresa || item.id || item.modalidad !== "por_stock" ? item
+        : { ...item, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "" })),
+    }));
+    formulario.items.forEach((item, indice) => {
+      if (!item.empresa && item.modalidad === "por_rollo" && item.codigoInterno) {
+        consultarDisponibilidadItem(indice, item.codigoInterno, undefined, valor);
+      }
+    });
+    if (!editandoId) ponerSiguienteNumero(valor);
+  }
+
+  // Empresa de la que sale el material de UNA línea.
+  function cambiarEmpresaItem(indice: number, empresa: string) {
+    const item = formulario.items[indice];
+    setFormulario((actual) => ({
+      ...actual,
+      items: actual.items.map((it, i) => (i === indice
+        ? { ...it, empresa: empresa === actual.empresa ? "" : empresa, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "" }
+        : it)),
+    }));
+    setResultadosBusquedaProducto((actual) => {
+      const { [indice]: _quitado, ...resto } = actual;
+      return resto;
+    });
+    if (item?.modalidad === "por_rollo" && item.codigoInterno) {
+      consultarDisponibilidadItem(indice, item.codigoInterno, undefined, empresa || formulario.empresa);
+    } else {
+      setDisponibilidadItems((actual) => {
+        const { [indice]: _quitado, ...resto } = actual;
+        return resto;
       });
     }
   }
 
-  // Cambiar de bodega invalida lo ya elegido: la disponibilidad y los
-  // productos de stock eran de la bodega anterior.
-  function cambiarBodegaApartado(bodegaId: string) {
-    setFormulario((actual) => ({
-      ...actual, bodegaId,
-      items: actual.items.map((item) => ({
-        ...item, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
-        // Un rollo completo es de UNA bodega: si la línea sale de la de la cotización, se vuelve a elegir.
-        ...(item.id || item.bodegaId ? {} : { rolloId: null, rolloResumen: "", busquedaRollo: "" }),
-      })),
-    }));
-    setDisponibilidadItems({});
-    setResultadosBusquedaProducto({});
-    if (formulario.items.some((it) => it.modalidad === "rollo_completo" && !it.bodegaId)) cargarRollosParaApartar(bodegaId);
+  function empresaDeItem(indice: number) {
+    return formulario.items[indice]?.empresa || formulario.empresa;
   }
 
   // Bodega de donde sale una línea: la suya o, si no tiene, la de la cotización.
@@ -229,14 +280,21 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
   // Cambiar la bodega de UNA línea: su producto de stock y su disponibilidad
   // eran de la otra bodega; la de rollo se vuelve a consultar en la nueva.
-  function cambiarBodegaItem(indice: number, bodegaId: string) {
+  // `conservar` ("Despachar desde ..."): el mismo producto de stock sale de
+  // la otra bodega (el backend usa su fila allá).
+  function cambiarBodegaItem(indice: number, bodegaId: string, conservar = false) {
     const item = formulario.items[indice];
     setFormulario((actual) => ({
       ...actual,
       items: actual.items.map((it, i) => (i === indice
-        ? { ...it, bodegaId, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "", rolloId: null, rolloResumen: "", busquedaRollo: "" }
+        ? (conservar ? { ...it, bodegaId }
+          : { ...it, bodegaId, productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "", rolloId: null, rolloResumen: "", busquedaRollo: "" })
         : it)),
     }));
+    if (conservar && item?.modalidad === "por_stock" && item.productoId) {
+      consultarDisponibilidadProductoItem(indice, item.productoId, bodegaId);
+      return;
+    }
     setDisponibilidadItems((actual) => {
       const { [indice]: _quitado, ...resto } = actual;
       return resto;
@@ -251,8 +309,12 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     if (item?.modalidad === "rollo_completo") cargarRollosParaApartar(bodegaId || formulario.bodegaId);
   }
 
+  // La línea nueva arranca con la bodega y la empresa de la anterior.
   function agregarItemApartado() {
-    setFormulario((actual) => ({ ...actual, items: [...actual.items, { ...ITEM_VACIO }] }));
+    setFormulario((actual) => {
+      const anterior = actual.items[actual.items.length - 1];
+      return { ...actual, items: [...actual.items, { ...ITEM_VACIO, bodegaId: anterior?.bodegaId || "", empresa: anterior?.empresa || "" }] };
+    });
   }
 
   function quitarItemApartado(indice: number) {
@@ -343,8 +405,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
     setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: true } }));
     try {
-      // Solo lo de la empresa de la cotización: el mismo código existe en Arquitejas y en Asia.
-      const empresa = empresaElegida ?? formulario.empresa;
+      // Solo lo de la empresa del material: el mismo código existe en Arquitejas y en Asia.
+      const empresa = empresaElegida ?? empresaDeItem(indice);
       const datos = await api.get(`/apartados/disponibilidad?codigo_interno=${encodeURIComponent(codigo)}&bodega_id=${bodega}&empresa=${encodeURIComponent(empresa)}`);
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, datos: disponibilidadCodigoDesdeApi(datos as Record<string, unknown>) } }));
     } catch {
@@ -353,10 +415,10 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   }
 
   // POR_STOCK: disponibilidad de un Producto concreto ya seleccionado.
-  async function consultarDisponibilidadProductoItem(indice: number, productoId: number) {
+  async function consultarDisponibilidadProductoItem(indice: number, productoId: number, bodegaElegida?: string) {
     setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: true } }));
     try {
-      const datos = await api.get(`/apartados/disponibilidad-producto?producto_id=${productoId}&bodega_id=${bodegaDeItem(indice)}`);
+      const datos = await api.get(`/apartados/disponibilidad-producto?producto_id=${productoId}&bodega_id=${bodegaElegida ?? bodegaDeItem(indice)}`);
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, datos: disponibilidadProductoDesdeApi(datos as Record<string, unknown>) } }));
     } catch {
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, error: true } }));
@@ -388,9 +450,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
     busquedaPendiente.current[indice] = setTimeout(async () => {
       try {
-        // Solo productos de la empresa de la cotización (el mismo código existe en las dos).
+        // Solo productos de la empresa del material (el mismo código existe en las dos).
         const datos = await api.get(`/apartados/productos?busqueda=${encodeURIComponent(consulta)}&bodega_id=${bodegaDeItem(indice)}`
-          + `&empresa=${encodeURIComponent(formulario.empresa)}`);
+          + `&empresa=${encodeURIComponent(empresaDeItem(indice))}`);
         if (ultimaBusqueda.current[indice] !== consulta) return; // ya escribió otra cosa
         setResultadosBusquedaProducto((actual) => ({ ...actual, [indice]: datos as Record<string, unknown>[] }));
       } catch {
@@ -423,12 +485,12 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
   async function crearApartado(evento: { preventDefault: () => void }) {
     evento.preventDefault();
-    if (!formulario.bodegaId) {
-      setErrorFormularioApartado("Elige la bodega de donde sale el material.");
+    if (!formulario.empresa) {
+      setErrorFormularioApartado("Elige de qué empresa es la cotización: Arquitejas o Asia Business.");
       return;
     }
-    if (!formulario.empresa) {
-      setErrorFormularioApartado("Elige de qué empresa sale el material: Arquitejas o Asia Business.");
+    if (formulario.items.some((_, indice) => !bodegaDeItem(indice))) {
+      setErrorFormularioApartado("Elige de qué bodega sale cada producto.");
       return;
     }
     if (!formulario.numeroCotizacion.trim()) {
@@ -466,7 +528,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     try {
       const enviar = editandoId ? (cuerpo: unknown) => api.put(`/apartados/${editandoId}`, cuerpo) : (cuerpo: unknown) => api.post("/apartados", cuerpo);
       await enviar({
-        bodega_id: Number(formulario.bodegaId),
+        bodega_id: Number(bodegaDeItem(0) || formulario.bodegaId),
         material_en_camino: formulario.materialEnCamino,
         numero_cotizacion: formulario.numeroCotizacion.trim(),
         empresa: formulario.empresa,
@@ -474,18 +536,19 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         observaciones: formulario.observaciones,
         ...(editandoId && otrasPartesIds.length ? { otras_partes_ids: otrasPartesIds } : {}),
         items: formulario.items.map((i) => {
-          // Una línea de otra bodega va a la misma cotización en esa bodega
-          // (mismo número), al crear y al editar: ver backend crear/editar_apartado.
-          const bodega_id = i.bodegaId ? Number(i.bodegaId) : undefined;
+          // Cada línea dice de qué bodega y de qué empresa sale: el backend
+          // guarda una parte por (bodega, empresa) con el mismo número.
+          const bodega_id = Number(i.bodegaId || formulario.bodegaId);
+          const empresa = i.empresa || formulario.empresa;
           if (i.modalidad === "rollo_completo") {
-            return { id: i.id, bodega_id, modalidad: "por_rollo", rollo_id: i.rolloId, descripcion: i.descripcion, cantidad: 1,
+            return { id: i.id, bodega_id, empresa, modalidad: "por_rollo", rollo_id: i.rolloId, descripcion: i.descripcion, cantidad: 1,
               codigo_interno: i.codigoInterno || undefined, medida: Number(i.medida) || undefined };
           }
           return i.modalidad === "por_stock"
             // "Cortar a (m)" es opcional en una línea de stock (ej. teja UPVC de 11,80 cortada a 7).
-            ? { id: i.id, bodega_id, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad),
+            ? { id: i.id, bodega_id, empresa, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad),
                 medida: Number(String(i.medida).replace(",", ".")) > 0 ? Number(String(i.medida).replace(",", ".")) : undefined }
-            : { id: i.id, bodega_id, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida),
+            : { id: i.id, bodega_id, empresa, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida),
                 tipo_producto: i.tipoProducto || "" };
         }),
       });
@@ -577,7 +640,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
     editandoId, abrirEdicionApartado, parteEditada, otrasPartesIds,
-    actualizarCampoApartado, cambiarBodegaApartado, cambiarBodegaItem, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
+    actualizarCampoApartado, cambiarBodegaItem, cambiarEmpresaItem, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
     cambiarModalidadItem, rollosParaApartar, cargarRollosParaApartar, seleccionarRolloCompleto,
     guardandoApartado, errorFormularioApartado, crearApartado,
     disponibilidadItems, consultarDisponibilidadItem,

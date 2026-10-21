@@ -29,6 +29,10 @@ class ApartadoItemCrear(BaseModel):
     # cotización. Una cotización con material de varias bodegas se guarda como
     # una cotización por bodega, con el mismo número (ver crear_apartado).
     bodega_id: int | None = None
+    # Empresa de la que sale el material de ESTA línea ("" = la de la
+    # cotización). Una cotización de Asia puede llevar material de
+    # Arquitejas: esa parte se guarda aparte como "<número>-AR".
+    empresa: str = ""
 
     # "Rollo completo" (POR_ROLLO): el rollo entero que se vende. El código,
     # la cantidad (1) y la medida (sus metros) los pone el backend.
@@ -36,6 +40,9 @@ class ApartadoItemCrear(BaseModel):
 
     @model_validator(mode="after")
     def _exigir_campos_segun_modalidad(self) -> "ApartadoItemCrear":
+        self.empresa = (self.empresa or "").strip().upper()
+        if self.empresa and self.empresa not in EMPRESAS_CONOCIDAS:
+            raise ValueError("La empresa del material de cada línea debe ser Arquitejas o Asia Business.")
         self.tipo_producto = (self.tipo_producto or "").strip().lower()
         if self.tipo_producto == "teja" or self.modalidad != ModalidadApartado.POR_ROLLO:
             self.tipo_producto = ""
@@ -149,6 +156,26 @@ class RolloParaApartarResponse(BaseModel):
     metros_disponibles: float
 
 
+class OtraBodegaConMaterial(BaseModel):
+    """Bodega (que traslada) donde hay libre de lo que se está apartando."""
+    bodega_id: int
+    bodega: str
+    cantidad: float
+
+
+class OtraEmpresaConMaterial(BaseModel):
+    """En la MISMA bodega hay libre de la otra empresa (ej. Asia no tiene,
+    Arquitejas sí): la pantalla ofrece cambiar el material de la línea."""
+    empresa: str
+    cantidad: float
+    # Lo que esa empresa tiene sin prometer en todas las bodegas.
+    total: float = 0
+
+
+class SiguienteNumeroResponse(BaseModel):
+    numero: str
+
+
 class DisponibilidadCodigoResponse(BaseModel):
     """Material que hay de un código de clasificación (color + calibre), para
     que la encargada de inventario vea cuánto puede apartar antes de crearlo."""
@@ -164,6 +191,11 @@ class DisponibilidadCodigoResponse(BaseModel):
     metros_por_repartir: float = 0
     metros_esperando: float = 0
     metros_para_apartar: float = 0
+    # Sin prometer de la empresa elegida en todas las bodegas (con lo en camino).
+    disponible_empresa: float | None = None
+    # Dónde más hay libre de este código (de la misma empresa), de más a menos.
+    otras_bodegas: list[OtraBodegaConMaterial] = []
+    otras_empresas: list[OtraEmpresaConMaterial] = []
 
 
 class ReservaCodigoResponse(BaseModel):
@@ -187,6 +219,8 @@ class DisponibilidadProductoResponse(BaseModel):
     # Lo que se puede prometer en toda la empresa y dónde hay fuera de esta bodega.
     disponible_empresa: float | None = None
     en_otras_bodegas: str = ""
+    otras_bodegas: list[OtraBodegaConMaterial] = []
+    otras_empresas: list[OtraEmpresaConMaterial] = []
 
 
 class ApartadoResponse(ModeloConFechasUtc):

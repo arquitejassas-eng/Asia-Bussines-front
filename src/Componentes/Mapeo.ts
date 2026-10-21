@@ -73,12 +73,28 @@ export function rolloDesdeApi(r: RegistroApi) {
     })) };
 }
 
+// Bodegas donde hay libre de lo que se aparta (para "Despachar desde ...").
+function otrasBodegasDesdeApi(lista: unknown) {
+  return (Array.isArray(lista) ? lista : []).map((o: RegistroApi) => ({
+    bodegaId: numero(o.bodega_id), bodega: texto(o.bodega), cantidad: numero(o.cantidad),
+  }));
+}
+
+// En la misma bodega hay libre de la otra empresa (para "Usar material de ...").
+function otrasEmpresasDesdeApi(lista: unknown) {
+  return (Array.isArray(lista) ? lista : []).map((o: RegistroApi) => ({
+    empresa: texto(o.empresa), cantidad: numero(o.cantidad), total: numero(o.total || 0),
+  }));
+}
+
 export function disponibilidadCodigoDesdeApi(d: RegistroApi) {
   return { codigoInterno: texto(d.codigo_interno), familia: texto(d.familia), colorMaterial: texto(d.color_material),
     calibre: numero(d.calibre), cantidadRollos: numero(d.cantidad_rollos), metrosDisponibles: numero(d.metros_disponibles),
     metrosReservados: numero(d.metros_reservados), metrosConsumidos: numero(d.metros_consumidos),
     metrosEnCamino: numero(d.metros_en_camino || 0), metrosPorRepartir: numero(d.metros_por_repartir || 0),
-    metrosEsperando: numero(d.metros_esperando || 0), metrosParaApartar: numero(d.metros_para_apartar || 0) };
+    metrosEsperando: numero(d.metros_esperando || 0), metrosParaApartar: numero(d.metros_para_apartar || 0),
+    disponibleEmpresa: d.disponible_empresa == null ? null : numero(d.disponible_empresa),
+    otrasBodegas: otrasBodegasDesdeApi(d.otras_bodegas), otrasEmpresas: otrasEmpresasDesdeApi(d.otras_empresas) };
 }
 
 export function reservaCodigoDesdeApi(r: RegistroApi) {
@@ -91,7 +107,8 @@ export function disponibilidadProductoDesdeApi(d: RegistroApi) {
   return { productoId: numero(d.producto_id), codigo: texto(d.codigo), descripcion: texto(d.descripcion),
     stock: numero(d.stock), cantidadReservada: numero(d.cantidad_reservada), cantidadDisponible: numero(d.cantidad_disponible),
     // En toda la empresa (todas las bodegas menos San Gil) y dónde hay fuera de esta.
-    disponibleEmpresa: d.disponible_empresa == null ? null : numero(d.disponible_empresa), enOtrasBodegas: texto(d.en_otras_bodegas) };
+    disponibleEmpresa: d.disponible_empresa == null ? null : numero(d.disponible_empresa), enOtrasBodegas: texto(d.en_otras_bodegas),
+    otrasBodegas: otrasBodegasDesdeApi(d.otras_bodegas), otrasEmpresas: otrasEmpresasDesdeApi(d.otras_empresas) };
 }
 
 export function apartadoItemDesdeApi(i: RegistroApi) {

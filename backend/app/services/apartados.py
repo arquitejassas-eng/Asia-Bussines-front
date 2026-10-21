@@ -635,47 +635,60 @@ def producto_en_bodega(db: Session, producto_id: int | None, bodega_id: int) -> 
     return propio.id
 
 
+def disponible_las_dos_empresas_producto(db: Session, *, producto: Producto, bodega_despacho: int) -> float:
+    """Lo que se puede prometer de un producto sumando Arquitejas y Asia (el
+    mismo código existe en las dos): una fila de cada empresa que lo tenga."""
+    total = 0.0
+    vistas: set[str] = set()
+    for otro in db.query(Producto).filter(Producto.codigo == producto.codigo).order_by(Producto.id):
+        empresa = otro.empresa or ""
+        if empresa in vistas:
+            continue
+        vistas.add(empresa)
+        total += disponible_empresa_producto(db, producto=otro, bodega_despacho=bodega_despacho)[0]
+    return round(total, 2)
+
+
 def _validar_que_quepa(
     db: Session, *, bodega_id: int, solicitado_por_codigo: dict[str, float],
     solicitado_por_producto: dict[int, float], material_en_camino: bool, empresa: str = "",
 ) -> None:
     """Lo que se va a apartar (o lo que se aumenta al editar) tiene que caber
-    en lo libre de TODA la empresa: la bodega de despacho, las otras bodegas
-    (desde donde se trae con un traslado; San Gil no traslada) y lo que viene
-    en camino o está por repartir. Nunca se promete más de lo que hay. Si en
-    la bodega de despacho no alcanza, la cotización queda "esperando
-    material" (no se puede enviar a producción hasta que llegue). Misma regla
-    al crear y al editar. `material_en_camino` ya no hace falta: se deja por
-    compatibilidad con la pantalla."""
+    en lo libre sumando Arquitejas y Asia: todas las bodegas (desde donde se
+    trae con un traslado; San Gil no traslada) y lo que viene en camino o
+    está por repartir. Nunca se promete más de lo que hay entre las dos. Si
+    la empresa del material o la bodega de despacho no alcanzan, la
+    cotización queda "esperando material" (la pantalla avisa dónde hay y de
+    qué empresa). Misma regla al crear y al editar. `material_en_camino` y
+    `empresa` se dejan por compatibilidad."""
     for codigo_interno, metros_solicitados in solicitado_por_codigo.items():
         # Bloquea los rollos del código en la bodega (serializa apartados
-        # simultáneos). Siempre se mira la empresa, aunque la bodega lo tenga:
+        # simultáneos). Siempre se mira el total, aunque la bodega lo tenga:
         # su material puede estar prometido a una cotización de otra bodega
         # que lo está esperando.
         disponibilidad_por_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, bloquear=True)
-        libre_empresa, _ = disponible_empresa_codigo(db, codigo_interno=codigo_interno, bodega_despacho=bodega_id, empresa=empresa)
-        if metros_solicitados > libre_empresa + 0.005:
-            de = f" de {EMPRESAS_CONOCIDAS.get(empresa, empresa)}" if empresa else ""
+        libre, _ = disponible_empresa_codigo(db, codigo_interno=codigo_interno, bodega_despacho=bodega_id)
+        if metros_solicitados > libre + 0.005:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"No hay suficiente '{codigo_interno}'{de} en toda la empresa: pediste {metros_solicitados:g} m y solo hay "
-                    f"{max(round(libre_empresa, 2), 0) + 0:g} m sin prometer (sumando todas las bodegas y lo que viene en camino). "
-                    f"Faltan {round(metros_solicitados - max(libre_empresa, 0), 2) + 0:g} m."
+                    f"No hay suficiente '{codigo_interno}': pediste {metros_solicitados:g} m y solo hay "
+                    f"{max(round(libre, 2), 0) + 0:g} m sin prometer sumando Arquitejas y Asia (todas las bodegas y lo que "
+                    f"viene en camino). Faltan {round(metros_solicitados - max(libre, 0), 2) + 0:g} m."
                 ),
             )
 
     for producto_id, cantidad_solicitada in solicitado_por_producto.items():
         resumen = disponibilidad_producto(db, bodega_id=bodega_id, producto_id=producto_id, bloquear=True)
         producto = db.get(Producto, producto_id)
-        empresa, _ = disponible_empresa_producto(db, producto=producto, bodega_despacho=bodega_id)
-        if cantidad_solicitada > empresa + 0.005:
+        libre = disponible_las_dos_empresas_producto(db, producto=producto, bodega_despacho=bodega_id)
+        if cantidad_solicitada > libre + 0.005:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"No hay suficiente '{resumen['codigo']}' en toda la empresa: pediste {cantidad_solicitada:g} y solo hay "
-                    f"{max(round(empresa, 2), 0) + 0:g} sin prometer (sumando todas las bodegas). "
-                    f"Faltan {round(cantidad_solicitada - max(empresa, 0), 2) + 0:g}."
+                    f"No hay suficiente '{resumen['codigo']}': pediste {cantidad_solicitada:g} y solo hay "
+                    f"{max(round(libre, 2), 0) + 0:g} sin prometer sumando Arquitejas y Asia (todas las bodegas). "
+                    f"Faltan {round(cantidad_solicitada - max(libre, 0), 2) + 0:g}."
                 ),
             )
 
@@ -889,6 +902,41 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
         apartado.salida_pendiente = False
     db.flush()
     return apartado
+
+
+def numero_sin_empresa(numero_cotizacion: str) -> str:
+    """ "3811-AR" / "3811-ABG" -> "3811": las partes de una misma cotización
+    con material de cada empresa ("3811-AR-SAL" sigue siendo otra parte)."""
+    return re.sub(r"-(AR|ABG)$", "", (numero_cotizacion or "").strip(), flags=re.IGNORECASE)
+
+
+def numero_de_parte(numero: str, empresa_material: str, empresa_cotizacion: str) -> str:
+    """Número de la parte de una cotización según la empresa del material:
+    el de la cotización si es la misma empresa, si no "<número>-AR"/"-ABG"."""
+    base = numero_sin_empresa(numero)
+    if not empresa_material or empresa_material == empresa_cotizacion:
+        return base
+    return f"{base}-{empresa_material}"
+
+
+def siguiente_numero(db: Session, empresa: str) -> str:
+    """El consecutivo que sigue en las cotizaciones de una empresa: el número
+    más alto de sus cotizaciones (también las canceladas o entregadas) + 1.
+    "3953-AR" junto a "3953" es material de Arquitejas en una cotización de
+    la otra empresa: cuenta para la empresa de "3953", no para Arquitejas.
+    Solo si no hay parte sin sufijo (cargadas del Excel), cuenta por su sufijo."""
+    filas = [((numero or "").strip(), emp or "") for numero, emp in db.query(Apartado.numero_cotizacion, Apartado.empresa)]
+    sin_sufijo = {numero_sin_empresa(n) for n, _ in filas if not re.search(r"-(AR|ABG)$", n, flags=re.IGNORECASE)}
+    mayor = 0
+    for numero, emp in filas:
+        sufijo = re.search(r"-(AR|ABG)$", numero, flags=re.IGNORECASE)
+        if sufijo and numero_sin_empresa(numero) in sin_sufijo:
+            continue
+        de_quien = sufijo.group(1).upper() if sufijo else emp
+        inicio = re.match(r"\d+", numero)
+        if de_quien == empresa and inicio:
+            mayor = max(mayor, int(inicio.group()))
+    return str(mayor + 1) if mayor else ""
 
 
 def numero_base(numero_cotizacion: str) -> str:

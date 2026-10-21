@@ -10,7 +10,7 @@ import PanelImportarCotizaciones from "../Componentes/PanelImportarCotizaciones"
 import PanelRegistrarSalida from "../Componentes/PanelRegistrarSalida";
 import PanelSepararCotizacion from "../Componentes/PanelSepararCotizacion";
 import Paginacion from "../Componentes/Paginacion";
-import { useApartados } from "../Hooks/useApartados";
+import { numeroSinEmpresa, useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
 import { calcularSolicitudesPendientes, calcularStockParaAlistar, metrosDeLinea, pideCorte } from "../Utils/produccion";
 import "../Style/Inventario.css";
@@ -71,6 +71,8 @@ type DatosDisponibilidad = {
   metrosEnCamino?: number; metrosPorRepartir?: number; metrosEsperando?: number; metrosParaApartar?: number;
   stock?: number; cantidadReservada?: number; cantidadDisponible?: number;
   disponibleEmpresa?: number | null; enOtrasBodegas?: string;
+  otrasBodegas?: { bodegaId: number; bodega: string; cantidad: number }[];
+  otrasEmpresas?: { empresa: string; cantidad: number; total: number }[];
   productoId?: number; codigo?: string; descripcion?: string;
 };
 type ItemDisponibilidad = { cargando?: boolean; error?: boolean; sinBodega?: boolean; datos?: DatosDisponibilidad };
@@ -97,6 +99,75 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   });
   const ofrecerMaterialEnCamino = lineaSinMaterial || a.formulario.materialEnCamino
     || a.errorFormularioApartado.includes("viene en camino");
+
+  // Si no alcanza lo de la empresa del material en la bodega elegida (o en
+  // toda esa empresa), se avisa dónde hay: otra bodega de la misma empresa
+  // (-> "Despachar desde ...") u otra empresa (-> "Usar material de ...").
+  // La cotización se puede crear si alcanza sumando Arquitejas y Asia; si no
+  // se cambia nada, queda esperando material (el traslado lo pide la bodega).
+  function avisoOtraBodega(item: (typeof a.formulario.items)[number], indice: number) {
+    const datos = disponibilidadItems[indice]?.datos;
+    if (!datos || !item.bodegaId) return null;
+    const pedido = item.modalidad === "por_stock"
+      ? Number(item.cantidad) || 0
+      : Number(item.cantidad) > 0 && Number(item.medida) > 0 ? metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto).metros : 0;
+    const necesita = (hay: number) => (pedido > 0 ? hay + 0.005 < pedido : hay <= 0.005);
+    const libre = item.modalidad === "por_stock" ? datos.cantidadDisponible ?? 0 : datos.metrosDisponibles ?? 0;
+    const totalEmpresa = datos.disponibleEmpresa ?? null;
+    const faltaAqui = necesita(libre);
+    const faltaEnEmpresa = totalEmpresa != null && necesita(totalEmpresa);
+    if (!faltaAqui && !faltaEnEmpresa) return null;
+    const otras = faltaEnEmpresa ? [] : (datos.otrasBodegas ?? []).filter((o) => String(o.bodegaId) !== String(item.bodegaId));
+    const otra = otras.find((o) => o.cantidad + 0.005 >= pedido) ?? otras[0];
+    const otrasEmpresas = datos.otrasEmpresas ?? [];
+    const otraEmpresa = otrasEmpresas.find((o) => o.total + 0.005 >= pedido) ?? otrasEmpresas.find((o) => o.cantidad > 0.005);
+    if (!otra && !otraEmpresa && !faltaEnEmpresa) return null;
+    const aqui = almacen.bodegas.find((b) => String(b.id) === String(item.bodegaId))?.nombre || "esta bodega";
+    const empresa = EMPRESAS[item.empresa || a.formulario.empresa] || "esta empresa";
+    const nombreOtra = otraEmpresa ? EMPRESAS[otraEmpresa.empresa] || otraEmpresa.empresa : "";
+    const unidad = item.modalidad === "por_stock" ? "" : " m";
+    const textoAqui = libre > 0.005 ? `no alcanza el material de ${empresa} (hay ${libre}${unidad})` : `no hay material de ${empresa}`;
+    return (
+      <div className="apartado-aviso-otra-bodega">
+        {faltaEnEmpresa ? (
+          <p>
+            En <strong>{empresa}</strong> no hay suficiente: {Math.max(totalEmpresa ?? 0, 0)}{unidad} sin prometer en todas las bodegas.
+            {otraEmpresa && otraEmpresa.total > 0.005 ? (
+              <> Pero en <strong>{nombreOtra}</strong> sí hay: {otraEmpresa.total}{unidad}
+                {otraEmpresa.cantidad > 0.005 && <> ({otraEmpresa.cantidad}{unidad} aquí en {aqui})</>}. Usa material de {nombreOtra}.</>
+            ) : " Tampoco alcanza en la otra empresa."}
+          </p>
+        ) : (
+          <>
+            {otra && (
+              <p>
+                Este material se puede despachar en <strong>{otra.bodega}</strong> ({otra.cantidad}{unidad} libres de {empresa}) porque en{" "}
+                <strong>{aqui}</strong> {textoAqui}. Solicita el intercambio.
+              </p>
+            )}
+            {otraEmpresa && otraEmpresa.cantidad > 0.005 && (
+              <p>
+                {otra ? "También: en " : "En "}<strong>{aqui}</strong> {otra ? "" : `${textoAqui}, pero `}hay{" "}
+                <strong>{otraEmpresa.cantidad}{unidad} de {nombreOtra}</strong> libres.
+              </p>
+            )}
+          </>
+        )}
+        <div className="apartado-aviso-botones">
+          {otra && (
+            <button type="button" onClick={() => a.cambiarBodegaItem(indice, String(otra.bodegaId), true)}>
+              Despachar desde {otra.bodega}
+            </button>
+          )}
+          {otraEmpresa && (
+            <button type="button" onClick={() => a.cambiarEmpresaItem(indice, otraEmpresa.empresa)}>
+              Usar material de {nombreOtra}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const navigate = useNavigate();
 
@@ -161,8 +232,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     if (!esAdminInventario) return apartadosFiltrados.map((ap) => [ap]);
     const porNumero = new Map<string, ApartadoDeLista[]>();
     for (const ap of apartadosFiltrados) {
-      const grupo = porNumero.get(ap.numeroCotizacion);
-      if (grupo) grupo.push(ap); else porNumero.set(ap.numeroCotizacion, [ap]);
+      const clave = numeroSinEmpresa(ap.numeroCotizacion);
+      const grupo = porNumero.get(clave);
+      if (grupo) grupo.push(ap); else porNumero.set(clave, [ap]);
     }
     // La parte principal (la que se creó primero) va arriba.
     return [...porNumero.values()].map((grupo) => [...grupo].sort((x, y) => x.id - y.id));
@@ -237,7 +309,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               <div className="apartado-linea-cabeza">
                 <strong>{cantidadLinea(it)}</strong>
                 {codigo && <span className="apartado-linea-codigo">{codigo}</span>}
-                {parte && <span className="apartado-linea-bodega" title="Bodega de donde sale">{parte.bodegaNombre}</span>}
+                {parte && (
+                  <span className="apartado-linea-bodega" title="De dónde sale">
+                    {parte.bodegaNombre}{parte.empresa !== ap.empresa ? ` · ${EMPRESAS[parte.empresa] || parte.empresa}` : ""}
+                  </span>
+                )}
                 {it.modalidad === "por_stock" && (it.medida || pideCorte(it.descripcion)) && (
                   <span className="apartado-linea-cortar">CORTAR{it.medida ? ` a ${it.medida} m` : ""}</span>
                 )}
@@ -485,23 +561,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               )}
               {a.editandoId && a.otrasPartesIds.length > 0 && (
                 <p className="inventario-carga-ayuda">
-                  Esta cotización sale de varias bodegas y aquí está completa: cada línea dice de qué bodega sale. Al guardar,
-                  cada bodega queda con sus líneas (si cambias la bodega de una línea, pasa a la otra).
+                  Esta cotización está repartida y aquí está completa: cada línea dice de qué bodega y de qué empresa sale. Al
+                  guardar, cada parte queda con sus líneas (si cambias la bodega o la empresa de una línea, pasa a la otra).
                 </p>
               )}
 
               <div className="inventario-form-grid">
                 <div>
-                  <label>Bodega de donde sale *</label>
-                  <select value={a.formulario.bodegaId} onChange={(e) => a.cambiarBodegaApartado(e.target.value)}>
-                    <option value="">Elige la bodega...</option>
-                    {almacen.bodegas.map((bodega) => (
-                      <option key={bodega.id} value={bodega.id}>{bodega.nombre}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label>Empresa de la que sale el material *</label>
+                  <label>Esta cotización es de *</label>
                   <select value={a.formulario.empresa} onChange={(e) => a.actualizarCampoApartado("empresa", e.target.value)}>
                     <option value="">Elige la empresa...</option>
                     {Object.entries(EMPRESAS).map(([sigla, nombre]) => (
@@ -512,7 +579,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 <div>
                   <label>Número de cotización *</label>
                   <input
-                    placeholder="Ej. COT-00125"
+                    placeholder={a.formulario.empresa ? "Ej. 3953" : "Se pone solo al elegir la empresa"}
                     value={a.formulario.numeroCotizacion}
                     onChange={(e) => a.actualizarCampoApartado("numeroCotizacion", e.target.value)}
                   />
@@ -536,20 +603,30 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       {item.bodegaId && ` Sale de ${almacen.bodegas.find((b) => String(b.id) === String(item.bodegaId))?.nombre || "otra bodega"}.`}
                     </p>
                   ) : null}
-                  {indice > 0 && !(item.metrosConsumidos || item.stockDescontado) && almacen.bodegas.length > 1 && (
+                  {!(item.metrosConsumidos || item.stockDescontado) && (
                     <div className="apartado-linea-cabecera">
                       <strong>Producto {indice + 1}</strong>
                       <select
+                        aria-label="Empresa de la que sale el material de este producto"
+                        className={`apartados-select ${item.empresa ? "apartados-select-activo" : ""}`}
+                        value={item.empresa || a.formulario.empresa}
+                        disabled={!a.formulario.empresa}
+                        onChange={(e) => a.cambiarEmpresaItem(indice, e.target.value)}
+                      >
+                        {!a.formulario.empresa && <option value="">Material de...</option>}
+                        {Object.entries(EMPRESAS).map(([sigla, nombre]) => (
+                          <option key={sigla} value={sigla}>Material de {nombre}</option>
+                        ))}
+                      </select>
+                      <select
                         aria-label="Bodega de donde sale este producto"
-                        title="Si sale de otra bodega, al guardar se crea la misma cotización también en esa bodega."
-                        className={`apartados-select ${item.bodegaId ? "apartados-select-activo" : ""}`}
+                        title="Si las líneas salen de varias bodegas, al guardar la cotización queda repartida (mismo número)."
+                        className="apartados-select apartados-select-activo"
                         value={item.bodegaId || ""}
                         onChange={(e) => a.cambiarBodegaItem(indice, e.target.value)}
                       >
-                        <option value="">
-                          Sale de {almacen.bodegas.find((b) => String(b.id) === String(a.formulario.bodegaId))?.nombre || "la bodega de la cotización"}
-                        </option>
-                        {almacen.bodegas.filter((b) => String(b.id) !== String(a.formulario.bodegaId)).map((b) => (
+                        <option value="">Sale de la bodega...</option>
+                        {almacen.bodegas.map((b) => (
                           <option key={b.id} value={b.id}>Sale de {b.nombre}</option>
                         ))}
                       </select>
@@ -612,13 +689,20 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         disponibilidadItems[indice].datos.cantidadRollos === 0 && !disponibilidadItems[indice].datos.metrosEnCamino
                           && !disponibilidadItems[indice].datos.metrosPorRepartir ? (
                           <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
-                            No hay rollos de {EMPRESAS[a.formulario.empresa] || "esa empresa"} con ese código en esa bodega.
+                            No hay rollos de {EMPRESAS[item.empresa || a.formulario.empresa] || "esa empresa"} con ese código en esa bodega.
                           </p>
                         ) : (
                           <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>
                             {disponibilidadItems[indice].datos.familia && `${disponibilidadItems[indice].datos.familia} · `}
                             {disponibilidadItems[indice].datos.cantidadRollos} rollo{disponibilidadItems[indice].datos.cantidadRollos === 1 ? "" : "s"} ·{" "}
-                            <strong>{disponibilidadItems[indice].datos.metrosDisponibles} m disponibles</strong>
+                            {(disponibilidadItems[indice].datos.metrosDisponibles ?? 0) >= 0 ? (
+                              <strong>{disponibilidadItems[indice].datos.metrosDisponibles} m libres</strong>
+                            ) : (
+                              <>
+                                <strong>0 m libres</strong> (lo ya apartado aquí de {EMPRESAS[item.empresa || a.formulario.empresa] || "esta empresa"} supera
+                                lo que hay: esas cotizaciones esperan {-(disponibilidadItems[indice].datos.metrosDisponibles ?? 0)} m más)
+                              </>
+                            )}
                             {(disponibilidadItems[indice].datos?.metrosReservados ?? 0) > 0 && ` · ${disponibilidadItems[indice].datos?.metrosReservados} m ya reservados`}
                             {((disponibilidadItems[indice].datos?.metrosEnCamino ?? 0) > 0 || (disponibilidadItems[indice].datos?.metrosPorRepartir ?? 0) > 0) && (
                               <>
@@ -633,6 +717,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           </p>
                         )
                       )}
+                      {avisoOtraBodega(item, indice)}
                     </div>
                   ) : item.modalidad === "rollo_completo" ? (
                     <ElegirRolloCompleto
@@ -659,7 +744,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       ) : (
                         <>
                           <input
-                            placeholder={!(item.bodegaId || a.formulario.bodegaId) ? "Elige primero la bodega"
+                            placeholder={!(item.bodegaId || a.formulario.bodegaId) ? "Elige primero la bodega de este producto"
                               : !a.formulario.empresa ? "Elige primero la empresa" : "Buscar por código o descripción..."}
                             disabled={!(item.bodegaId || a.formulario.bodegaId) || !a.formulario.empresa}
                             value={item.busquedaProducto}
@@ -720,6 +805,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           )}
                         </p>
                       )}
+                      {item.modalidad === "por_stock" && avisoOtraBodega(item, indice)}
                     </div>
                   )}
 
@@ -943,7 +1029,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         gruposPagina.map((grupo) => {
                           const ap = grupo[0];
                           const variasBodegas = grupo.length > 1;
-                          const nombresGrupo = new Set(grupo.map((parte) => parte.bodegaNombre));
+                          const nombresGrupo = new Set(grupo.flatMap((parte) => [parte.bodegaNombre, `${parte.numeroCotizacion} (${parte.bodegaNombre})`]));
                           // Otras partes que NO están en esta fila (otra pestaña, o "3811-AR").
                           const otrasFuera = [...new Set(grupo.flatMap((parte) => parte.otrasPartes))].filter((o) => !nombresGrupo.has(o));
                           // Editar abre la cotización completa: todas sus partes activas,
@@ -958,7 +1044,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           };
                           const estadosIguales = grupo.every((parte) => parte.estado === ap.estado && porDarSalida(parte) === porDarSalida(ap));
                           const partesActivas = a.apartados
-                            .filter((otra) => otra.numeroCotizacion === ap.numeroCotizacion && ESTADOS_CANCELABLES.includes(otra.estado))
+                            .filter((otra) => numeroSinEmpresa(otra.numeroCotizacion) === numeroSinEmpresa(ap.numeroCotizacion) && ESTADOS_CANCELABLES.includes(otra.estado))
                             .sort((x, y) => x.id - y.id);
                           return (
                           <tr key={ap.id} className={variasBodegas ? "apartado-fila-varias" : undefined}>
