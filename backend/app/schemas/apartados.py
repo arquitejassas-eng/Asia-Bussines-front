@@ -180,6 +180,9 @@ class DisponibilidadProductoResponse(BaseModel):
     stock: float
     cantidad_reservada: float
     cantidad_disponible: float
+    # Lo que se puede prometer en toda la empresa y dónde hay fuera de esta bodega.
+    disponible_empresa: float | None = None
+    en_otras_bodegas: str = ""
 
 
 class ApartadoResponse(ModeloConFechasUtc):

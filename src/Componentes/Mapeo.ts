@@ -89,7 +89,9 @@ export function reservaCodigoDesdeApi(r: RegistroApi) {
 // (ver GET /apartados/disponibilidad-producto).
 export function disponibilidadProductoDesdeApi(d: RegistroApi) {
   return { productoId: numero(d.producto_id), codigo: texto(d.codigo), descripcion: texto(d.descripcion),
-    stock: numero(d.stock), cantidadReservada: numero(d.cantidad_reservada), cantidadDisponible: numero(d.cantidad_disponible) };
+    stock: numero(d.stock), cantidadReservada: numero(d.cantidad_reservada), cantidadDisponible: numero(d.cantidad_disponible),
+    // En toda la empresa (todas las bodegas menos San Gil) y dónde hay fuera de esta.
+    disponibleEmpresa: d.disponible_empresa == null ? null : numero(d.disponible_empresa), enOtrasBodegas: texto(d.en_otras_bodegas) };
 }
 
 export function apartadoItemDesdeApi(i: RegistroApi) {

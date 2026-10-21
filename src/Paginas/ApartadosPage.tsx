@@ -68,6 +68,7 @@ type DatosDisponibilidad = {
   cantidadRollos?: number; familia?: string; metrosDisponibles?: number; metrosReservados?: number;
   metrosEnCamino?: number; metrosPorRepartir?: number; metrosEsperando?: number; metrosParaApartar?: number;
   stock?: number; cantidadReservada?: number; cantidadDisponible?: number;
+  disponibleEmpresa?: number | null; enOtrasBodegas?: string;
   productoId?: number; codigo?: string; descripcion?: string;
 };
 type ItemDisponibilidad = { cargando?: boolean; error?: boolean; sinBodega?: boolean; datos?: DatosDisponibilidad };
@@ -459,7 +460,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>
                           Stock físico <strong>{disponibilidadItems[indice].datos.stock}</strong> · reservado{" "}
                           {disponibilidadItems[indice].datos.cantidadReservada} ·{" "}
-                          <strong>{disponibilidadItems[indice].datos.cantidadDisponible} disponible</strong>
+                          <strong>{disponibilidadItems[indice].datos.cantidadDisponible} disponible</strong> en esta bodega
+                          {disponibilidadItems[indice].datos.disponibleEmpresa != null && (
+                            <>
+                              <br />
+                              En toda la empresa: <strong>{disponibilidadItems[indice].datos.disponibleEmpresa}</strong>
+                              {disponibilidadItems[indice].datos.enOtrasBodegas && <> (hay en {disponibilidadItems[indice].datos.enOtrasBodegas})</>}
+                            </>
+                          )}
                         </p>
                       )}
                     </div>

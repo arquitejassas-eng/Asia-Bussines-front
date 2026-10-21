@@ -71,7 +71,25 @@ def consultar_disponibilidad_producto(
     """Cuánto stock hay de un `Producto` concreto antes de apartarlo (POR_STOCK):
     stock físico, cantidad ya reservada por apartados activos, y disponible."""
     bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
-    return srv.disponibilidad_producto(db, bodega_id=bodega, producto_id=producto_id)
+    producto = db.get(Producto, producto_id)
+    if producto is None:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+    # El buscador también ofrece productos de otras bodegas (se traen con un
+    # traslado): aquí se responde por la fila de ESE producto en la bodega de
+    # la cotización, o con 0 si todavía no existe ahí.
+    if producto.bodega_id != bodega:
+        propio = (
+            db.query(Producto)
+            .filter(Producto.bodega_id == bodega, Producto.codigo == producto.codigo, Producto.empresa == (producto.empresa or ""))
+            .first()
+        )
+        resumen = (srv.disponibilidad_producto(db, bodega_id=bodega, producto_id=propio.id) if propio else
+                   {"producto_id": producto.id, "codigo": producto.codigo, "descripcion": producto.descripcion,
+                    "stock": 0.0, "cantidad_reservada": 0.0, "cantidad_disponible": 0.0})
+    else:
+        resumen = srv.disponibilidad_producto(db, bodega_id=bodega, producto_id=producto_id)
+    empresa, donde = srv.disponible_empresa_producto(db, producto=producto, bodega_despacho=bodega)
+    return {**resumen, "disponible_empresa": empresa, "en_otras_bodegas": ", ".join(f"{n} {c:g}" for n, c in donde)}
 
 
 @router.get("/productos", response_model=list[ProductoResponse])
