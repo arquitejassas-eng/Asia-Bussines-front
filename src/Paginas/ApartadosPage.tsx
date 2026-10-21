@@ -28,6 +28,16 @@ type ApartadoDeLista = ReturnType<typeof useApartados>["apartados"][number];
 
 /** Cantidad legible de una línea: metros para rollo (con la cuenta si son
  * piezas de una medida, ej. "18 × 6 m = 108 m"), unidades para producto. */
+// "CAL 28 (0.33)" con código LR30020,38: Planta junta por código y mezclaría
+// espesores (ver backend exigir_calibre_de_la_descripcion).
+function calibreQueNoCuadra(codigo: string, descripcion: string): string | null {
+  const final = /,(\d{2})$/.exec((codigo || "").trim());
+  const espesores = [...(descripcion || "").matchAll(/\(\s*0\s*[.,]\s*(\d{2})\s*\)/g)].map((m) => m[1]);
+  if (!final || !espesores.length || espesores.includes(final[1])) return null;
+  return `La descripción dice espesor ${[...new Set(espesores)].map((e) => `0,${e}`).join(" / ")} y el código es ${codigo.trim()} `
+    + `(0,${final[1]}). Corrige uno de los dos: si no, Planta mezclaría espesores al producir.`;
+}
+
 function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null; tipoProducto?: string }) {
   if (it.modalidad === "por_stock") return `${it.cantidad} und`;
   if (it.tipoProducto && it.medida) return `${it.cantidad} ${it.tipoProducto}${it.cantidad === 1 ? "" : "s"} de ${it.medida} m = ${it.metrosRequeridos} m de lámina`;
@@ -816,6 +826,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       value={item.descripcion}
                       onChange={(e) => a.actualizarItemApartado(indice, "descripcion", e.target.value)}
                     />
+                    {item.modalidad === "por_rollo" && calibreQueNoCuadra(item.codigoInterno, item.descripcion) && (
+                      <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
+                        {calibreQueNoCuadra(item.codigoInterno, item.descripcion)}
+                      </p>
+                    )}
                   </div>
                   {item.modalidad !== "rollo_completo" && (
                     <div>

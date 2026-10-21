@@ -693,6 +693,25 @@ def _validar_que_quepa(
             )
 
 
+# "(0,33)", "(0.38)": el espesor que dice la descripción de la línea.
+ESPESOR_EN_DESCRIPCION = re.compile(r"\(\s*0\s*[.,]\s*(\d{2})\s*\)")
+
+
+def exigir_calibre_de_la_descripcion(codigo_interno: str | None, descripcion: str) -> None:
+    """La descripción dice un espesor y el código otro (ej. "CAL 28 (0.33)"
+    con LR30020,38): Planta junta y produce por código, así que se mezclaría
+    lámina de 0,33 con la de 0,38. Se corrige antes de guardar."""
+    final = re.search(r",(\d{2})$", (codigo_interno or "").strip())
+    espesores = set(ESPESOR_EN_DESCRIPCION.findall(descripcion or ""))
+    if final and espesores and final.group(1) not in espesores:
+        dice = " / ".join(f"0,{e}" for e in sorted(espesores))
+        raise HTTPException(
+            status_code=400,
+            detail=f"La línea '{(descripcion or '').strip()[:70]}' dice espesor {dice} en la descripción, pero el código es "
+            f"{codigo_interno} (0,{final.group(1)}). Corrige el código o la descripción.",
+        )
+
+
 def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apartado:
     if not datos.items:
         raise HTTPException(status_code=400, detail="El apartado debe tener al menos un producto solicitado.")
@@ -713,6 +732,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     for item in datos.items:
         if item.rollo_id:
             preparar_rollo_completo(db, item, bodega_id)
+        elif item.modalidad == ModalidadApartado.POR_ROLLO:
+            exigir_calibre_de_la_descripcion(item.codigo_interno, item.descripcion)
         if item.modalidad == ModalidadApartado.POR_STOCK:
             exigir_producto_de_la_empresa(db, item.producto_id, datos.empresa)
             item.producto_id = producto_en_bodega(db, item.producto_id, bodega_id)
@@ -804,6 +825,12 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     ids_nuevos = {item.id for item in datos.items if item.id}
     if any(i not in actuales for i in ids_nuevos):
         raise HTTPException(status_code=400, detail="Alguna línea no pertenece a esta cotización. Recarga e intenta de nuevo.")
+    for linea in datos.items:
+        # Solo lo nuevo o cambiado: lo que ya estaba guardado no bloquea otras correcciones.
+        if linea.modalidad == ModalidadApartado.POR_ROLLO and not linea.rollo_id:
+            antes = actuales.get(linea.id) if linea.id else None
+            if antes is None or antes.codigo_interno != linea.codigo_interno or antes.descripcion != linea.descripcion:
+                exigir_calibre_de_la_descripcion(linea.codigo_interno, linea.descripcion)
     for item in con_salida:
         if item.id not in ids_nuevos:
             raise HTTPException(status_code=400, detail=f"No puedes quitar la línea '{item.descripcion or item.codigo_interno}': ya tiene salida registrada.")
