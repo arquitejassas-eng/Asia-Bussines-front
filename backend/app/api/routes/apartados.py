@@ -35,13 +35,14 @@ def _con_faltantes(db: Session, apartados: list[Apartado]) -> list[Apartado]:
 
 @router.get("/disponibilidad", response_model=DisponibilidadCodigoResponse)
 def consultar_disponibilidad(
-    codigo_interno: str = Query(..., min_length=1), bodega_id: int | None = None,
+    codigo_interno: str = Query(..., min_length=1), bodega_id: int | None = None, empresa: str = "",
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> dict:
     """Cuánto material hay de un código de clasificación (color + calibre) antes
-    de apartarlo: rollos, metros disponibles, reservados y consumidos."""
+    de apartarlo: rollos, metros disponibles, reservados y consumidos. Con
+    `empresa` (la de la cotización), solo lo de esa empresa."""
     bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
-    return srv.disponibilidad_por_codigo(db, bodega_id=bodega, codigo_interno=codigo_interno)
+    return srv.disponibilidad_por_codigo(db, bodega_id=bodega, codigo_interno=codigo_interno, empresa=empresa.strip().upper())
 
 
 @router.get("/rollos-para-apartar", response_model=list[RolloParaApartarResponse])

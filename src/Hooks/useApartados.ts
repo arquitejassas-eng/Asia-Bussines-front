@@ -196,6 +196,14 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
   function actualizarCampoApartado(campo: keyof FormularioApartado, valor: string) {
     setFormulario((actual) => ({ ...actual, [campo]: valor }));
+    // Otra empresa: lo disponible de cada línea de rollo cambia.
+    if (campo === "empresa") {
+      formulario.items.forEach((item, indice) => {
+        if (item.modalidad === "por_rollo" && item.codigoInterno) {
+          consultarDisponibilidadItem(indice, item.codigoInterno, item.bodegaId || formulario.bodegaId, valor);
+        }
+      });
+    }
   }
 
   // Cambiar de bodega invalida lo ya elegido: la disponibilidad y los
@@ -319,7 +327,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   }
 
   // POR_ROLLO: disponibilidad por código de clasificación (comportamiento original).
-  async function consultarDisponibilidadItem(indice: number, codigoInterno: string, bodegaElegida?: string) {
+  async function consultarDisponibilidadItem(indice: number, codigoInterno: string, bodegaElegida?: string, empresaElegida?: string) {
     const bodega = bodegaElegida ?? bodegaDeItem(indice);
     const codigo = codigoInterno.trim();
     if (!codigo) {
@@ -335,7 +343,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
     setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: true } }));
     try {
-      const datos = await api.get(`/apartados/disponibilidad?codigo_interno=${encodeURIComponent(codigo)}&bodega_id=${bodega}`);
+      // Solo lo de la empresa de la cotización: el mismo código existe en Arquitejas y en Asia.
+      const empresa = empresaElegida ?? formulario.empresa;
+      const datos = await api.get(`/apartados/disponibilidad?codigo_interno=${encodeURIComponent(codigo)}&bodega_id=${bodega}&empresa=${encodeURIComponent(empresa)}`);
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, datos: disponibilidadCodigoDesdeApi(datos as Record<string, unknown>) } }));
     } catch {
       setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, error: true } }));

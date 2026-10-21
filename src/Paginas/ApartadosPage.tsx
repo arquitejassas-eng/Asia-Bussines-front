@@ -612,7 +612,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         disponibilidadItems[indice].datos.cantidadRollos === 0 && !disponibilidadItems[indice].datos.metrosEnCamino
                           && !disponibilidadItems[indice].datos.metrosPorRepartir ? (
                           <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
-                            No hay rollos con ese código en esa bodega.
+                            No hay rollos de {EMPRESAS[a.formulario.empresa] || "esa empresa"} con ese código en esa bodega.
                           </p>
                         ) : (
                           <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>

@@ -28,24 +28,29 @@ EN_CAMINO = "en_camino"
 CERRADO = "cerrado"
 
 
-def metros_en_camino_codigo(db: Session, *, codigo_interno: str) -> float:
-    """Metros de los rollos del checklist que todavía no han llegado."""
-    total = (
+def metros_en_camino_codigo(db: Session, *, codigo_interno: str, empresa: str = "") -> float:
+    """Metros de los rollos del checklist que todavía no han llegado (solo
+    los de `empresa` si se indica: el mismo código existe en las dos)."""
+    consulta = (
         db.query(func.coalesce(func.sum(CargamentoRollo.metros), 0))
         .join(Cargamento, Cargamento.id == CargamentoRollo.cargamento_id)
         .filter(Cargamento.estado == EN_CAMINO, CargamentoRollo.llego.is_(False), CargamentoRollo.codigo_interno == codigo_interno)
-        .scalar()
     )
+    if empresa:
+        consulta = consulta.filter(CargamentoRollo.empresa == empresa)
+    total = consulta.scalar()
     return round(float(total or 0), 2)
 
 
-def metros_por_repartir_codigo(db: Session, *, codigo_interno: str) -> float:
+def metros_por_repartir_codigo(db: Session, *, codigo_interno: str, empresa: str = "") -> float:
     """Lo que Admin Inventario ya recibió (rollos sin bodega) y no ha repartido."""
-    total = (
+    consulta = (
         db.query(func.coalesce(func.sum(Rollo.metros_disponibles), 0))
         .filter(Rollo.bodega_id.is_(None), Rollo.codigo_interno == codigo_interno)
-        .scalar()
     )
+    if empresa:
+        consulta = consulta.filter(Rollo.empresa == empresa)
+    total = consulta.scalar()
     return round(float(total or 0), 2)
 
 
