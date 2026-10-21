@@ -881,7 +881,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   const misProducciones = produccionesRegistradas;
 
   return {
-    puedeRegistrarProduccion,
+    puedeRegistrarProduccion, cargarSolicitudesPendientes,
 
     productoFabricado,
     setProductoFabricado,

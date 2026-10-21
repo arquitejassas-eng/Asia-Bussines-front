@@ -76,6 +76,7 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
               limpiarSolicitud={p.limpiarSolicitud}
               seleccionarSolicitud={p.seleccionarSolicitud}
               marcarProduccionTerminada={p.marcarProduccionTerminada}
+              alCompletarConStock={() => p.cargarSolicitudesPendientes()}
             />
           )}
 

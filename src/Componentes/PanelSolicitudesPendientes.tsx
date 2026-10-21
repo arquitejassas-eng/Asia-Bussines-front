@@ -1,5 +1,7 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
+import { Fragment, useState } from "react";
 import { EMPRESAS } from "../Utils/empresas";
+import CompletarConStock from "./CompletarConStock";
 
 // Sección "Solicitudes de producción pendientes" de Producción. Extraído de
 // ProduccionPage.tsx sin cambiar props ni comportamiento -- no usa estado
@@ -16,8 +18,11 @@ function PanelSolicitudesPendientes({
   seleccionarSolicitud,
   marcarProduccionTerminada,
   stockParaAlistar = [],
+  alCompletarConStock = () => {},
 }) {
   const primera = solicitudesPendientes[0] || stockParaAlistar[0];
+  // Línea que se está completando con una unidad (o más) que ya estaba en stock.
+  const [completando, setCompletando] = useState(null);
   return (
     <section className="produccion-tarjeta">
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -57,8 +62,8 @@ function PanelSolicitudesPendientes({
             {solicitudesPendientes.map((s) => {
               const elegida = apartadoItemId === s.itemId || itemsJuntos.includes(s.itemId);
               return (
+              <Fragment key={s.itemId}>
               <tr
-                key={s.itemId}
                 className={elegida ? "produccion-fila-resaltada" : undefined}
                 style={elegida ? { fontWeight: 600 } : undefined}
               >
@@ -88,8 +93,27 @@ function PanelSolicitudesPendientes({
                       Iniciar producción
                     </button>
                   )}
+                  {!s.rolloCompleto && !elegida && completando !== s.itemId && (
+                    <button type="button" className="produccion-boton-secundario" style={{ marginTop: "0.35rem" }}
+                      onClick={() => setCompletando(s.itemId)}>
+                      Completar con stock
+                    </button>
+                  )}
                 </td>
               </tr>
+              {completando === s.itemId && (
+                <tr>
+                  <td colSpan={4}>
+                    <CompletarConStock
+                      itemId={s.itemId}
+                      descripcion={s.descripcion}
+                      alCerrar={() => setCompletando(null)}
+                      alTerminar={() => { setCompletando(null); alCompletarConStock(); }}
+                    />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
               );
             })}
           </tbody>

@@ -382,3 +382,11 @@
   .produccion-linea-junta { grid-template-columns: 1fr 1fr; }
   .produccion-linea-junta-nombre { grid-column: 1 / -1; }
 }
+
+/* "Completar con stock": unidades de la línea que salen de stock en vez de producirse. */
+.produccion-completar-stock {
+  padding: 0.75rem;
+  border: 1px dashed var(--at-border, #E1D5C0);
+  border-radius: var(--at-r-sm, 8px);
+  font-size: 0.9rem;
+}

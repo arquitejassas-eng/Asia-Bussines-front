@@ -849,9 +849,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     </div>
                   )}
 
-                  <div>
+                  <div style={{ gridColumn: "1 / -1" }}>
                     <label>Descripción</label>
-                    <input
+                    {/* Ancha y de dos renglones: las descripciones de las cotizaciones son largas. */}
+                    <textarea
+                      className="apartado-descripcion-linea"
+                      rows={2}
                       placeholder="Ej. Teja de 6 metros"
                       value={item.descripcion}
                       onChange={(e) => a.actualizarItemApartado(indice, "descripcion", e.target.value)}

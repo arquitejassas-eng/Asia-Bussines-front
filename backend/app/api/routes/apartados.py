@@ -14,7 +14,10 @@ from app.schemas.apartados import (
 )
 from app.models.rollo import Rollo
 from app.core.config import settings
-from app.schemas.apartados import ApartadoEditar, ApartadoItemEditar, RegistrarSalidaRequest, SepararApartadoRequest
+from app.schemas.apartados import (
+    ApartadoEditar, ApartadoItemEditar, CompletarConStockRequest, RegistrarSalidaRequest, SepararApartadoRequest,
+    StockParaCompletarResponse,
+)
 from app.schemas.inventario import ProductoResponse
 from app.services import apartados as srv
 from app.services import importar_cotizaciones
@@ -501,6 +504,27 @@ def _pasar_a_otras_bodegas(
                 ), usuario)
         except HTTPException as exc:
             raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
+
+
+@router.get("/items/{item_id}/stock-para-completar", response_model=StockParaCompletarResponse,
+            dependencies=[Depends(requiere_rol(RolUsuario.JEFE_PLANTA, RolUsuario.ADMIN_INVENTARIO))])
+def consultar_stock_para_completar(
+    item_id: int, busqueda: str = "", db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> dict:
+    """Tejas (u otro producto) de stock con las que Planta puede completar una
+    línea en vez de producir todas sus unidades."""
+    return srv.stock_para_completar(db, item_id, usuario, busqueda)
+
+
+@router.post("/items/{item_id}/completar-con-stock", response_model=ApartadoResponse,
+             dependencies=[Depends(requiere_rol(RolUsuario.JEFE_PLANTA, RolUsuario.ADMIN_INVENTARIO))])
+def completar_linea_con_stock(
+    item_id: int, datos: CompletarConStockRequest, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Apartado:
+    """Ej. 13 de 14 tejas se producen y 1 sale de stock: ver srv.completar_con_stock."""
+    apartado = srv.completar_con_stock(db, item_id, datos.producto_id, datos.cantidad, usuario)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
 
 
 @router.post("/{apartado_id}/separar", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,

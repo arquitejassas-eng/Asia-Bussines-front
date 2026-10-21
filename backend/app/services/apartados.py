@@ -1048,6 +1048,94 @@ def _cantidad_en_descripcion(descripcion: str, cantidad_actual: float, cantidad_
     return f"{cantidad_nueva:g}".replace(".", ",") + descripcion[encontrado.end(1):]
 
 
+def _linea_para_completar(db: Session, item_id: int, usuario: Usuario) -> tuple[Apartado, ApartadoItem, float, int]:
+    """La línea de rollo que se completa con stock: su cotización, los metros
+    de cada unidad y cuántas unidades todavía no se han producido."""
+    item = db.query(ApartadoItem).filter(ApartadoItem.id == item_id).with_for_update().populate_existing().first()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Línea no encontrada.")
+    apartado = apartado_de_mi_bodega(db, item.apartado_id, usuario)
+    if apartado.estado not in ESTADOS_RESERVA_ACTIVA:
+        raise HTTPException(status_code=400, detail="La cotización ya no está activa.")
+    if item.modalidad != ModalidadApartado.POR_ROLLO or item.rollo_id or not item.cantidad:
+        raise HTTPException(status_code=400, detail="Solo una línea de lámina por producir se completa con stock.")
+    por_unidad = (item.metros_requeridos or 0) / item.cantidad
+    pendiente = (item.metros_requeridos or 0) - (item.metros_consumidos or 0)
+    max_unidades = int((pendiente + 0.005) // por_unidad) if por_unidad > 0 else 0
+    return apartado, item, por_unidad, max_unidades
+
+
+def stock_para_completar(db: Session, item_id: int, usuario: Usuario, busqueda: str = "") -> dict:
+    """Productos de stock con libre en la bodega y la empresa de la cotización
+    que pueden reemplazar unidades de la línea. Sin búsqueda, los de ese
+    código (ej. LR30020,38 -> "TAR30020,38-5" o los producidos de ese rollo)."""
+    apartado, item, _, max_unidades = _linea_para_completar(db, item_id, usuario)
+    consulta = db.query(Producto).filter(
+        Producto.bodega_id == apartado.bodega_id, Producto.familia != "Rollos de acero", Producto.stock > 0,
+        *((Producto.empresa == apartado.empresa,) if apartado.empresa else ()),
+    )
+    texto = busqueda.strip()
+    if texto:
+        consulta = consulta.filter(Producto.codigo.ilike(f"%{texto}%") | Producto.descripcion.ilike(f"%{texto}%"))
+    else:
+        codigo = (item.codigo_interno or "").strip()
+        consulta = consulta.filter((Producto.codigo_rollo_origen == codigo) | Producto.codigo.ilike(f"%{codigo[1:]}%"))
+    productos = []
+    for producto in consulta.order_by(Producto.codigo).limit(30):
+        libre = disponibilidad_producto(db, bodega_id=apartado.bodega_id, producto_id=producto.id)["cantidad_disponible"]
+        if libre > 0.005:
+            productos.append({"id": producto.id, "codigo": producto.codigo, "descripcion": producto.descripcion, "disponible": libre})
+    # Primero los de la misma medida de la línea (ej. "-5" para tejas de 5 m).
+    medida = f"-{item.medida:g}".replace(".", ",") if item.medida else ""
+    productos.sort(key=lambda p: (not (medida and p["codigo"].endswith(medida)), p["codigo"]))
+    return {"max_unidades": max_unidades, "productos": productos}
+
+
+def completar_con_stock(db: Session, item_id: int, producto_id: int, cantidad: int, usuario: Usuario) -> Apartado:
+    """Planta produjo menos unidades de una línea de rollo porque las demás
+    salieron de stock (ej. 13 de 14 tejas y 1 que ya estaba hecha): la línea
+    baja a lo que se produce y la cotización gana una línea de stock con esas
+    unidades, apartadas. El stock se descuenta al marcar la producción
+    terminada, como cualquier línea de stock."""
+    apartado, item, _, max_unidades = _linea_para_completar(db, item_id, usuario)
+    if cantidad > max_unidades:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A esta línea solo le faltan {max_unidades} unidad(es) por producir: no se pueden completar {cantidad} con stock.",
+        )
+    exigir_producto_de_la_empresa(db, producto_id, apartado.empresa)
+    producto = (
+        db.query(Producto)
+        .filter(Producto.id == producto_id, Producto.bodega_id == apartado.bodega_id)
+        .with_for_update()
+        .first()
+    )
+    if producto is None:
+        raise HTTPException(status_code=404, detail="Ese producto no está en la bodega de la cotización.")
+    validar_reserva_producto(db, producto=producto, cantidad=cantidad)
+    if cantidad > float(producto.stock) + 0.005:
+        raise HTTPException(status_code=400, detail=f"Solo hay {float(producto.stock):g} de {producto.codigo} en stock.")
+
+    nueva_cantidad = item.cantidad - cantidad
+    nuevos_metros = metros_de_linea(nueva_cantidad, item.medida, item.tipo_producto) if nueva_cantidad > 0 else 0.0
+    if nuevos_metros + 0.005 < (item.metros_consumidos or 0):
+        raise HTTPException(status_code=400, detail="Esa línea ya tiene producido más de lo que quedaría: revisa la cantidad.")
+    descripcion_linea = item.descripcion
+    if nueva_cantidad > 0:
+        item.descripcion = _cantidad_en_descripcion(item.descripcion, item.cantidad, nueva_cantidad)
+        item.cantidad = nueva_cantidad
+        item.metros_requeridos = nuevos_metros
+    else:
+        apartado.items.remove(item)
+        db.delete(item)
+    apartado.items.append(ApartadoItem(
+        modalidad=ModalidadApartado.POR_STOCK, producto_id=producto.id, cantidad=cantidad,
+        descripcion=f"{cantidad} {producto.descripcion} (de stock, en vez de producir: {descripcion_linea[:80]})",
+    ))
+    db.flush()
+    return apartado
+
+
 def _partir_linea(item: ApartadoItem, cantidad: float, nueva_id: int) -> ApartadoItem:
     """Saca `cantidad` de la línea hacia una línea nueva de la otra cotización,
     repartiendo en proporción los metros pedidos y los ya producidos."""

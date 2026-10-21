@@ -103,6 +103,27 @@ class LineaSeparar(BaseModel):
     cantidad: float = Field(gt=0)
 
 
+class CompletarConStockRequest(BaseModel):
+    """Planta no produjo todas las unidades de una línea de rollo porque una
+    (o varias) salieron de una que ya estaba en stock."""
+    producto_id: int
+    cantidad: int = Field(gt=0)
+
+
+class ProductoParaCompletar(BaseModel):
+    id: int
+    codigo: str
+    descripcion: str
+    disponible: float
+
+
+class StockParaCompletarResponse(BaseModel):
+    # Cuántas unidades de la línea se pueden completar con stock (las que
+    # todavía no se han producido).
+    max_unidades: int
+    productos: list[ProductoParaCompletar]
+
+
 class SepararApartadoRequest(BaseModel):
     """Lo que pasa a una cotización nueva y el número de esa cotización."""
     lineas: list[LineaSeparar] = Field(min_length=1)

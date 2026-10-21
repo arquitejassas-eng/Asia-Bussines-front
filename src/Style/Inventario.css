@@ -1316,3 +1316,12 @@
   .resumen-productos-grupo .inventario-grupo-header { flex-wrap: wrap; gap: 0.5rem; }
   .resumen-productos-grupo .inventario-grupo-info { flex-basis: 100%; }
 }
+
+/* Descripción de una línea de la cotización: ancha, se ve completa. */
+.apartado-descripcion-linea {
+  width: 100%;
+  min-height: 3.2rem;
+  resize: vertical;
+  font: inherit;
+  box-sizing: border-box;
+}
