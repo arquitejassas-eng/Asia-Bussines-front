@@ -717,36 +717,34 @@
   margin: 0.2rem 0 0;
   padding-left: 1rem;
 }
-/* Admin Inventario: una cotización que sale de varias bodegas va en una fila,
-   con un bloque por bodega (su estado, sus líneas y sus botones). */
-.apartado-parte {
-  padding: 0.55rem 0.65rem;
+/* Admin Inventario: una cotización que sale de varias bodegas se ve como una
+   sola; cada línea lleva el nombre de su bodega. */
+.apartado-linea-bodega {
+  white-space: nowrap;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
   border: 1px solid var(--at-border, #E1D5C0);
-  border-radius: var(--at-r-sm, 8px);
-  background: var(--at-surface-2, #F1E9DC);
+  color: var(--at-text-2, #4A392C);
 }
-.apartado-parte + .apartado-parte {
-  margin-top: 0.5rem;
-}
-.apartado-parte-cabeza {
+.apartado-estado-bodega {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.35rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
-.apartados-tabla .apartado-parte-acciones {
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.45rem;
+.apartado-estado-bodega + .apartado-estado-bodega {
+  margin-top: 0.4rem;
 }
-.apartados-tabla .apartado-parte-acciones:empty {
-  display: none;
-}
-.apartado-parte-resumen {
-  font-size: 0.78rem;
-  opacity: 0.75;
+.apartado-elegir-bodega {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
 }
 .apartados-tabla td {
   vertical-align: top;

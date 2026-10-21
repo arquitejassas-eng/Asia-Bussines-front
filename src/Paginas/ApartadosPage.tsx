@@ -214,7 +214,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   // Lo de UNA parte de la cotización (una bodega): sus líneas, su estado y sus
   // botones. Admin Inventario ve la cotización completa en una sola fila, con
   // un bloque así por bodega (ver gruposFiltrados).
-  function lineasDeParte(ap: ApartadoDeLista) {
+  // `parteDe` (solo cotización de varias bodegas): de qué parte es cada
+  // línea, para ponerle su bodega al lado.
+  function lineasDeParte(ap: ApartadoDeLista, parteDe?: Map<number, ApartadoDeLista>) {
     const itemsRollo = ap.items.filter((it) => it.modalidad === "por_rollo");
     const itemsStock = ap.items.filter((it) => it.modalidad === "por_stock");
     const rolloPendientes = itemsRollo.filter((it) => (it.metrosPendientes ?? 0) > 0).length;
@@ -225,7 +227,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         {(lineasExpandidas.has(ap.id) ? ap.items : ap.items.slice(0, LINEAS_VISIBLES)).map((it) => {
           // Stock cargado del Excel: ya descontado, pero mientras la
           // cotización siga activa todavía hay que alistarlo y despacharlo.
-          const stockPorAlistar = it.modalidad === "por_stock" && it.stockDescontado && activa;
+          const parte = parteDe?.get(it.id);
+          const stockPorAlistar = it.modalidad === "por_stock" && it.stockDescontado && (parte ? ESTADOS_CANCELABLES.includes(parte.estado) : activa);
           const lista = it.modalidad === "por_stock" ? it.stockDescontado && !stockPorAlistar : (it.metrosPendientes ?? 0) <= 0;
           const codigo = it.modalidad === "por_stock" ? "" : it.codigoInterno;
           const texto = it.descripcion || (it.modalidad === "por_stock" ? `producto #${it.productoId}` : "");
@@ -234,6 +237,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               <div className="apartado-linea-cabeza">
                 <strong>{cantidadLinea(it)}</strong>
                 {codigo && <span className="apartado-linea-codigo">{codigo}</span>}
+                {parte && <span className="apartado-linea-bodega" title="Bodega de donde sale">{parte.bodegaNombre}</span>}
                 {it.modalidad === "por_stock" && (it.medida || pideCorte(it.descripcion)) && (
                   <span className="apartado-linea-cortar">CORTAR{it.medida ? ` a ${it.medida} m` : ""}</span>
                 )}
@@ -351,6 +355,79 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           textoConfirmar: "Sí, dar salida",
           ejecutar: () => a.marcarApartadoEntregado(ap.id),
         })}>Salida</button>
+      )}
+      </>
+    );
+  }
+
+  // Botones de una cotización de varias bodegas: lo que se hace a toda la
+  // cotización va en un solo botón; lo que es de una bodega (Registrar salida,
+  // Separar) pregunta de cuál.
+  const [eligiendoBodega, setEligiendoBodega] = useState<{ accion: "salida" | "separar"; numero: string } | null>(null);
+  function accionesDeCotizacion(grupo: ApartadoDeLista[]) {
+    const numero = grupo[0].numeroCotizacion;
+    const activas = grupo.filter((parte) => ESTADOS_CANCELABLES.includes(parte.estado));
+    const porEnviar = grupo.filter((parte) => parte.estado === "apartado");
+    const esperando = porEnviar.some((parte) => parte.faltantes.length > 0);
+    const separables = grupo.filter((parte) => (parte.items.length > 1 || (parte.items[0]?.cantidad ?? 0) > 1)
+      && (ESTADOS_CANCELABLES.includes(parte.estado) || parte.estado === "produccion_terminada"));
+    const eliminables = grupo.filter((parte) => parte.estado === "cancelado" && !parte.items.some((it) => it.tieneProduccionRegistrada));
+    const elegir = (accion: "salida" | "separar", partes: ApartadoDeLista[]) => {
+      if (partes.length === 1) {
+        if (accion === "salida") { setSepararAbierta(null); setSalidaAbierta(partes[0].id); }
+        else { setSalidaAbierta(null); setSepararAbierta(partes[0].id); }
+        setEligiendoBodega(null);
+      } else {
+        setEligiendoBodega(eligiendoBodega?.accion === accion && eligiendoBodega.numero === numero ? null : { accion, numero });
+      }
+    };
+    const opciones = eligiendoBodega?.numero === numero
+      ? (eligiendoBodega.accion === "salida" ? activas : separables)
+      : [];
+    return (
+      <>
+      {a.puedeEnviarAProduccion && porEnviar.length > 0 && (
+        <button
+          disabled={esperando}
+          title={esperando ? "Esperando material: se habilita cuando le des ingreso" : undefined}
+          onClick={() => setConfirmacion({
+            titulo: `¿Enviar ${numero} a producción?`,
+            mensaje: `Planta verá esta cotización como pendiente de producir (${porEnviar.map((p) => p.bodegaNombre).join(" y ")}).`,
+            textoConfirmar: "Sí, enviar a producción",
+            ejecutar: () => a.enviarVariosAProduccion(porEnviar.map((p) => p.id)),
+          })}
+        >Enviar a producción</button>
+      )}
+      {a.puedeCancelarApartados && activas.length > 0 && (
+        <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
+          titulo: `¿Cancelar la cotización ${numero}?`,
+          mensaje: `Se cancela completa (${activas.map((p) => p.bodegaNombre).join(" y ")}). El material que tenía reservado queda libre para otras ventas. `
+            + "Lo que ya se produjo NO vuelve al inventario.",
+          textoConfirmar: "Sí, cancelar cotización",
+          ejecutar: () => a.cancelarVarios(activas.map((p) => p.id)),
+        })}>Cancelar</button>
+      )}
+      {a.puedeCancelarApartados && eliminables.length === grupo.length && (
+        <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
+          titulo: `¿Eliminar la cotización cancelada ${numero}?`,
+          mensaje: "Se borra de la lista para siempre. No afecta el inventario: su material ya quedó libre al cancelarla.",
+          textoConfirmar: "Sí, eliminar",
+          ejecutar: () => a.eliminarVarios(eliminables.map((p) => p.id)),
+        })}>Eliminar</button>
+      )}
+      {esAdminInventario && activas.length > 0 && (
+        <button onClick={() => elegir("salida", activas)}>Registrar salida</button>
+      )}
+      {esAdminInventario && separables.length > 0 && (
+        <button onClick={() => elegir("separar", separables)}>Separar</button>
+      )}
+      {opciones.length > 0 && (
+        <div className="apartado-elegir-bodega">
+          <span>¿De qué bodega?</span>
+          {opciones.map((parte) => (
+            <button key={parte.id} type="button" onClick={() => elegir(eligiendoBodega!.accion, [parte])}>{parte.bodegaNombre}</button>
+          ))}
+        </div>
       )}
       </>
     );
@@ -871,6 +948,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           const otrasFuera = [...new Set(grupo.flatMap((parte) => parte.otrasPartes))].filter((o) => !nombresGrupo.has(o));
                           // Editar abre la cotización completa: todas sus partes activas,
                           // también las que un filtro deja fuera de la lista.
+                          // Varias bodegas: todas las líneas juntas, como una sola cotización.
+                          const parteDeLinea = new Map(grupo.flatMap((parte) => parte.items.map((it) => [it.id, parte] as const)));
+                          const unida: ApartadoDeLista = {
+                            ...ap,
+                            items: grupo.flatMap((parte) => parte.items),
+                            faltantes: grupo.flatMap((parte) => parte.faltantes.map((f) => `${parte.bodegaNombre}: ${f.replace(/^faltan /, "")}`)),
+                            stockSeparadoConfirmado: grupo.every((parte) => parte.stockSeparadoConfirmado || !parte.items.some((it) => it.modalidad === "por_stock")),
+                          };
+                          const estadosIguales = grupo.every((parte) => parte.estado === ap.estado && porDarSalida(parte) === porDarSalida(ap));
                           const partesActivas = a.apartados
                             .filter((otra) => otra.numeroCotizacion === ap.numeroCotizacion && ESTADOS_CANCELABLES.includes(otra.estado))
                             .sort((x, y) => x.id - y.id);
@@ -895,30 +981,24 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             <td className="ap-col-empresa" data-etiqueta="Empresa">{EMPRESAS[ap.empresa] || ap.empresa || "—"}</td>
                             <td className="ap-col-cliente">{ap.cliente || "—"}</td>
                             <td className="ap-col-productos" style={{ minWidth: 340 }}>
-                              {variasBodegas ? grupo.map((parte) => (
-                                <div key={parte.id} className="apartado-parte">
-                                  <div className="apartado-parte-cabeza">
-                                    <strong>{parte.bodegaNombre}</strong>
-                                    {estadoDeParte(parte)}
-                                  </div>
-                                  {lineasDeParte(parte)}
-                                  <div className="inventario-acciones apartado-parte-acciones">{accionesDeParte(parte)}</div>
-                                </div>
-                              )) : lineasDeParte(ap)}
+                              {variasBodegas ? lineasDeParte(unida, parteDeLinea) : lineasDeParte(ap)}
                             </td>
                             <td className="ap-col-estado">
-                              {variasBodegas
-                                ? <span className="apartado-parte-resumen">Ver cada bodega</span>
-                                : estadoDeParte(ap)}
+                              {!variasBodegas || estadosIguales
+                                ? estadoDeParte(ap)
+                                : grupo.map((parte) => (
+                                  <div key={parte.id} className="apartado-estado-bodega">
+                                    <span>{parte.bodegaNombre}</span>
+                                    {estadoDeParte(parte)}
+                                  </div>
+                                ))}
                             </td>
                             <td className="ap-col-fecha" data-etiqueta="Creado" style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
                             <td className="inventario-acciones ap-col-acciones">
                               {esAdminInventario && partesActivas.length > 0 && (variasBodegas || ESTADOS_CANCELABLES.includes(ap.estado)) && (
-                                <button onClick={() => abrirEdicion(partesActivas)}>
-                                  {partesActivas.length > 1 ? "Editar cotización" : "Editar"}
-                                </button>
+                                <button onClick={() => abrirEdicion(partesActivas)}>Editar</button>
                               )}
-                              {!variasBodegas && accionesDeParte(ap)}
+                              {variasBodegas ? accionesDeCotizacion(grupo) : accionesDeParte(ap)}
                             </td>
                           </tr>
                           );

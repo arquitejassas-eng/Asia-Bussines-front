@@ -522,6 +522,24 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
   }
 
+  // Cotización de varias bodegas: la misma acción en todas sus partes.
+  async function enVarios(ids: number[], ruta: (id: number) => Promise<unknown>, error: string) {
+    setErrorAccionApartado("");
+    try {
+      for (const id of ids) await ruta(id);
+    } catch (err) {
+      setErrorAccionApartado(err instanceof ErrorApi ? err.message : error);
+    } finally {
+      await cargarApartados();
+    }
+  }
+  const cancelarVarios = (ids: number[]) =>
+    enVarios(ids, (id) => api.patch(`/apartados/${id}/cancelar`), "No se pudo cancelar la cotización.");
+  const enviarVariosAProduccion = (ids: number[]) =>
+    enVarios(ids, (id) => api.patch(`/apartados/${id}/enviar-a-produccion`), "No se pudo enviar la cotización a producción.");
+  const eliminarVarios = (ids: number[]) =>
+    enVarios(ids, (id) => api.delete(`/apartados/${id}`), "No se pudo eliminar la cotización.");
+
   async function marcarApartadoProduccionTerminada(id: number) {
     setErrorAccionApartado("");
     try {
@@ -556,6 +574,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     resultadosBusquedaProducto, buscarProductoParaItem, seleccionarProductoParaItem,
 
     errorAccionApartado, cancelarApartado, eliminarApartado, enviarApartadoAProduccion,
+    cancelarVarios, enviarVariosAProduccion, eliminarVarios,
     marcarApartadoProduccionTerminada, marcarApartadoEntregado,
   };
 }
