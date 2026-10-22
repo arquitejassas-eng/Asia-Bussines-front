@@ -194,8 +194,9 @@ def buscar_productos_para_apartar(
             resultado.insert(0, p)
     # Cuánto se puede prometer de cada uno en toda la empresa: la pantalla no
     # deja escoger lo que no tiene (ej. un caballete en negativo).
+    disponibles = srv.disponible_empresa_productos(db, resultado, bodega_despacho=bodega)
     for p in resultado:
-        p.disponible_empresa, _ = srv.disponible_empresa_producto(db, producto=p, bodega_despacho=bodega)
+        p.disponible_empresa = disponibles[p.id][0]
     return resultado
 
 

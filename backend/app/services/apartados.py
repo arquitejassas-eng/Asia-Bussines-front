@@ -318,32 +318,81 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
                 # Cotización sin empresa (antigua): cuenta todo lo del código.
                 fisicos.get(clave, 0.0) if e else fisicos_codigo.get((b, c), 0.0),
             )
+    # Los productos de todas las líneas de stock, de una sola consulta.
+    ids_producto = {it.producto_id for a in activos for it in a.items
+                    if it.modalidad == ModalidadApartado.POR_STOCK and it.producto_id}
+    productos = {p.id: p for p in db.query(Producto).filter(Producto.id.in_(ids_producto))} if ids_producto else {}
     coberturas_producto: dict[int, dict[int, float]] = {}
+    donde_producto: dict[tuple, list] = {}
+    # Primero qué le falta a cada línea; el "hay en ..." de las de rollo se
+    # saca después para todos los códigos a la vez (antes eran 5 consultas por
+    # cada línea con faltante y la lista de Apartados tardaba muchísimo).
+    pendientes: list[tuple[int, str, float, str, str]] = []
     for apartado in activos:
-        faltantes: list[str] = []
+        resultado[apartado.id] = []
         for item in apartado.items:
             if item.modalidad == ModalidadApartado.POR_STOCK:
                 if item.stock_descontado or item.hay_fisico:
                     continue
-                producto = db.get(Producto, item.producto_id)
+                producto = productos.get(item.producto_id)
                 if producto is None:
                     continue
                 if producto.id not in coberturas_producto:
                     coberturas_producto[producto.id] = cobertura_producto(db, producto=producto)
                 falta = round(item.cantidad - coberturas_producto[producto.id].get(item.id, 0), 2)
                 if falta > 0.005:
-                    _, donde = disponible_empresa_producto(db, producto=producto, bodega_despacho=apartado.bodega_id)
-                    faltantes.append(f"faltan {falta:g} de {producto.codigo}" + (f" (hay en {_texto_donde(donde)})" if donde else ""))
+                    clave_p = (producto.id, apartado.bodega_id)
+                    if clave_p not in donde_producto:
+                        donde_producto[clave_p] = disponible_empresa_producto(db, producto=producto, bodega_despacho=apartado.bodega_id)[1]
+                    donde = donde_producto[clave_p]
+                    resultado[apartado.id].append(f"faltan {falta:g} de {producto.codigo}" + (f" (hay en {_texto_donde(donde)})" if donde else ""))
             else:
                 pendiente = (item.metros_requeridos or 0) - (item.metros_consumidos or 0)
                 clave = (apartado.bodega_id, item.codigo_interno, item.empresa_de_linea)
                 falta = round(pendiente - coberturas.get(clave, {}).get(item.id, 0), 2)
                 if falta > 0.005:
-                    _, donde = disponible_empresa_codigo(db, codigo_interno=item.codigo_interno, bodega_despacho=apartado.bodega_id,
-                                                         empresa=item.empresa_de_linea)
-                    faltantes.append(f"faltan {falta:g} m de {item.codigo_interno}" + (f" (hay en {_texto_donde(donde, ' m')})" if donde else ""))
-        resultado[apartado.id] = faltantes
+                    # Lugar en la lista para que el orden de los avisos no cambie.
+                    resultado[apartado.id].append("")
+                    pendientes.append((apartado.id, item.codigo_interno, falta, item.empresa_de_linea or "", apartado.bodega_id))
+    if pendientes:
+        libres = _libre_por_bodega_codigos(db, {(c, e) for _, c, _, e, _ in pendientes})
+        bodegas = _bodegas_por_id(db)
+        for apartado_id, codigo, falta, empresa, bodega_despacho in pendientes:
+            donde = sorted(
+                ((bodegas[b].nombre, round(libre, 2)) for b, libre in libres.get((codigo, empresa), {}).items()
+                 if b != bodega_despacho and libre > 0.005 and b in bodegas and not bodegas[b].sin_traslado),
+                key=lambda d: -d[1],
+            )
+            lista = resultado[apartado_id]
+            lista[lista.index("")] = f"faltan {falta:g} m de {codigo}" + (f" (hay en {_texto_donde(donde, ' m')})" if donde else "")
     return resultado
+
+
+def _libre_por_bodega_codigos(db: Session, claves: set[tuple[str, str]]) -> dict[tuple[str, str], dict[int, float]]:
+    """Por (código, empresa): lo físico menos lo apartado en cada bodega, igual
+    que en disponible_empresa_codigo, pero de todos los códigos en dos
+    consultas. Empresa "" = las dos empresas juntas (cotización antigua)."""
+    codigos = {c for c, _ in claves}
+    fisico = (
+        db.query(Rollo.codigo_interno, Rollo.empresa, Rollo.bodega_id, func.sum(Rollo.metros_disponibles))
+        .filter(Rollo.codigo_interno.in_(codigos), Rollo.bodega_id.isnot(None))
+        .group_by(Rollo.codigo_interno, Rollo.empresa, Rollo.bodega_id).all()
+    )
+    reservado = (
+        db.query(ApartadoItem.codigo_interno, EMPRESA_DE_LINEA, Apartado.bodega_id,
+                 func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.codigo_interno.in_(codigos))
+        .group_by(ApartadoItem.codigo_interno, EMPRESA_DE_LINEA, Apartado.bodega_id).all()
+    )
+    libres: dict[tuple[str, str], dict[int, float]] = {}
+    for codigo, empresa in claves:
+        por_bodega = libres.setdefault((codigo, empresa), {})
+        for filas, signo in ((fisico, 1), (reservado, -1)):
+            for c, e, b, total in filas:
+                if c == codigo and (not empresa or (e or "") == empresa):
+                    por_bodega[b] = por_bodega.get(b, 0.0) + signo * float(total or 0)
+    return libres
 
 
 def validar_reserva_rollos(
@@ -593,24 +642,54 @@ def disponible_empresa_producto(db: Session, *, producto: Producto, bodega_despa
     bodegas). Lo apartado para un traslado no se resta aquí: ese material ya
     está prometido a la cotización que lo espera (que deja su bodega en
     negativo); lo que va en camino (despachado, sin recibir) sí se suma."""
+    return disponible_empresa_productos(db, [producto], bodega_despacho=bodega_despacho)[producto.id]
+
+
+def disponible_empresa_productos(db: Session, productos: list[Producto], *, bodega_despacho: int) -> dict[int, tuple[float, list[tuple[str, float]]]]:
+    """disponible_empresa_producto de varios productos con cuatro consultas en
+    total (la búsqueda de productos al crear un apartado hacía ~90)."""
     from app.models.solicitud import EstadoSolicitud, Solicitud
 
+    if not productos:
+        return {}
+    codigos = {p.codigo for p in productos}
     bodegas = _bodegas_por_id(db)
-    total, donde = 0.0, []
-    for p in db.query(Producto).filter(Producto.codigo == producto.codigo, Producto.empresa == (producto.empresa or "")).all():
-        libre = float(p.stock) - cantidad_reservada_producto(db, bodega_id=p.bodega_id, producto_id=p.id, incluir_traslados=False)
-        total += _libre_que_cuenta(libre, bodegas.get(p.bodega_id), bodega_despacho)
-        bodega = bodegas.get(p.bodega_id)
-        if p.bodega_id != bodega_despacho and libre > 0.005 and (bodega is None or not bodega.sin_traslado):
-            donde.append((bodega.nombre if bodega else "Admin Inventario", round(libre, 2)))
-    en_camino = (
-        db.query(func.coalesce(func.sum(Solicitud.cantidad), 0))
-        .filter(Solicitud.rollo_id.is_(None), Solicitud.producto_codigo == producto.codigo,
-                Solicitud.empresa == (producto.empresa or ""), Solicitud.estado == EstadoSolicitud.DESPACHADA)
-        .scalar()
-    )
-    total += float(en_camino or 0)
-    return round(total, 2), sorted(donde, key=lambda d: -d[1])
+    mismos = db.query(Producto).filter(Producto.codigo.in_(codigos)).all()
+    reservado = dict(
+        db.query(ApartadoItem.producto_id, func.sum(ApartadoItem.cantidad))
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(
+            Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+            ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
+            ApartadoItem.producto_id.in_([p.id for p in mismos]),
+            ApartadoItem.stock_descontado.is_(False),
+            ApartadoItem.hay_fisico.is_(False),
+            # Lo de cada producto, en la bodega de ese producto (igual que cantidad_reservada_producto).
+            func.coalesce(Apartado.bodega_id, 0) == func.coalesce(Producto.bodega_id, 0),
+        )
+        .join(Producto, Producto.id == ApartadoItem.producto_id)
+        .group_by(ApartadoItem.producto_id).all()
+    ) if mismos else {}
+    en_camino = {
+        (c, e): float(t or 0) for c, e, t in
+        db.query(Solicitud.producto_codigo, Solicitud.empresa, func.sum(Solicitud.cantidad))
+        .filter(Solicitud.rollo_id.is_(None), Solicitud.producto_codigo.in_(codigos), Solicitud.estado == EstadoSolicitud.DESPACHADA)
+        .group_by(Solicitud.producto_codigo, Solicitud.empresa)
+    }
+    resultado = {}
+    for producto in productos:
+        total, donde = 0.0, []
+        for p in mismos:
+            if p.codigo != producto.codigo or p.empresa != (producto.empresa or ""):
+                continue
+            libre = float(p.stock) - round(float(reservado.get(p.id) or 0), 2)
+            total += _libre_que_cuenta(libre, bodegas.get(p.bodega_id), bodega_despacho)
+            bodega = bodegas.get(p.bodega_id)
+            if p.bodega_id != bodega_despacho and libre > 0.005 and (bodega is None or not bodega.sin_traslado):
+                donde.append((bodega.nombre if bodega else "Admin Inventario", round(libre, 2)))
+        total += en_camino.get((producto.codigo, producto.empresa or ""), 0.0)
+        resultado[producto.id] = (round(total, 2), sorted(donde, key=lambda d: -d[1]))
+    return resultado
 
 
 def _texto_donde(donde: list[tuple[str, float]], unidad: str = "") -> str:
