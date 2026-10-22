@@ -16,6 +16,7 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
     // Productos
     productos,
     gruposPorFamilia,
+    familias,
     cargandoProductos,
     errorProductos,
     guardandoProducto,
@@ -134,8 +135,8 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
           </div>
 
       <datalist id="inventario-datalist-familias">
-        {(almacen?.unidadesFamilia || []).map((u) => (
-          <option key={u.familia} value={u.familia} />
+        {[...new Set([...familias, ...(almacen?.unidadesFamilia || []).map((u) => u.familia)])].map((f) => (
+          <option key={f} value={f} />
         ))}
       </datalist>
 

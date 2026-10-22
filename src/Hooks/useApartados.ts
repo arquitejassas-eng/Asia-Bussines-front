@@ -48,6 +48,7 @@ type ApartadoItem = {
   productoId: number | null; stockDescontado: boolean;
   metrosPendientes: number | null; tieneProduccionRegistrada: boolean;
   rolloId: number | null; rolloReferencia: string; tipoProducto: string;
+  empresaMaterial: string; // "" = la de la cotización
 };
 export type RolloParaApartar = {
   id: number; identificadorRollo: string; codigoInterno: string; descripcion: string;
@@ -177,7 +178,10 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     setFormulario({
       bodegaId: String(ap.bodegaId), empresa: empresaCotizacion, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
       numeroCotizacion: numeroSinEmpresa(ap.numeroCotizacion), cliente: ap.cliente, observaciones: ap.observaciones,
-      items: partes.flatMap((parte) => parte.items.map((it) => ({
+      items: partes.flatMap((parte) => parte.items.map((it) => {
+        // La de la línea; en una parte vieja "-AR"/"-ABG", la de esa parte.
+        const empresaMaterial = it.empresaMaterial || parte.empresa;
+        return {
         ...ITEM_VACIO,
         id: it.id, modalidad: it.rolloId ? "rollo_completo" : it.modalidad, descripcion: it.descripcion, cantidad: String(it.cantidad),
         rolloId: it.rolloId, rolloResumen: it.rolloReferencia,
@@ -185,8 +189,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         productoId: it.productoId, productoDescripcion: it.modalidad === "por_stock" ? it.descripcion : "",
         metrosConsumidos: it.metrosConsumidos, stockDescontado: it.stockDescontado,
         bodegaId: String(parte.bodegaId),
-        empresa: parte.empresa && parte.empresa !== empresaCotizacion ? parte.empresa : "",
-      }))),
+        empresa: empresaMaterial && empresaMaterial !== empresaCotizacion ? empresaMaterial : "",
+        };
+      })),
     });
     setErrorFormularioApartado("");
     setDisponibilidadItems({});

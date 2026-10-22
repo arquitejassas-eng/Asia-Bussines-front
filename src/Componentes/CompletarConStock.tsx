@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ErrorApi } from "./Api";
+import { EMPRESAS } from "../Utils/empresas";
 
 // Planta no produce todas las unidades de una línea porque una (o varias)
 // salen de stock (ej. 13 de 14 tejas y 1 que ya estaba hecha): la línea baja
 // a lo que se produce y la cotización gana una línea de stock apartada, que
 // se descuenta al marcar la producción terminada.
+//
+// Si el sistema dice que no hay (en 0 o en negativo) pero en la bodega sí
+// están, Planta marca "Sí las tengo en la bodega" y escribe solo las que
+// saca: salen de una vez y Admin Inventario lo ve en Préstamos entre empresas
+// (sección "Sacado sin existencia en el sistema").
 type ProductoStock = { id: number; codigo: string; descripcion: string; disponible: number };
 
 function CompletarConStock({ itemId, descripcion, alTerminar, alCerrar }: {
@@ -15,9 +21,11 @@ function CompletarConStock({ itemId, descripcion, alTerminar, alCerrar }: {
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [productos, setProductos] = useState<ProductoStock[]>([]);
+  const [empresa, setEmpresa] = useState("");
   const [maxUnidades, setMaxUnidades] = useState(0);
   const [elegido, setElegido] = useState<ProductoStock | null>(null);
   const [cantidad, setCantidad] = useState("1");
+  const [hayFisico, setHayFisico] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -26,10 +34,11 @@ function CompletarConStock({ itemId, descripcion, alTerminar, alCerrar }: {
     setCargando(true);
     setError("");
     try {
-      const datos = await api.get<{ max_unidades: number; productos: ProductoStock[] }>(
+      const datos = await api.get<{ max_unidades: number; productos: ProductoStock[]; empresa?: string }>(
         `/apartados/items/${itemId}/stock-para-completar?busqueda=${encodeURIComponent(texto)}`);
       setMaxUnidades(datos?.max_unidades ?? 0);
       setProductos(datos?.productos ?? []);
+      setEmpresa(datos?.empresa ?? "");
     } catch (err) {
       setError(err instanceof ErrorApi ? err.message : "No se pudo consultar el stock.");
     } finally {
@@ -39,16 +48,33 @@ function CompletarConStock({ itemId, descripcion, alTerminar, alCerrar }: {
 
   useEffect(() => { cargar(""); }, [cargar]);
 
+  function elegir(p: ProductoStock) {
+    setElegido(p);
+    setHayFisico(false);
+  }
+
+  const n = Number(cantidad);
+  // El sistema no alcanza a cubrir lo que se saca: hay que confirmar que están en la bodega.
+  const sinExistencia = elegido != null && Number.isFinite(n) && n > elegido.disponible + 0.005;
+
   async function completar() {
-    const n = Number(cantidad);
     if (!elegido || !Number.isInteger(n) || n < 1) {
       setError("Elige el producto de stock y una cantidad entera.");
+      return;
+    }
+    if (n > maxUnidades) {
+      setError(`A esta línea solo le faltan ${maxUnidades} por producir.`);
+      return;
+    }
+    if (sinExistencia && !hayFisico) {
+      setError("El sistema no tiene esas unidades libres. Si de verdad están en la bodega, marca \"Sí las tengo en la bodega\".");
       return;
     }
     setGuardando(true);
     setError("");
     try {
-      await api.post(`/apartados/items/${itemId}/completar-con-stock`, { producto_id: elegido.id, cantidad: n });
+      await api.post(`/apartados/items/${itemId}/completar-con-stock`,
+        { producto_id: elegido.id, cantidad: n, hay_fisico: sinExistencia && hayFisico });
       alTerminar();
     } catch (err) {
       setError(err instanceof ErrorApi ? err.message : "No se pudo completar con stock.");
@@ -57,13 +83,13 @@ function CompletarConStock({ itemId, descripcion, alTerminar, alCerrar }: {
     }
   }
 
-  const tope = elegido ? Math.min(maxUnidades, Math.floor(elegido.disponible)) : maxUnidades;
   return (
     <div className="produccion-completar-stock">
       <p style={{ margin: "0 0 0.5rem" }}>
         <strong>Completar con stock:</strong> {descripcion}. A esta línea le faltan <strong>{maxUnidades}</strong> por producir.
         Las que salgan de stock se quitan de la línea y quedan apartadas en la cotización; se descuentan del stock al
         marcar la producción terminada.
+        {empresa && <> Solo sale stock de <strong>{EMPRESAS[empresa] || empresa}</strong> (la empresa del material de esta línea).</>}
       </p>
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
         <input placeholder="Buscar otro producto por código o descripción..." value={busqueda}
@@ -71,14 +97,19 @@ function CompletarConStock({ itemId, descripcion, alTerminar, alCerrar }: {
         <button type="button" className="produccion-boton-secundario" onClick={() => cargar(busqueda)}>Buscar</button>
       </div>
       {cargando ? <p className="produccion-vacio">Buscando stock...</p> : productos.length === 0 ? (
-        <p className="produccion-vacio">No hay stock libre de ese código en esta bodega. Busca otro producto por código o descripción.</p>
+        <p className="produccion-vacio">No hay stock de ese código en esta bodega. Busca otro producto por código o descripción.</p>
       ) : (
         <ul className="apartado-lineas">
           {productos.map((p) => (
             <li key={p.id}>
               <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", cursor: "pointer" }}>
-                <input type="radio" name={`completar-${itemId}`} checked={elegido?.id === p.id} onChange={() => setElegido(p)} />
-                <span><strong>{p.codigo}</strong> — {p.descripcion} · <em>{p.disponible} libres</em></span>
+                <input type="radio" name={`completar-${itemId}`} checked={elegido?.id === p.id} onChange={() => elegir(p)} />
+                <span>
+                  <strong>{p.codigo}</strong> — {p.descripcion} ·{" "}
+                  {p.disponible > 0.005
+                    ? <em>{p.disponible} libres</em>
+                    : <em className="produccion-error" style={{ display: "inline" }}>el sistema dice {p.disponible}</em>}
+                </span>
               </label>
             </li>
           ))}
@@ -86,13 +117,27 @@ function CompletarConStock({ itemId, descripcion, alTerminar, alCerrar }: {
       )}
       <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginTop: "0.5rem" }}>
         <label>¿Cuántas salen de stock?</label>
-        <input type="number" min="1" max={tope || undefined} step="1" value={cantidad}
+        <input type="number" min="1" max={maxUnidades || undefined} step="1" value={cantidad}
           onChange={(e) => setCantidad(e.target.value)} style={{ width: "6rem" }} />
         <button type="button" className="produccion-boton-primario" disabled={guardando || !elegido} onClick={completar}>
           {guardando ? "Guardando..." : "Completar"}
         </button>
         <button type="button" className="produccion-boton-secundario" onClick={alCerrar}>Cancelar</button>
       </div>
+      {sinExistencia && elegido && (
+        <div>
+          <p style={{ margin: "0.5rem 0 0.25rem" }}>
+            El sistema tiene <strong>{Math.max(elegido.disponible, 0)}</strong> libres de {elegido.codigo}, pero vas a sacar {n}.
+          </p>
+          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", cursor: "pointer" }}>
+            <input type="checkbox" checked={hayFisico} onChange={(e) => setHayFisico(e.target.checked)} />
+            <span>
+              <strong>Sí las tengo en la bodega.</strong> Salen de una vez para esta cotización y Admin Inventario
+              lo ve para corregir el inventario.
+            </span>
+          </label>
+        </div>
+      )}
       {error && <p className="produccion-error">{error}</p>}
     </div>
   );

@@ -23,6 +23,7 @@ const IAPage = lazy(() => import("./Paginas/IAPage"));
 const UsuariosPage = lazy(() => import("./Paginas/UsuariosPage"));
 const MermaPage = lazy(() => import("./Paginas/MermaPage"));
 const MermaPlantaPage = lazy(() => import("./Paginas/MermaPlantaPage"));
+const PrestamosPage = lazy(() => import("./Paginas/PrestamosPage"));
 
 const CLAVE_SESION = "arquitejas_sesion";
 
@@ -135,6 +136,10 @@ export default function App() {
       <Route
         path="/merma"
         element={paginaProtegida(["admin_inventario"], MermaPage)}
+      />
+      <Route
+        path="/prestamos"
+        element={paginaProtegida(["admin_inventario"], PrestamosPage)}
       />
       <Route
         path="/merma-planta"

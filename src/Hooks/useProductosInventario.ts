@@ -3,6 +3,7 @@ import { api, ErrorApi } from "../Componentes/Api";
 import { productoDesdeApi } from "../Componentes/Mapeo";
 import { agruparProductosPorFamilia } from "../Utils/agrupacionProductos";
 import { useActualizacionAutomatica } from "./useActualizacionAutomatica";
+import { confirmarFamilia, useFamiliasProductos } from "./useFamiliasProductos";
 
 const FORMULARIO_VACIO = {
   codigoImportacion: "",
@@ -149,6 +150,9 @@ export function useProductosInventario() {
     setErrorProductos("");
   }
 
+  // Las familias que ya existen: el formulario las sugiere y avisa si escriben una nueva.
+  const familias = useFamiliasProductos();
+
   async function guardarProducto(evento: { preventDefault: () => void }) {
     evento.preventDefault();
     if (!formularioProducto.codigo.trim() || !formularioProducto.descripcion.trim()) {
@@ -159,6 +163,8 @@ export function useProductosInventario() {
       setErrorProductos("El stock y la entrada no pueden ser negativos.");
       return;
     }
+    const familia = confirmarFamilia(formularioProducto.familia || "", familias);
+    if (familia === null) return;
     setGuardandoProducto(true);
     setErrorProductos("");
     try {
@@ -168,7 +174,7 @@ export function useProductosInventario() {
         empresa: formularioProducto.empresa || "",
         referencia: formularioProducto.referencia || "",
         descripcion: formularioProducto.descripcion,
-        familia: formularioProducto.familia || "",
+        familia,
         calibre: String(formularioProducto.calibre ?? ""),
         entrada: Number(formularioProducto.entrada) || 0,
         stock: Number(formularioProducto.stock) || 0,
@@ -210,7 +216,7 @@ export function useProductosInventario() {
     guardandoProducto, formularioProducto, editandoProductoId, mostrarFormularioProducto,
     actualizarCampoProducto, cambiarBusquedaProducto, abrirFormularioNuevoProducto,
     abrirFormularioEdicionProducto, cerrarFormularioProducto, guardarProducto, eliminarProducto,
-    busquedaProducto, setBusquedaProducto,
+    busquedaProducto, setBusquedaProducto, familias,
     alertasStock, cargandoAlertasStock, cargarAlertasStock,
   };
 }

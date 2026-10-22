@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { EMPRESAS } from "../Utils/empresas";
 import { FAMILIA_PORCELANATO, normalizarFamilia } from "../Hooks/useProductosInventario";
+import { confirmarFamilia, useFamiliasProductos } from "../Hooks/useFamiliasProductos";
 
 // Admin Inventario crea los productos de stock (códigos nuevos) de cada
 // bodega: así nadie inventa códigos. Se crean con stock 0; la bodega que
@@ -22,6 +23,9 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
   const [error, setError] = useState("");
   const [listo, setListo] = useState("");
   const esPorcelanato = normalizarFamilia(formulario.familia) === FAMILIA_PORCELANATO;
+  // Las de los productos más las que tienen unidad configurada, sin repetir.
+  const familiasProductos = useFamiliasProductos();
+  const opcionesFamilia = [...new Map([...familiasProductos, ...familias].map((f) => [f.toUpperCase(), f])).values()];
 
   function cambiar(campo: keyof typeof VACIO, valor: string) {
     setFormulario((actual) => ({ ...actual, [campo]: valor }));
@@ -41,6 +45,8 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
       setError("La cantidad que entró no puede ser negativa.");
       return;
     }
+    const familia = confirmarFamilia(formulario.familia, opcionesFamilia);
+    if (familia === null) return;
     setGuardando(true);
     setError("");
     setListo("");
@@ -50,7 +56,7 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
         empresa: formulario.empresa,
         codigo: formulario.codigo.trim(),
         descripcion: formulario.descripcion.trim(),
-        familia: formulario.familia.trim(),
+        familia,
         calibre: formulario.calibre.trim(),
         referencia: formulario.referencia.trim(),
         stock: Number(formulario.cantidad) || 0,
@@ -116,7 +122,7 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
           <input list="admin-datalist-familias" placeholder="Ej. Tornillos" value={formulario.familia}
             onChange={(e) => cambiar("familia", e.target.value)} />
           <datalist id="admin-datalist-familias">
-            {familias.map((f) => <option key={f} value={f} />)}
+            {opcionesFamilia.map((f) => <option key={f} value={f} />)}
           </datalist>
         </div>
         <div>

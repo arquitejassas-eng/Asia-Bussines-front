@@ -22,6 +22,7 @@ from app.models import (  # noqa: E402,F401
     equivalencias,
     material_en_camino,
     movimiento,
+    prestamo,
     produccion,
     producto,
     recepcion,

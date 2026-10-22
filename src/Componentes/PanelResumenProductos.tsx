@@ -3,6 +3,8 @@ import CeldaApartado from "./CeldaApartado";
 import { FAMILIA_TEJA, normalizarFamilia, type GrupoFamilia } from "../Utils/agrupacionProductos";
 import { calibrePantalla, longitudDesdeCodigo } from "../Utils/teja";
 import type { ProductoResumen } from "./AdminInventario";
+import { DetalleEmpresaCelda, TotalesEmpresaTarjeta } from "./CantidadesPorEmpresa";
+import { NOMBRE_CORTO_EMPRESA, siglasEnOrden } from "../Utils/empresas";
 
 type Bodega = { id: number; nombre: string };
 
@@ -35,6 +37,10 @@ export default function PanelResumenProductos({ grupos, bodegas, unidadPorFamili
         const total = Math.round(grupo.productos.reduce((s, p) => s + (Number(p.total) || 0), 0) * 100) / 100;
         const porBodega = (id: number) =>
           Math.round(grupo.productos.reduce((s, p) => s + (Number(p.porBodega[id]) || 0), 0) * 100) / 100;
+        // Una columna por empresa que tenga algo en esta tarjeta.
+        const siglas = siglasEnOrden(grupo.productos.flatMap((p) => Object.keys(p.porEmpresa)));
+        const totalesEmpresa = Object.fromEntries(siglas.map((sigla) => [sigla,
+          Math.round(grupo.productos.reduce((s, p) => s + (p.porEmpresa[sigla]?.fisico || 0), 0) * 100) / 100]));
         return (
           <section key={grupo.clave} className="inventario-tarjeta resumen-productos-grupo">
             <button className="inventario-grupo-header" onClick={() => setAbiertos((a) => ({ ...a, [grupo.clave]: !abierto }))}>
@@ -60,6 +66,7 @@ export default function PanelResumenProductos({ grupos, bodegas, unidadPorFamili
                 <span className="numero">{grupo.productos.length}</span>
                 <span>código{grupo.productos.length === 1 ? "" : "s"}</span>
               </div>
+              <TotalesEmpresaTarjeta totales={totalesEmpresa} />
               <div className="inventario-grupo-cantidad">
                 <span className="numero">{total}</span>
                 <span>{esConversion ? "cajas" : unidad || "total empresa"}</span>
@@ -79,6 +86,7 @@ export default function PanelResumenProductos({ grupos, bodegas, unidadPorFamili
                       {esTeja && <th>Longitud</th>}
                       <th>Unidad</th>
                       {bodegas.map((b) => <th key={b.id}>{b.nombre}</th>)}
+                      {siglas.map((sigla) => <th key={sigla}>{NOMBRE_CORTO_EMPRESA[sigla] ?? sigla}</th>)}
                       <th>Total empresa</th>
                     </tr>
                   </thead>
@@ -98,9 +106,23 @@ export default function PanelResumenProductos({ grupos, bodegas, unidadPorFamili
                         {bodegas.map((b) => (
                           <td key={b.id} data-etiqueta={b.nombre}>
                             {f.porBodega[b.id] ?? 0}
+                            <DetalleEmpresaCelda porEmpresa={f.porBodegaEmpresa[b.id]} />
                             <CeldaApartado reservado={f.reservadoPorBodega[b.id]} libre={f.librePorBodega[b.id]} unidad="" />
                           </td>
                         ))}
+                        {siglas.map((sigla) => {
+                          const m = f.porEmpresa[sigla];
+                          return (
+                            <td key={sigla} data-etiqueta={NOMBRE_CORTO_EMPRESA[sigla] ?? sigla}>
+                              {m ? (
+                                <>
+                                  <strong style={{ color: m.fisico < 0 ? "#b3261e" : undefined }}>{m.fisico}</strong>
+                                  <CeldaApartado reservado={m.reservado} libre={m.libre} unidad="" />
+                                </>
+                              ) : "—"}
+                            </td>
+                          );
+                        })}
                         <td data-etiqueta="Total empresa">
                           <strong>{f.total}</strong>
                           <CeldaApartado reservado={f.reservadoTotal} libre={f.libreTotal} unidad="" />

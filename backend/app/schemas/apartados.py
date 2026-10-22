@@ -31,7 +31,8 @@ class ApartadoItemCrear(BaseModel):
     bodega_id: int | None = None
     # Empresa de la que sale el material de ESTA línea ("" = la de la
     # cotización). Una cotización de Asia puede llevar material de
-    # Arquitejas: esa parte se guarda aparte como "<número>-AR".
+    # Arquitejas: sigue siendo una sola cotización y lo que salga de esa
+    # línea queda como préstamo (ver services/prestamos.py).
     empresa: str = ""
 
     # "Rollo completo" (POR_ROLLO): el rollo entero que se vende. El código,
@@ -108,6 +109,9 @@ class CompletarConStockRequest(BaseModel):
     (o varias) salieron de una que ya estaba en stock."""
     producto_id: int
     cantidad: int = Field(gt=0)
+    # El sistema dice que no hay (0 o negativo) pero en la bodega sí están:
+    # Planta las saca igual (ver apartados.completar_con_stock).
+    hay_fisico: bool = False
 
 
 class ProductoParaCompletar(BaseModel):
@@ -122,6 +126,8 @@ class StockParaCompletarResponse(BaseModel):
     # todavía no se han producido).
     max_unidades: int
     productos: list[ProductoParaCompletar]
+    # Empresa del material de la línea: solo salen productos de esa empresa.
+    empresa: str = ""
 
 
 class SepararApartadoRequest(BaseModel):
@@ -161,6 +167,8 @@ class ApartadoItemResponse(BaseModel):
     rollo_id: int | None = None
     rollo_referencia: str | None = None
     tipo_producto: str = ""
+    # "" = material de la empresa de la cotización.
+    empresa_material: str = ""
 
 
 class RolloParaApartarResponse(BaseModel):

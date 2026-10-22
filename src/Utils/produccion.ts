@@ -25,10 +25,12 @@ type ApartadoItemPendiente = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string;
   cantidad: number; medida: number | null; metrosPendientes: number | null;
   rolloId?: number | null; rolloReferencia?: string; stockDescontado?: boolean; tipoProducto?: string;
+  empresaMaterial?: string; // "" = la de la cotización
 };
 type ApartadoParaProduccion = { id: number; numeroCotizacion: string; cliente: string; empresa?: string; items: ApartadoItemPendiente[] };
 export type SolicitudProduccionPendiente = {
-  itemId: number; apartadoId: number; numeroCotizacion: string; cliente: string; empresa: string;
+  // `empresa`: de la que sale el material de la línea; `empresaCotizacion`: la de la cotización.
+  itemId: number; apartadoId: number; numeroCotizacion: string; cliente: string; empresa: string; empresaCotizacion: string;
   codigoInterno: string | null; descripcion: string; cantidad: number; medida: number | null; metrosPendientes: number;
   // Rollo completo: Planta no lo produce, solo lo alista y lo mueve.
   rolloCompleto?: boolean; rolloReferencia?: string;
@@ -49,7 +51,9 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
       // pero no se produce: su salida se registra después desde Apartados.
       .filter((it) => it.modalidad === "por_rollo" && (it.metrosPendientes ?? 0) > 0)
       .map((it) => ({
-        itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, empresa: ap.empresa || "",
+        // Empresa de la que sale el material de ESTA línea (Planta escoge sus rollos).
+        itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente,
+        empresa: it.empresaMaterial || ap.empresa || "", empresaCotizacion: ap.empresa || "",
         codigoInterno: it.codigoInterno, descripcion: it.descripcion, cantidad: it.cantidad, medida: it.medida,
         metrosPendientes: it.metrosPendientes ?? 0,
         rolloCompleto: Boolean(it.rolloId), rolloReferencia: it.rolloReferencia || "",
@@ -59,7 +63,7 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
 }
 
 export type LineaParaAlistar = {
-  itemId: number; apartadoId: number; numeroCotizacion: string; cliente: string; empresa: string;
+  itemId: number; apartadoId: number; numeroCotizacion: string; cliente: string; empresa: string; empresaCotizacion: string;
   descripcion: string; cantidad: number; stockDescontado: boolean; cortar: boolean;
   // Medida a la que se corta cada unidad (m), si la cotización la indicó.
   medidaCorte: number | null;
@@ -80,7 +84,8 @@ export function calcularStockParaAlistar(apartados: ApartadoParaProduccion[]): L
     ap.items
       .filter((it) => it.modalidad === "por_stock")
       .map((it) => ({
-        itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente, empresa: ap.empresa || "",
+        itemId: it.id, apartadoId: ap.id, numeroCotizacion: ap.numeroCotizacion, cliente: ap.cliente,
+        empresa: it.empresaMaterial || ap.empresa || "", empresaCotizacion: ap.empresa || "",
         descripcion: it.descripcion, cantidad: it.cantidad, stockDescontado: Boolean(it.stockDescontado),
         cortar: Boolean(it.medida) || pideCorte(it.descripcion), medidaCorte: it.medida || null,
       }))

@@ -5,7 +5,8 @@ import PanelAdminUnidadesFamilia from "./PanelAdminUnidadesFamilia";
 import ModalConfirmacion from "./ModalConfirmacion";
 import { anchoPorSeccion } from "../Utils/produccion";
 import { esSegundaPorCodigo, longitudDesdeCodigo, calibrePantalla } from "../Utils/teja";
-import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
+import { EMPRESAS, NOMBRE_CORTO_EMPRESA, siglasEnOrden, sumarPorEmpresa } from "../Utils/empresas";
+import { TotalesEmpresaTarjeta } from "./CantidadesPorEmpresa";
 
 // Pestaña "Productos" de Inventario: buscador, formulario de alta/edición y
 // tarjetas agrupadas por familia. Extraído de InventarioPage.tsx sin cambiar
@@ -34,6 +35,19 @@ function PanelProductosInventario({
   const [mostrarAdminUnidades, setMostrarAdminUnidades] = useState(false);
   const [gruposFamiliaExpandidos, setGruposFamiliaExpandidos] = useState({});
   const [productoAEliminar, setProductoAEliminar] = useState(null);
+  // Fila con las dos empresas: al dar Añadir/Editar se escoge de cuál.
+  const [eligiendoEmpresa, setEligiendoEmpresa] = useState(null); // { clave, accion }
+
+  function ejecutarAccion(accion, p) {
+    setEligiendoEmpresa(null);
+    if (accion === "anadir") { prepararEntradaProducto(p); setPestanaActiva("movimientos"); }
+    else abrirFormularioEdicionProducto(p);
+  }
+
+  function pedirAccion(accion, fila) {
+    if (fila.productos.length === 1) ejecutarAccion(accion, fila.productos[0]);
+    else setEligiendoEmpresa({ clave: fila.clave, accion });
+  }
 
   function alternarGrupoFamilia(familia) {
     setGruposFamiliaExpandidos((actual) => ({ ...actual, [familia]: !actual[familia] }));
@@ -251,6 +265,26 @@ function PanelProductosInventario({
             // deben ocupar espacio en la tarjeta.
             const esTeja = normalizarFamilia(grupo.familia) === FAMILIA_TEJA;
             const m2Equivalentes = esConversion ? Math.round(totalStock * grupo.longitud * 100) / 100 : null;
+            // Una fila por código: el de Arquitejas y el de Asia lado a lado
+            // (cada uno sigue siendo su propio producto con su stock).
+            const siglas = siglasEnOrden(grupo.productos.map((p) => p.empresa || ""));
+            const filas = [];
+            const filaPorCodigo = {};
+            for (const p of grupo.productos) {
+              const clave = `${grupo.clave}|${(p.codigo || "").trim().toUpperCase()}`;
+              if (!filaPorCodigo[clave]) {
+                filaPorCodigo[clave] = { clave, productos: [] };
+                filas.push(filaPorCodigo[clave]);
+              }
+              filaPorCodigo[clave].productos.push(p);
+            }
+            for (const fila of filas) {
+              fila.productos.sort((a, b) => siglas.indexOf(a.empresa || "") - siglas.indexOf(b.empresa || ""));
+              fila.p = fila.productos[0];
+              fila.porEmpresa = sumarPorEmpresa(fila.productos.map((p) => ({ empresa: p.empresa, cantidad: p.stock })));
+              fila.total = Math.round(fila.productos.reduce((s, p) => s + (Number(p.stock) || 0), 0) * 100) / 100;
+              fila.entrada = Math.round(fila.productos.reduce((s, p) => s + (Number(p.entrada) || 0), 0) * 100) / 100;
+            }
             return (
               <section key={grupo.clave} className="inventario-tarjeta">
                 <button
@@ -282,9 +316,12 @@ function PanelProductosInventario({
                     </div>
                   )}
                   <div className="inventario-grupo-cantidad">
-                    <span className="numero">{grupo.productos.length}</span>
-                    <span>producto{grupo.productos.length === 1 ? "" : "s"}</span>
+                    <span className="numero">{filas.length}</span>
+                    <span>producto{filas.length === 1 ? "" : "s"}</span>
                   </div>
+                  <TotalesEmpresaTarjeta
+                    totales={sumarPorEmpresa(grupo.productos.map((p) => ({ empresa: p.empresa, cantidad: p.stock })))}
+                  />
                   <div className="inventario-grupo-cantidad">
                     <span className="numero">{totalStock}</span>
                     <span>{esConversion ? "cajas" : esReferencia ? (unidad || "unidades") : grupo.longitud != null ? "existencia" : unidad || "stock"}</span>
@@ -304,7 +341,6 @@ function PanelProductosInventario({
                       <thead>
                         <tr>
                           <th>Código</th>
-                          <th>Empresa</th>
                           <th>{esTeja ? "Modelo" : "Referencia"}</th>
                           <th>Descripción</th>
                           {esTeja && <th>Rollo origen</th>}
@@ -313,16 +349,19 @@ function PanelProductosInventario({
                           {(esTeja || esConversion) && <th>{esConversion ? "m² por caja" : "Longitud"}</th>}
                           {esTeja && <th>Ancho rollo / sección</th>}
                           <th>Entrada</th>
-                          <th>Stock</th>
+                          {siglas.map((sigla) => <th key={sigla}>{NOMBRE_CORTO_EMPRESA[sigla] ?? sigla}</th>)}
+                          <th>Total</th>
                           <th>{esConversion ? "m² equivalentes" : "Unidad"}</th>
                           <th>Acciones</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {grupo.productos.map((p) => (
-                          <tr key={p.id}>
+                        {filas.map((fila) => {
+                          const p = fila.p;
+                          const eligiendo = eligiendoEmpresa?.clave === fila.clave ? eligiendoEmpresa.accion : null;
+                          return (
+                          <tr key={fila.clave}>
                             <td>{p.codigo}</td>
-                            <td>{p.empresa ? nombreEmpresa(p.empresa) : "—"}</td>
                             <td>{p.referencia || "—"}</td>
                             <td>{p.descripcion}</td>
                             {esTeja && <td>{p.codigoRolloOrigen || "—"}</td>}
@@ -350,27 +389,48 @@ function PanelProductosInventario({
                                   : "—"}
                               </td>
                             )}
-                            <td>{p.entrada}</td>
-                            <td>{p.stock}</td>
+                            <td>{fila.entrada}</td>
+                            {siglas.map((sigla) => (
+                              <td key={sigla} style={{ color: fila.porEmpresa[sigla] < 0 ? "#b3261e" : undefined }}>
+                                {sigla in fila.porEmpresa ? fila.porEmpresa[sigla] : "—"}
+                              </td>
+                            ))}
+                            <td style={{ color: fila.total < 0 ? "#b3261e" : undefined }}><strong>{fila.total}</strong></td>
                             <td>
                               {esConversion
-                                ? (p.metrosPorUnidad != null ? Math.round(Number(p.stock) * p.metrosPorUnidad * 100) / 100 : "—")
+                                ? (p.metrosPorUnidad != null ? Math.round(fila.total * p.metrosPorUnidad * 100) / 100 : "—")
                                 : (almacen?.unidadPorFamilia?.[p.familia] || "—")}
                             </td>
                             <td className="inventario-acciones">
-                              <button
-                                className="inventario-boton"
-                                onClick={() => { prepararEntradaProducto(p); setPestanaActiva("movimientos"); }}
-                              >
-                                Añadir
-                              </button>
-                              <button className="inventario-boton-cancelar" onClick={() => abrirFormularioEdicionProducto(p)}>
-                                Editar
-                              </button>
+                              {eligiendo ? (
+                                <>
+                                  <span className="rollos-texto-ayuda" style={{ margin: 0 }}>
+                                    {eligiendo === "anadir" ? "Añadir a" : "Editar"}:
+                                  </span>
+                                  {fila.productos.map((prod) => (
+                                    <button key={prod.id} className="inventario-boton" onClick={() => ejecutarAccion(eligiendo, prod)}>
+                                      {NOMBRE_CORTO_EMPRESA[prod.empresa || ""] ?? prod.empresa}
+                                    </button>
+                                  ))}
+                                  <button className="inventario-boton-cancelar" onClick={() => setEligiendoEmpresa(null)}>
+                                    Cancelar
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button className="inventario-boton" onClick={() => pedirAccion("anadir", fila)}>
+                                    Añadir
+                                  </button>
+                                  <button className="inventario-boton-cancelar" onClick={() => pedirAccion("editar", fila)}>
+                                    Editar
+                                  </button>
+                                </>
+                              )}
                               {/* Eliminar productos: solo Admin Inventario. */}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

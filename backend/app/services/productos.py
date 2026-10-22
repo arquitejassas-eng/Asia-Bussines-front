@@ -8,10 +8,12 @@ resultados distintos para la misma pregunta.
 """
 from __future__ import annotations
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import coincide_bodega
 from app.models.producto import Producto
+from app.models.unidad_familia import TablaUnidadFamilia
 
 FAMILIA_ROLLOS = "Rollos de acero"
 
@@ -23,6 +25,44 @@ CAMPOS_IDENTIDAD_PRODUCTO = (
     "color", "ral", "calidad", "motivo_segunda", "metros_por_unidad", "codigo_rollo_origen",
     "ancho_rollo", "tipo_producto", "empresa",
 )
+
+
+def familias_existentes(db: Session) -> list[str]:
+    """Una por familia (sin importar mayúsculas): la forma más usada en los
+    productos, más las que solo tienen unidad configurada."""
+    conteo: dict[str, tuple[int, str]] = {}
+    for familia, cantidad in (
+        db.query(Producto.familia, func.count(Producto.id))
+        .filter(Producto.familia != FAMILIA_ROLLOS)
+        .group_by(Producto.familia)
+    ):
+        texto = (familia or "").strip()
+        if texto:
+            actual = conteo.get(texto.upper())
+            if actual is None or cantidad > actual[0]:
+                conteo[texto.upper()] = (cantidad, texto)
+    for (familia,) in db.query(TablaUnidadFamilia.familia):
+        texto = (familia or "").strip()
+        if texto and texto.upper() not in conteo:
+            conteo[texto.upper()] = (0, texto)
+    return sorted((texto for _, texto in conteo.values()), key=str.upper)
+
+
+def familia_existente(db: Session, familia: str) -> str:
+    """La familia tal como ya está escrita si ya existe, aunque la escriban
+    con otras mayúsculas o en singular/plural ("caballete" -> "CABALLETES"):
+    una familia escrita distinto partía el mismo producto en dos tarjetas.
+    Si no existe, queda la que escribieron (es una familia nueva)."""
+    texto = " ".join((familia or "").split())
+    if not texto:
+        return texto
+    clave = texto.upper()
+    existentes = {f.upper(): f for f in familias_existentes(db)}
+    for candidata in (clave, f"{clave}S", f"{clave}ES", clave[:-1] if clave.endswith("S") else None,
+                      clave[:-2] if clave.endswith("ES") else None):
+        if candidata and candidata in existentes:
+            return existentes[candidata]
+    return texto
 
 
 def nuevo_producto_en_bodega(origen: Producto, *, bodega_id: int | None, cantidad) -> Producto:

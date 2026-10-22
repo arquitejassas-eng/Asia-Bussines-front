@@ -90,6 +90,9 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
         fila[b.nombre] = f.porBodega[b.id] ?? 0;
         fila[`${b.nombre} apartado`] = f.reservadoPorBodega[b.id] ?? 0;
       }
+      for (const sigla of ["AR", "ABG"]) {
+        fila[EMPRESAS[sigla]] = f.porEmpresa[sigla]?.fisico ?? 0;
+      }
       fila["Total empresa"] = f.total;
       fila["Apartado"] = f.reservadoTotal;
       fila["Libre para vender"] = f.libreTotal;

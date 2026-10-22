@@ -14,8 +14,11 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.schemas.produccion import ProduccionCrear, StockAdicionalItemCrear
-from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
+from app.services.apartados import (
+    bloquear_rollos_codigo, exigir_rollo_de_la_empresa_de_linea, exigir_rollo_libre, validar_reserva_rollos,
+)
 from app.services.modelos_teja import modelo_en_descripcion, normalizar_modelo_teja
+from app.services.prestamos import LAMINA, registrar_prestamo
 from app.services.seccionados import SECCIONES_POR_TIPO_PRODUCTO
 
 # Regla física de los productos "seccionados": el ancho del rollo se divide
@@ -358,6 +361,9 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
                     detail=f"La línea \"{extra.descripcion}\" es de otro modelo: solo se producen juntas tejas del mismo modelo.",
                 )
             items_produccion.append(extra)
+    for it in items_produccion:
+        for rollo in bloqueados:
+            exigir_rollo_de_la_empresa_de_linea(it, rollo)
 
     # Cuánto se consume del rollo: para tejas es libre (lo que el usuario
     # seleccionó); para productos seccionados (caballete/flanche) es un
@@ -526,6 +532,17 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     produccion.saldo_codigo = round(saldo, 2)
 
     if apartado_item is not None:
+        # Lo que va para la cotización sale de los rollos en el orden en que
+        # Planta los escogió; lo de un rollo de la otra empresa es un préstamo.
+        por_prestar = aplicado_al_apartado
+        for item, rollo in zip(datos.rollos, bloqueados, strict=True):
+            parte = round(min(item.metros, por_prestar), 2)
+            por_prestar = round(por_prestar - parte, 2)
+            registrar_prestamo(db, apartado=apartado_item.apartado, empresa_material=rollo.empresa, tipo=LAMINA,
+                               codigo=rollo.codigo_interno, descripcion=rollo.descripcion or apartado_item.descripcion,
+                               cantidad=parte, usuario=usuario, origen="produccion",
+                               referencia_rollo=rollo.identificador_rollo, fecha=ahora)
+
         # Lo aplicado se reparte entre las líneas, cada una hasta su tope
         # (ver topes_por_linea); caballete/flanche es siempre una sola línea.
         if datos.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO:

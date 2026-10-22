@@ -22,8 +22,12 @@ from app.models.producto import Producto
 from app.models.rollo import HistorialConsumoRollo, Rollo
 from app.models.usuario import Usuario
 from app.schemas.apartados import RegistrarSalidaRequest
-from app.services.apartados import ESTADOS_RESERVA_ACTIVA, bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
+from app.services.apartados import (
+    ESTADOS_RESERVA_ACTIVA, bloquear_rollos_codigo, exigir_rollo_de_la_empresa_de_linea, exigir_rollo_libre,
+    validar_reserva_rollos,
+)
 from app.services.envios import envio_pendiente_del_rollo
+from app.services.prestamos import LAMINA, PRODUCTO, registrar_prestamo
 from app.services.transferencias import traslado_en_curso_del_rollo
 
 TOLERANCIA = 0.005
@@ -80,6 +84,7 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
                 status_code=400,
                 detail=f"El rollo {rollo.identificador_rollo} es {rollo.codigo_interno}, pero esta línea es de {item.codigo_interno}.",
             )
+        exigir_rollo_de_la_empresa_de_linea(item, rollo)
         rollos_codigo = bloquear_rollos_codigo(db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno)
         rollo = next(r for r in rollos_codigo if r.id == rollo.id)
         envio = envio_pendiente_del_rollo(db, rollo.id)
@@ -106,6 +111,9 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
         rollo.metros_consumidos = round(rollo.metros_consumidos + metros, 2)
         rollo.recalcular_estado()
         item.metros_consumidos = round((item.metros_consumidos or 0) + min(metros, pendiente), 2)
+        registrar_prestamo(db, apartado=apartado, empresa_material=rollo.empresa, tipo=LAMINA, codigo=rollo.codigo_interno,
+                           descripcion=rollo.descripcion or item.descripcion, cantidad=min(metros, pendiente), usuario=usuario,
+                           origen="salida", referencia_rollo=rollo.identificador_rollo, fecha=ahora)
         db.add(HistorialConsumoRollo(rollo_id=rollo.id, fecha=ahora, cantidad=metros, usuario=usuario.correo,
                                      observaciones=f"{nota} {item.descripcion}".strip()))
         db.add(Movimiento(
@@ -143,6 +151,8 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
             bodega_origen_id=apartado.bodega_id, bodega_destino_id=None, cantidad=item.cantidad,
             usuario=usuario.correo, observaciones=nota, cotizacion=apartado.numero_cotizacion,
         ))
+        registrar_prestamo(db, apartado=apartado, empresa_material=producto.empresa, tipo=PRODUCTO, codigo=producto.codigo,
+                           descripcion=producto.descripcion, cantidad=item.cantidad, usuario=usuario, origen="salida", fecha=ahora)
 
     completa = all(
         (it.stock_descontado if it.modalidad == ModalidadApartado.POR_STOCK

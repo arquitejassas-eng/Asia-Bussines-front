@@ -19,8 +19,11 @@ Reglas acordadas con el negocio:
   mueven material entre sedes, no lo apartan para un cliente.
 - La bodega sale de "BODEGA DE SALIDA"; si no es una bodega de la app (ej. el
   nombre del cliente), esas líneas se omiten y se informan.
-- Si una cotización tiene, en la misma bodega, líneas de las dos empresas se
-  separa en dos apartados: "3811-AR" y "3811-ABG".
+- La cotización es de la empresa de "SALIDA DE LA COT" (si no viene, de la
+  empresa del material que más se repite) y es UNA sola aunque tenga líneas
+  con material de las dos empresas: cada línea guarda la empresa de su
+  material ("DE QUE EMPRESA SALE EL MATERIAL"). Lo que salga de la otra
+  empresa queda como préstamo (ver prestamos.py).
 - SOLO se cargan las líneas de rollo (lámina: L + color + RAL + calibre, o
   un código que ya tenga rollos), en metros ("SALE"). Las de productos de
   stock (caballetes, flanches, tornillos, perfiles...) se omiten y no se
@@ -56,7 +59,7 @@ from app.models.movimiento import Movimiento
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.services import merma_rollo
-from app.services.apartados import faltantes_apartado
+from app.services.apartados import empresa_material_de, faltantes_apartado
 from app.services.empresas import sigla_empresa_desde_nombre
 
 # Las fechas del Excel son días de Colombia: 00:00 en UTC caía el día anterior.
@@ -65,6 +68,7 @@ HORA_COLOMBIA = timezone(timedelta(hours=-5))
 HOJA_PREFERIDA = "SALIDA"
 COLUMNAS = {
     "empresa": "DE QUE EMPRESA SALE EL MATERIAL",
+    "empresa_cotizacion": "SALIDA DE LA COT",
     "cotizacion": "# DE COT",
     "fecha": "FECHA",
     "codigo": "CODIGO",
@@ -139,6 +143,7 @@ class LineaImportada:
     modalidad: ModalidadApartado
     producto_id: int | None = None
     producto_nuevo: bool = False
+    empresa: str = ""  # de la que sale el material de esta línea
 
 
 @dataclass
@@ -240,48 +245,57 @@ def analizar(db: Session, contenido: bytes) -> ResultadoImportacion:
             continue
         grupos.setdefault((cotizacion, bodega.id, salida_pendiente), []).append((numero_fila, empresa, {
             "codigo": codigo, "cantidad": round(float(cantidad), 2), "fila": fila,
+            "empresa_cotizacion": sigla_empresa_desde_nombre(_texto(fila.get("empresa_cotizacion"))),
             "descripcion": _texto(fila.get("descripcion")) or _texto(fila.get("producto")) or codigo,
         }))
 
     for (cotizacion, bodega_id, salida_pendiente), filas in grupos.items():
         bodega = db.get(Bodega, bodega_id)
-        empresas = sorted({empresa for _, empresa, _ in filas})
-        for empresa in empresas:
-            numero = cotizacion if len(empresas) == 1 else f"{cotizacion}-{empresa}"
-            if salida_pendiente and (cotizacion, bodega_id, False) in grupos:
-                # La misma cotización tiene líneas pendientes por producir: lo que
-                # ya salió va aparte (ej. "3776-SAL") para no repetir el número.
-                numero = f"{numero}-{SUFIJO_SALIDA_PENDIENTE}"
-            ya_existe = (
-                db.query(Apartado.id)
-                .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == numero,
-                        Apartado.estado != EstadoApartado.CANCELADO)
-                .first()
-            )
-            propias = [(n, datos) for n, emp, datos in filas if emp == empresa]
-            if ya_existe:
-                resultado.omitidas.append({"fila": propias[0][0], "cotizacion": numero, "codigo": "",
-                                           "motivo": f"La cotización {numero} ya está cargada en {bodega.nombre}."})
-                continue
-            if len(numero) > LARGO_MAXIMO_COTIZACION:
-                resultado.omitidas.append({"fila": propias[0][0], "cotizacion": numero, "codigo": "",
-                                           "motivo": f"El número de cotización es muy largo (máximo {LARGO_MAXIMO_COTIZACION} caracteres)."})
-                continue
-            primera = propias[0][1]["fila"]
-            fecha = pd.to_datetime(primera.get("fecha"), errors="coerce", dayfirst=True)
-            apartado = ApartadoImportado(
-                numero_cotizacion=numero, bodega_id=bodega_id, bodega_nombre=bodega.nombre, empresa=empresa,
-                cliente=_texto(primera.get("cliente"))[:150], vendedor=_texto(primera.get("vendedor")),
-                salida_pendiente=salida_pendiente,
-                fecha=((fecha.to_pydatetime().replace(tzinfo=HORA_COLOMBIA) + timedelta(seconds=propias[0][0])).astimezone(timezone.utc)
-                      if not pd.isna(fecha) else datetime.now(timezone.utc)),
-            )
-            for numero_fila, datos in propias:
-                apartado.lineas.append(LineaImportada(numero_fila, datos["codigo"], datos["descripcion"][:255],
-                                                      datos["cantidad"], ModalidadApartado.POR_ROLLO))
-            resultado.apartados.append(apartado)
+        numero = cotizacion
+        if salida_pendiente and (cotizacion, bodega_id, False) in grupos:
+            # La misma cotización tiene líneas pendientes por producir: lo que
+            # ya salió va aparte (ej. "3776-SAL") para no repetir el número.
+            numero = f"{numero}-{SUFIJO_SALIDA_PENDIENTE}"
+        ya_existe = (
+            db.query(Apartado.id)
+            .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == numero,
+                    Apartado.estado != EstadoApartado.CANCELADO)
+            .first()
+        )
+        if ya_existe:
+            resultado.omitidas.append({"fila": filas[0][0], "cotizacion": numero, "codigo": "",
+                                       "motivo": f"La cotización {numero} ya está cargada en {bodega.nombre}."})
+            continue
+        if len(numero) > LARGO_MAXIMO_COTIZACION:
+            resultado.omitidas.append({"fila": filas[0][0], "cotizacion": numero, "codigo": "",
+                                       "motivo": f"El número de cotización es muy largo (máximo {LARGO_MAXIMO_COTIZACION} caracteres)."})
+            continue
+        primera = filas[0][2]["fila"]
+        fecha = pd.to_datetime(primera.get("fecha"), errors="coerce", dayfirst=True)
+        apartado = ApartadoImportado(
+            numero_cotizacion=numero, bodega_id=bodega_id, bodega_nombre=bodega.nombre,
+            empresa=_empresa_de_la_cotizacion(filas),
+            cliente=_texto(primera.get("cliente"))[:150], vendedor=_texto(primera.get("vendedor")),
+            salida_pendiente=salida_pendiente,
+            fecha=((fecha.to_pydatetime().replace(tzinfo=HORA_COLOMBIA) + timedelta(seconds=filas[0][0])).astimezone(timezone.utc)
+                  if not pd.isna(fecha) else datetime.now(timezone.utc)),
+        )
+        for numero_fila, empresa, datos in filas:
+            apartado.lineas.append(LineaImportada(numero_fila, datos["codigo"], datos["descripcion"][:255],
+                                                  datos["cantidad"], ModalidadApartado.POR_ROLLO, empresa=empresa))
+        resultado.apartados.append(apartado)
     resultado.apartados.sort(key=lambda a: (a.fecha, a.numero_cotizacion))
     return resultado
+
+
+def _empresa_de_la_cotizacion(filas: list[tuple[int, str, dict]]) -> str:
+    """La de "SALIDA DE LA COT" que más se repite; si no viene, la del
+    material que más se repite (a igual cantidad, la de la primera fila)."""
+    for campo in ("empresa_cotizacion", None):
+        empresas = [e for e in (datos[campo] if campo else empresa for _, empresa, datos in filas) if e]
+        if empresas:
+            return max(dict.fromkeys(empresas), key=empresas.count)
+    return ""
 
 
 def _marca_merma(fila: int) -> str:
@@ -345,6 +359,7 @@ def crear(db: Session, resultado: ResultadoImportacion, usuario: Usuario, nombre
             db.add(ApartadoItem(
                 apartado_id=apartado.id, modalidad=ModalidadApartado.POR_ROLLO, codigo_interno=linea.codigo,
                 descripcion=linea.descripcion, cantidad=cantidad, medida=medida, metros_requeridos=linea.cantidad,
+                empresa_material=empresa_material_de(linea.empresa, importado.empresa),
             ))
         creados.append(apartado)
     db.flush()
@@ -369,7 +384,8 @@ def resumen(resultado: ResultadoImportacion) -> dict:
                 "salida_pendiente": a.salida_pendiente,
                 "lineas": [
                     {"fila": ln.fila, "codigo": ln.codigo, "descripcion": ln.descripcion, "cantidad": ln.cantidad,
-                     "modalidad": ln.modalidad.value, "producto_nuevo": ln.producto_nuevo}
+                     "modalidad": ln.modalidad.value, "producto_nuevo": ln.producto_nuevo,
+                     "empresa": empresa_material_de(ln.empresa, a.empresa)}
                     for ln in a.lineas
                 ],
             }

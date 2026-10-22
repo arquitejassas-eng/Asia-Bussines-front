@@ -36,6 +36,15 @@ def _producto_de_mi_bodega(db: Session, producto_id: int, usuario: Usuario) -> P
     return producto
 
 
+@router.get("/familias", response_model=list[str])
+def listar_familias(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> list[str]:
+    """Las familias que ya existen (de todos los productos y las que tienen
+    unidad configurada), una sola vez cada una aunque esté escrita con otras
+    mayúsculas: la pantalla solo deja escoger de aquí (o crear una nueva
+    confirmándolo)."""
+    return srv_productos.familias_existentes(db)
+
+
 @router.get("/productos", response_model=list[ProductoResponse] | PaginaProductos)
 def listar_productos(
     busqueda: str = "", pagina: int = Query(1, ge=1), tamano: int = Query(30, ge=1, le=100),
@@ -94,6 +103,7 @@ def crear_producto(datos: ProductoCrear, db: Session = Depends(get_db), usuario:
     )
     if any(p.bodega_id == bodega.id for p in mismos):
         raise HTTPException(status_code=409, detail=f"El producto '{codigo}' de esa empresa ya existe en {bodega.nombre}: búscalo y úsalo.")
+    datos.familia = srv_productos.familia_existente(db, datos.familia)
     cantidad = float(datos.stock or 0)
     validar_cantidad_entera_si_aplica(db, datos.familia, cantidad)
     if mismos:
@@ -139,6 +149,7 @@ def actualizar_producto(producto_id: int, datos: ProductoActualizar, db: Session
         or ("empresa" in datos.model_fields_set and datos.empresa != (producto.empresa or ""))
     ):
         raise HTTPException(status_code=403, detail="El código y la empresa de un producto solo los cambia Admin Inventario.")
+    datos.familia = srv_productos.familia_existente(db, datos.familia)
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.entrada)
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.stock)
     campos_de_stock = {"stock", "entrada", "stock_anterior", "entrada_anterior", "bodega_id"}

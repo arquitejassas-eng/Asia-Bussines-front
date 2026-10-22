@@ -3,6 +3,17 @@ import { Fragment, useState } from "react";
 import { EMPRESAS } from "../Utils/empresas";
 import CompletarConStock from "./CompletarConStock";
 
+// Línea con material de la otra empresa (préstamo marcado en la cotización):
+// Planta tiene que sacar de los rollos o del stock de ESA empresa.
+function MaterialDeOtraEmpresa({ linea, que }) {
+  if (!linea.empresa || linea.empresa === linea.empresaCotizacion) return null;
+  return (
+    <span className="etiqueta-otra-empresa" style={{ display: "block" }}>
+      {que} de {EMPRESAS[linea.empresa] || linea.empresa} (préstamo)
+    </span>
+  );
+}
+
 // Sección "Solicitudes de producción pendientes" de Producción. Extraído de
 // ProduccionPage.tsx sin cambiar props ni comportamiento -- no usa estado
 // local propio, todo viene del controlador (useControladorProduccion) vía
@@ -29,7 +40,10 @@ function PanelSolicitudesPendientes({
         <div>
           <h2 style={{ marginBottom: "0.25rem" }}>Cotización {primera?.numeroCotizacion}</h2>
           <p className="produccion-vacio" style={{ margin: 0 }}>
-            {primera?.cliente || "Sin cliente"} · Rollos de {EMPRESAS[primera?.empresa] || primera?.empresa || "—"}
+            {primera?.cliente || "Sin cliente"} · Rollos de {EMPRESAS[primera?.empresaCotizacion] || primera?.empresaCotizacion || "—"}
+            {[...solicitudesPendientes, ...stockParaAlistar].some((l) => l.empresa !== l.empresaCotizacion) && (
+              <> (salvo las líneas marcadas con otra empresa)</>
+            )}
           </p>
         </div>
         <button type="button" className="produccion-boton-secundario" onClick={() => marcarProduccionTerminada(primera.apartadoId)}>
@@ -71,6 +85,7 @@ function PanelSolicitudesPendientes({
                 <td>
                   {s.rolloCompleto && <strong>Rollo completo {s.rolloReferencia}: </strong>}
                   {s.descripcion || "—"}
+                  <MaterialDeOtraEmpresa linea={s} que="Rollos" />
                 </td>
                 <td data-etiqueta="Pendiente" style={{ whiteSpace: "nowrap" }}>{s.metrosPendientes} m</td>
                 <td>
@@ -137,6 +152,7 @@ function PanelSolicitudesPendientes({
                   </span>
                 )}
                 {l.descripcion || "—"}
+                <MaterialDeOtraEmpresa linea={l} que="Stock" />
               </li>
             ))}
           </ul>

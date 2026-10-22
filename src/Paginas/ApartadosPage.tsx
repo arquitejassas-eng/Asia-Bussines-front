@@ -328,6 +328,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     {parte.bodegaNombre}{parte.empresa !== ap.empresa ? ` · ${EMPRESAS[parte.empresa] || parte.empresa}` : ""}
                   </span>
                 )}
+                {it.empresaMaterial && it.empresaMaterial !== (parte ?? ap).empresa && (
+                  <span className="etiqueta-otra-empresa" title="El material sale de la otra empresa: queda como préstamo">
+                    Material de {EMPRESAS[it.empresaMaterial] || it.empresaMaterial}
+                  </span>
+                )}
                 {it.modalidad === "por_stock" && (it.medida || pideCorte(it.descripcion)) && (
                   <span className="apartado-linea-cortar">CORTAR{it.medida ? ` a ${it.medida} m` : ""}</span>
                 )}
@@ -632,6 +637,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           <option key={sigla} value={sigla}>Material de {nombre}</option>
                         ))}
                       </select>
+                      {item.empresa && item.empresa !== a.formulario.empresa && (
+                        <span className="etiqueta-otra-empresa" title="Sigue siendo la misma cotización: lo que salga de esta línea queda como préstamo">
+                          Préstamo de {EMPRESAS[item.empresa] || item.empresa}
+                        </span>
+                      )}
                       <select
                         aria-label="Bodega de donde sale este producto"
                         title="Si las líneas salen de varias bodegas, al guardar la cotización queda repartida (mismo número)."

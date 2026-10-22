@@ -38,6 +38,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.services.material_en_camino import metros_en_camino_codigo, metros_por_repartir_codigo
+from app.services.prestamos import PRODUCTO, registrar_prestamo
 from app.services.empresas import EMPRESAS_CONOCIDAS
 from app.services.productos import nuevo_producto_en_bodega
 from app.services.seccionados import metros_de_linea
@@ -48,6 +49,18 @@ ESTADOS_RESERVA_ACTIVA = (
     EstadoApartado.ENVIADO_A_PRODUCCION,
     EstadoApartado.EN_PRODUCCION,
 )
+
+# De qué empresa sale el material de cada línea, en una consulta (necesita el
+# join con Apartado): la de la línea si la tiene, si no la de la cotización.
+# Es la misma regla de ApartadoItem.empresa_de_linea.
+EMPRESA_DE_LINEA = func.coalesce(func.nullif(ApartadoItem.empresa_material, ""), Apartado.empresa)
+
+
+def empresa_material_de(empresa_linea: str, empresa_cotizacion: str) -> str:
+    """Lo que se guarda en ApartadoItem.empresa_material: vacío si es la misma
+    empresa de la cotización."""
+    empresa_linea = (empresa_linea or "").strip().upper()
+    return "" if not empresa_linea or empresa_linea == (empresa_cotizacion or "").strip().upper() else empresa_linea
 
 
 def item_que_aparta_rollo(db: Session, rollo_id: int) -> ApartadoItem | None:
@@ -142,7 +155,7 @@ def _solo_rollos_completos(items) -> bool:
 
 
 def metros_reservados_codigo(db: Session, *, bodega_id: int, codigo_interno: str, empresa: str = "") -> float:
-    """Con `empresa`, solo lo apartado por cotizaciones de esa empresa."""
+    """Con `empresa`, solo lo apartado de material de esa empresa (la de cada línea)."""
     consulta = (
         db.query(func.coalesce(func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos), 0))
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
@@ -153,7 +166,7 @@ def metros_reservados_codigo(db: Session, *, bodega_id: int, codigo_interno: str
         )
     )
     if empresa:
-        consulta = consulta.filter(Apartado.empresa == empresa)
+        consulta = consulta.filter(EMPRESA_DE_LINEA == empresa)
     total = consulta.scalar()
     return round(float(total or 0), 2)
 
@@ -271,8 +284,9 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
     resultado: dict[int, list[str]] = {}
     if not activos:
         return resultado
-    # Por empresa: un rollo de Asia no cubre una cotización de Arquitejas.
-    claves = {(a.bodega_id, it.codigo_interno, a.empresa or "") for a in activos for it in a.items
+    # Por empresa del material de cada línea: un rollo de Asia no cubre una
+    # línea con material de Arquitejas.
+    claves = {(a.bodega_id, it.codigo_interno, it.empresa_de_linea) for a in activos for it in a.items
               if it.modalidad != ModalidadApartado.POR_STOCK and it.codigo_interno}
     coberturas: dict[tuple, dict[int, float]] = {}
     if claves:
@@ -289,7 +303,7 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
             fisicos_codigo[(b, c)] = fisicos_codigo.get((b, c), 0.0) + float(total or 0)
         en_orden: dict[tuple, list[ApartadoItem]] = {}
         for item, bodega_id, empresa in (
-            db.query(ApartadoItem, Apartado.bodega_id, Apartado.empresa)
+            db.query(ApartadoItem, Apartado.bodega_id, EMPRESA_DE_LINEA)
             .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
             .filter(Apartado.bodega_id.in_(bodegas), Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
                     ApartadoItem.codigo_interno.in_(codigos))
@@ -321,11 +335,11 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
                     faltantes.append(f"faltan {falta:g} de {producto.codigo}" + (f" (hay en {_texto_donde(donde)})" if donde else ""))
             else:
                 pendiente = (item.metros_requeridos or 0) - (item.metros_consumidos or 0)
-                clave = (apartado.bodega_id, item.codigo_interno, apartado.empresa or "")
+                clave = (apartado.bodega_id, item.codigo_interno, item.empresa_de_linea)
                 falta = round(pendiente - coberturas.get(clave, {}).get(item.id, 0), 2)
                 if falta > 0.005:
                     _, donde = disponible_empresa_codigo(db, codigo_interno=item.codigo_interno, bodega_despacho=apartado.bodega_id,
-                                                         empresa=apartado.empresa or "")
+                                                         empresa=item.empresa_de_linea)
                     faltantes.append(f"faltan {falta:g} m de {item.codigo_interno}" + (f" (hay en {_texto_donde(donde, ' m')})" if donde else ""))
         resultado[apartado.id] = faltantes
     return resultado
@@ -400,7 +414,7 @@ def metros_esperando_codigo(db: Session, *, codigo_interno: str, empresa: str = 
         db.query(Apartado.bodega_id, func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
         .join(ApartadoItem, ApartadoItem.apartado_id == Apartado.id)
         .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.codigo_interno == codigo_interno,
-                *((Apartado.empresa == empresa,) if empresa else ()))
+                *((EMPRESA_DE_LINEA == empresa,) if empresa else ()))
         .group_by(Apartado.bodega_id)
         .all()
     )
@@ -556,7 +570,7 @@ def disponible_empresa_codigo(db: Session, *, codigo_interno: str, bodega_despac
         db.query(Apartado.bodega_id, func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
         .join(ApartadoItem, ApartadoItem.apartado_id == Apartado.id)
         .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.codigo_interno == codigo_interno,
-                *((Apartado.empresa == empresa,) if empresa else ()))
+                *((EMPRESA_DE_LINEA == empresa,) if empresa else ()))
         .group_by(Apartado.bodega_id).all()
     )
     bodegas = _bodegas_por_id(db)
@@ -602,15 +616,32 @@ def _texto_donde(donde: list[tuple[str, float]], unidad: str = "") -> str:
 
 
 def exigir_producto_de_la_empresa(db: Session, producto_id: int | None, empresa: str) -> None:
-    """Una cotización de Asia Business solo lleva productos de Asia (y una de
-    Arquitejas, de Arquitejas): el mismo código existe en las dos empresas."""
+    """El producto de una línea de stock es de la empresa de la que sale el
+    material de esa línea (la de la cotización, o la otra si se marcó así):
+    el mismo código existe en las dos empresas."""
     producto = db.get(Producto, producto_id) if producto_id is not None else None
     if producto is not None and producto.empresa and empresa and producto.empresa != empresa:
-        del_producto, de_la_cotizacion = (EMPRESAS_CONOCIDAS.get(e, e) for e in (producto.empresa, empresa))
+        del_producto, de_la_linea = (EMPRESAS_CONOCIDAS.get(e, e) for e in (producto.empresa, empresa))
         raise HTTPException(
             status_code=400,
-            detail=f"El producto {producto.codigo} que escogiste es de {del_producto} y la cotización es de "
-            f"{de_la_cotizacion}: escoge el de {de_la_cotizacion}.",
+            detail=f"El producto {producto.codigo} que escogiste es de {del_producto} y esa línea es con material de "
+            f"{de_la_linea}: escoge el de {de_la_linea}, o cambia la línea a material de {del_producto}.",
+        )
+
+
+def exigir_rollo_de_la_empresa_de_linea(item: ApartadoItem, rollo: Rollo) -> None:
+    """Una línea con material de Asia solo se produce (o sale) con rollos de
+    Asia, y una de Arquitejas con los de Arquitejas: el préstamo lo decide
+    Admin Inventario al marcar la línea en la cotización, no Planta."""
+    empresa = item.empresa_de_linea
+    if empresa and rollo.empresa and rollo.empresa != empresa:
+        del_rollo, de_la_linea = (EMPRESAS_CONOCIDAS.get(e, e) for e in (rollo.empresa, empresa))
+        raise HTTPException(
+            status_code=400,
+            detail=f"El rollo {rollo.identificador_rollo} es de {del_rollo} y la línea "
+            f"\"{(item.descripcion or item.codigo_interno or '')[:60]}\" es con material de {de_la_linea}: usa un rollo de "
+            f"{de_la_linea}. Si de verdad sale de {del_rollo}, Admin Inventario tiene que cambiar esa línea a "
+            f"\"Material de {del_rollo}\" en la cotización.",
         )
 
 
@@ -735,7 +766,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         elif item.modalidad == ModalidadApartado.POR_ROLLO:
             exigir_calibre_de_la_descripcion(item.codigo_interno, item.descripcion)
         if item.modalidad == ModalidadApartado.POR_STOCK:
-            exigir_producto_de_la_empresa(db, item.producto_id, datos.empresa)
+            exigir_producto_de_la_empresa(db, item.producto_id, item.empresa or datos.empresa)
             item.producto_id = producto_en_bodega(db, item.producto_id, bodega_id)
 
     solicitado_por_codigo: dict[str, float] = {}
@@ -773,6 +804,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 apartado_id=apartado.id, modalidad=ModalidadApartado.POR_STOCK,
                 producto_id=item.producto_id, descripcion=item.descripcion, cantidad=item.cantidad,
                 medida=item.medida,  # opcional: cortar cada unidad a esta medida (m)
+                empresa_material=_empresa_material_linea(db, item, datos.empresa),
             ))
         else:
             db.add(ApartadoItem(
@@ -781,9 +813,24 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 cantidad=item.cantidad, medida=item.medida, metros_requeridos=metros_de_linea(item.cantidad, item.medida, item.tipo_producto),
                 tipo_producto=item.tipo_producto,
                 rollo_id=item.rollo_id,
+                empresa_material=_empresa_material_linea(db, item, datos.empresa),
             ))
 
     return apartado
+
+
+def _empresa_material_linea(db: Session, linea, empresa_cotizacion: str) -> str:
+    """La empresa del material que se guarda en la línea: la del producto (una
+    línea de stock), la del rollo (rollo completo) o la que se marcó."""
+    if linea.modalidad == ModalidadApartado.POR_STOCK and linea.producto_id:
+        producto = db.get(Producto, linea.producto_id)
+        empresa = (producto.empresa if producto is not None else "") or linea.empresa
+    elif linea.rollo_id:
+        rollo = db.get(Rollo, linea.rollo_id)
+        empresa = (rollo.empresa if rollo is not None else "") or linea.empresa
+    else:
+        empresa = linea.empresa
+    return empresa_material_de(empresa, empresa_cotizacion)
 
 
 def _tiene_salida(item: ApartadoItem) -> bool:
@@ -807,7 +854,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
         if linea.modalidad == ModalidadApartado.POR_STOCK:
             # Solo lo nuevo o cambiado: las cotizaciones cargadas del Excel pueden traer productos mezclados.
             if not linea.id or actuales.get(linea.id) is None or actuales[linea.id].producto_id != linea.producto_id:
-                exigir_producto_de_la_empresa(db, linea.producto_id, datos.empresa)
+                exigir_producto_de_la_empresa(db, linea.producto_id, linea.empresa or datos.empresa)
             linea.producto_id = producto_en_bodega(db, linea.producto_id, bodega_id)
     con_salida = [item for item in apartado.items if _tiene_salida(item)]
     if bodega_id != apartado.bodega_id and con_salida:
@@ -855,6 +902,11 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             raise HTTPException(status_code=400, detail="No se puede cambiar el tipo de una línea existente: quítala y agrega una nueva.")
         if not _tiene_salida(item):
             continue
+        if _empresa_material_linea(db, linea, datos.empresa) != empresa_material_de(item.empresa_de_linea, datos.empresa):
+            raise HTTPException(
+                status_code=400,
+                detail=f"La línea '{item.descripcion or item.codigo_interno}' ya tiene salida: no se puede cambiar la empresa de su material.",
+            )
         if item.modalidad == ModalidadApartado.POR_STOCK:
             if linea.producto_id != item.producto_id or abs(linea.cantidad - item.cantidad) > 0.005:
                 raise HTTPException(status_code=400, detail=f"La línea '{item.descripcion}' ya se descontó del stock: no se puede cambiar.")
@@ -904,9 +956,11 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             apartado.items.remove(item)
             db.delete(item)
     for linea in datos.items:
+        empresa_material = _empresa_material_linea(db, linea, datos.empresa)
         if linea.id:
             item = actuales[linea.id]
             item.descripcion = linea.descripcion
+            item.empresa_material = empresa_material
             if item.modalidad == ModalidadApartado.POR_STOCK:
                 item.producto_id, item.cantidad, item.medida = linea.producto_id, linea.cantidad, linea.medida
             else:
@@ -917,6 +971,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             apartado.items.append(ApartadoItem(
                 modalidad=ModalidadApartado.POR_STOCK, producto_id=linea.producto_id,
                 descripcion=linea.descripcion, cantidad=linea.cantidad, medida=linea.medida,
+                empresa_material=empresa_material,
             ))
         else:
             apartado.items.append(ApartadoItem(
@@ -924,6 +979,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
                 cantidad=linea.cantidad, medida=linea.medida, metros_requeridos=metros_de_linea(linea.cantidad, linea.medida, linea.tipo_producto),
                 tipo_producto=linea.tipo_producto,
                 rollo_id=linea.rollo_id,
+                empresa_material=empresa_material,
             ))
     if apartado.estado == EstadoApartado.APARTADO:
         apartado.salida_pendiente = False
@@ -1065,14 +1121,20 @@ def _linea_para_completar(db: Session, item_id: int, usuario: Usuario) -> tuple[
     return apartado, item, por_unidad, max_unidades
 
 
+MOTIVO_SACADO_SIN_EXISTENCIA = "stock_fisico_planta"
+
+
 def stock_para_completar(db: Session, item_id: int, usuario: Usuario, busqueda: str = "") -> dict:
-    """Productos de stock con libre en la bodega y la empresa de la cotización
-    que pueden reemplazar unidades de la línea. Sin búsqueda, los de ese
-    código (ej. LR30020,38 -> "TAR30020,38-5" o los producidos de ese rollo)."""
+    """Productos de stock de la bodega y de la empresa del material de la
+    línea que pueden reemplazar unidades de la línea. Sin búsqueda, los de
+    ese código (ej. LR30020,38 -> "TAR30020,38-5" o los producidos de ese
+    rollo). También salen los que el sistema tiene en 0 o en negativo: si
+    Planta los tiene físicamente, los puede sacar igual (ver completar_con_stock)."""
     apartado, item, _, max_unidades = _linea_para_completar(db, item_id, usuario)
+    empresa = item.empresa_de_linea
     consulta = db.query(Producto).filter(
-        Producto.bodega_id == apartado.bodega_id, Producto.familia != "Rollos de acero", Producto.stock > 0,
-        *((Producto.empresa == apartado.empresa,) if apartado.empresa else ()),
+        Producto.bodega_id == apartado.bodega_id, Producto.familia != "Rollos de acero",
+        *((Producto.empresa == empresa,) if empresa else ()),
     )
     texto = busqueda.strip()
     if texto:
@@ -1083,27 +1145,36 @@ def stock_para_completar(db: Session, item_id: int, usuario: Usuario, busqueda: 
     productos = []
     for producto in consulta.order_by(Producto.codigo).limit(30):
         libre = disponibilidad_producto(db, bodega_id=apartado.bodega_id, producto_id=producto.id)["cantidad_disponible"]
-        if libre > 0.005:
-            productos.append({"id": producto.id, "codigo": producto.codigo, "descripcion": producto.descripcion, "disponible": libre})
-    # Primero los de la misma medida de la línea (ej. "-5" para tejas de 5 m).
+        productos.append({"id": producto.id, "codigo": producto.codigo, "descripcion": producto.descripcion, "disponible": libre})
+    # Primero los que tienen libre, y entre ellos los de la misma medida de la
+    # línea (ej. "-5" para tejas de 5 m).
     medida = f"-{item.medida:g}".replace(".", ",") if item.medida else ""
-    productos.sort(key=lambda p: (not (medida and p["codigo"].endswith(medida)), p["codigo"]))
-    return {"max_unidades": max_unidades, "productos": productos}
+    productos.sort(key=lambda p: (p["disponible"] <= 0.005, not (medida and p["codigo"].endswith(medida)), p["codigo"]))
+    return {"max_unidades": max_unidades, "productos": productos, "empresa": empresa}
 
 
-def completar_con_stock(db: Session, item_id: int, producto_id: int, cantidad: int, usuario: Usuario) -> Apartado:
+def completar_con_stock(
+    db: Session, item_id: int, producto_id: int, cantidad: int, usuario: Usuario, *, hay_fisico: bool = False,
+) -> Apartado:
     """Planta produjo menos unidades de una línea de rollo porque las demás
     salieron de stock (ej. 13 de 14 tejas y 1 que ya estaba hecha): la línea
     baja a lo que se produce y la cotización gana una línea de stock con esas
     unidades, apartadas. El stock se descuenta al marcar la producción
-    terminada, como cualquier línea de stock."""
+    terminada, como cualquier línea de stock.
+
+    `hay_fisico`: el sistema dice que no hay (en 0 o en negativo) pero en la
+    bodega sí están. Planta escribe solo las que saca: entran como ajuste y
+    salen de una vez para la cotización, así que el stock del sistema queda
+    igual (el negativo no se corrige aquí: eso es un conteo de Admin
+    Inventario). Queda en Movimientos con motivo MOTIVO_SACADO_SIN_EXISTENCIA
+    para que Admin Inventario lo revise."""
     apartado, item, _, max_unidades = _linea_para_completar(db, item_id, usuario)
     if cantidad > max_unidades:
         raise HTTPException(
             status_code=400,
             detail=f"A esta línea solo le faltan {max_unidades} unidad(es) por producir: no se pueden completar {cantidad} con stock.",
         )
-    exigir_producto_de_la_empresa(db, producto_id, apartado.empresa)
+    exigir_producto_de_la_empresa(db, producto_id, item.empresa_de_linea)
     producto = (
         db.query(Producto)
         .filter(Producto.id == producto_id, Producto.bodega_id == apartado.bodega_id)
@@ -1112,9 +1183,15 @@ def completar_con_stock(db: Session, item_id: int, producto_id: int, cantidad: i
     )
     if producto is None:
         raise HTTPException(status_code=404, detail="Ese producto no está en la bodega de la cotización.")
-    validar_reserva_producto(db, producto=producto, cantidad=cantidad)
-    if cantidad > float(producto.stock) + 0.005:
-        raise HTTPException(status_code=400, detail=f"Solo hay {float(producto.stock):g} de {producto.codigo} en stock.")
+    libre = disponibilidad_producto(db, bodega_id=apartado.bodega_id, producto_id=producto.id)["cantidad_disponible"]
+    sin_existencia = cantidad > libre + 0.005
+    if sin_existencia and not hay_fisico:
+        validar_reserva_producto(db, producto=producto, cantidad=cantidad)
+        raise HTTPException(
+            status_code=400,
+            detail=f"El sistema dice que hay {max(libre, 0):g} libres de {producto.codigo}. Si las tienes físicamente, "
+            "marca \"Sí las tengo en la bodega\".",
+        )
 
     nueva_cantidad = item.cantidad - cantidad
     nuevos_metros = metros_de_linea(nueva_cantidad, item.medida, item.tipo_producto) if nueva_cantidad > 0 else 0.0
@@ -1128,10 +1205,29 @@ def completar_con_stock(db: Session, item_id: int, producto_id: int, cantidad: i
     else:
         apartado.items.remove(item)
         db.delete(item)
-    apartado.items.append(ApartadoItem(
+    linea_stock = ApartadoItem(
         modalidad=ModalidadApartado.POR_STOCK, producto_id=producto.id, cantidad=cantidad,
         descripcion=f"{cantidad} {producto.descripcion} (de stock, en vez de producir: {descripcion_linea[:80]})",
-    ))
+        empresa_material=empresa_material_de(producto.empresa, apartado.empresa),
+    )
+    apartado.items.append(linea_stock)
+    if sin_existencia:
+        # Entran como ajuste y salen de una vez: el stock del sistema no cambia.
+        ahora = datetime.now(timezone.utc)
+        nota = (f"Planta sacó {cantidad:g} de la bodega para la cotización {apartado.numero_cotizacion}, "
+                f"aunque el sistema tenía {float(producto.stock):g}.")
+        for tipo, motivo, origen, destino in (
+            (TipoMovimiento.ENTRADA, MOTIVO_SACADO_SIN_EXISTENCIA, None, apartado.bodega_id),
+            (TipoMovimiento.SALIDA, "apartado_stock", apartado.bodega_id, None),
+        ):
+            db.add(Movimiento(
+                fecha=ahora, tipo=tipo, motivo=motivo, producto_codigo=producto.codigo,
+                producto_descripcion=producto.descripcion, bodega_origen_id=origen, bodega_destino_id=destino,
+                cantidad=cantidad, usuario=usuario.correo, observaciones=nota, cotizacion=apartado.numero_cotizacion,
+            ))
+        linea_stock.stock_descontado = True
+        registrar_prestamo(db, apartado=apartado, empresa_material=producto.empresa, tipo=PRODUCTO, codigo=producto.codigo,
+                           descripcion=producto.descripcion, cantidad=cantidad, usuario=usuario, origen="stock_planta", fecha=ahora)
     db.flush()
     return apartado
 
@@ -1144,7 +1240,7 @@ def _partir_linea(item: ApartadoItem, cantidad: float, nueva_id: int) -> Apartad
         apartado_id=nueva_id, modalidad=item.modalidad, codigo_interno=item.codigo_interno,
         descripcion=_cantidad_en_descripcion(item.descripcion, item.cantidad, cantidad),
         cantidad=cantidad, medida=item.medida, producto_id=item.producto_id, stock_descontado=item.stock_descontado,
-        tipo_producto=item.tipo_producto,
+        tipo_producto=item.tipo_producto, empresa_material=item.empresa_material,
     )
     if item.metros_requeridos is not None:
         copia.metros_requeridos = round(item.metros_requeridos * proporcion, 2)
@@ -1381,6 +1477,9 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
             cantidad=item.cantidad, usuario=usuario.correo,
             observaciones=f"Apartado {apartado.numero_cotizacion}.", cotizacion=apartado.numero_cotizacion,
         ))
+        registrar_prestamo(db, apartado=apartado, empresa_material=producto.empresa, tipo=PRODUCTO, codigo=producto.codigo,
+                           descripcion=producto.descripcion, cantidad=item.cantidad, usuario=usuario,
+                           origen="fin_produccion", fecha=ahora)
 
     if rollos_completos_sin_salida:
         # Planta terminó, pero falta darle salida al rollo completo: la

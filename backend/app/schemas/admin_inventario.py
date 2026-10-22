@@ -28,8 +28,11 @@ class FilaComparativoResponse(BaseModel):
     libre_total: float = 0.0
     # Solo rollos y sin filtro de empresa: metros de cada empresa ("AR",
     # "ABG", "" = sin empresa) en toda la compañía -> {"fisico", "reservado", "libre"}.
-    # Lo apartado cuenta para la empresa de la que sale el material (Apartado.empresa).
+    # Lo apartado cuenta para la empresa de la que sale el material de cada línea.
+    # En productos: el stock de cada empresa (fisico/reservado/libre de sus
+    # productos), y abajo, el físico de cada empresa en cada sede.
     por_empresa: dict[str, dict[str, float]] = {}
+    por_bodega_empresa: dict[int, dict[str, float]] = {}
     # Solo para rollos (peso ACTUAL en toneladas -- según metros disponibles
     # hoy, no el peso neto de ingreso -- y cantidad de rollos); en productos
     # quedan vacíos, un producto no se cuenta por unidad física.

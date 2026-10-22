@@ -157,3 +157,10 @@ textarea:focus-visible {
   .inventario-pestana-boton { flex: 1 0 auto; }
   .paginacion { align-items: flex-start; flex-direction: column; }
 }
+
+/* Línea con material de la otra empresa (préstamo marcado en la cotización). */
+.etiqueta-otra-empresa {
+  color: var(--at-terra, #b7451f);
+  font-weight: 700;
+  font-size: 0.85em;
+}

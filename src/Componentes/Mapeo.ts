@@ -122,7 +122,9 @@ export function apartadoItemDesdeApi(i: RegistroApi) {
     tieneProduccionRegistrada: Boolean(i.tiene_produccion_registrada),
     rolloId: i.rollo_id == null ? null : numero(i.rollo_id), rolloReferencia: texto(i.rollo_referencia),
     // Solo por rollo: "" = teja; "caballete" / "flanche" (apartan cortes × medida).
-    tipoProducto: texto(i.tipo_producto) };
+    tipoProducto: texto(i.tipo_producto),
+    // Empresa del material de la línea cuando no es la de la cotización ("" = la misma).
+    empresaMaterial: texto(i.empresa_material) };
 }
 
 export function apartadoDesdeApi(a: RegistroApi) {

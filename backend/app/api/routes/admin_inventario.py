@@ -12,7 +12,7 @@ from app.models.rollo import EstadoRollo, Rollo
 from app.models.usuario import RolUsuario
 from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComparativoResponse
 from app.schemas.rollos import RolloResponse
-from app.services.apartados import ESTADOS_RESERVA_ACTIVA
+from app.services.apartados import EMPRESA_DE_LINEA, ESTADOS_RESERVA_ACTIVA
 from app.services.clasificacion import formatear_calibre
 from app.services.merma_rollo import asignar_merma_y_sobrante, rollos_con_merma_o_sobrante
 
@@ -62,10 +62,10 @@ def _consulta_reservas_rollos(db: Session, *columnas):
 
 def _reservas_rollos(db: Session, empresa: str = "") -> dict[tuple[str, int], float]:
     """Metros apartados por (código, sede). Con filtro de empresa, solo lo
-    que se apartó de esa empresa (la empresa de la que sale el material)."""
+    que se apartó de esa empresa (la de la que sale el material de cada línea)."""
     consulta = _consulta_reservas_rollos(db, ApartadoItem.codigo_interno, Apartado.bodega_id)
     if empresa:
-        consulta = consulta.filter(Apartado.empresa == filtro_empresa(empresa))
+        consulta = consulta.filter(EMPRESA_DE_LINEA == filtro_empresa(empresa))
     return {(codigo, bodega_id): max(float(total or 0), 0) for codigo, bodega_id, total in consulta.all()}
 
 
@@ -78,7 +78,7 @@ def _agregar_por_empresa(db: Session, filas: list[FilaComparativoResponse]) -> d
         .group_by(Rollo.codigo_interno, Rollo.empresa)
         .all()
     )
-    reservado = _consulta_reservas_rollos(db, ApartadoItem.codigo_interno, Apartado.empresa).all()
+    reservado = _consulta_reservas_rollos(db, ApartadoItem.codigo_interno, EMPRESA_DE_LINEA).all()
     por_codigo: dict[str, dict[str, dict[str, float]]] = {}
     for codigo, sigla, metros in fisico:
         datos = por_codigo.setdefault(codigo, {}).setdefault(sigla or "", {"fisico": 0.0, "reservado": 0.0})
@@ -108,6 +108,47 @@ def _reservas_productos(db: Session) -> dict[tuple[str, int], float]:
         .all()
     )
     return {(codigo, bodega_id): float(total or 0) for codigo, bodega_id, total in filas}
+
+
+def _agregar_por_empresa_productos(db: Session, filas: list[FilaComparativoResponse], empresa: str = "") -> None:
+    """Stock de cada empresa por código (en cada sede y en total) y lo
+    apartado de sus productos: el mismo código existe en Arquitejas y en
+    Asia, y la tarjeta muestra cuánto es de cada una."""
+    filtro = [Producto.empresa == filtro_empresa(empresa)] if empresa else []
+    fisico = (
+        db.query(Producto.codigo, Producto.bodega_id, Producto.empresa, func.sum(Producto.stock))
+        .filter(Producto.bodega_id.isnot(None), Producto.familia != "Rollos de acero", *filtro)
+        .group_by(Producto.codigo, Producto.bodega_id, Producto.empresa)
+        .all()
+    )
+    reservado = (
+        db.query(Producto.codigo, Producto.empresa, func.sum(ApartadoItem.cantidad))
+        .join(ApartadoItem, ApartadoItem.producto_id == Producto.id)
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
+                ApartadoItem.stock_descontado.is_(False), *filtro)
+        .group_by(Producto.codigo, Producto.empresa)
+        .all()
+    )
+    por_codigo = {fila.codigo: fila for fila in filas}
+    for codigo, bodega_id, sigla, stock in fisico:
+        fila = por_codigo.get(codigo)
+        if fila is None:
+            continue
+        sigla = sigla or ""
+        cantidad = round(float(stock or 0), 2)
+        fila.por_bodega_empresa.setdefault(bodega_id, {})[sigla] = cantidad
+        datos = fila.por_empresa.setdefault(sigla, {"fisico": 0.0, "reservado": 0.0, "libre": 0.0})
+        datos["fisico"] = round(datos["fisico"] + cantidad, 2)
+    for codigo, sigla, cantidad in reservado:
+        fila = por_codigo.get(codigo)
+        if fila is None:
+            continue
+        datos = fila.por_empresa.setdefault(sigla or "", {"fisico": 0.0, "reservado": 0.0, "libre": 0.0})
+        datos["reservado"] = round(datos["reservado"] + float(cantidad or 0), 2)
+    for fila in filas:
+        for datos in fila.por_empresa.values():
+            datos["libre"] = round(datos["fisico"] - datos["reservado"], 2)
 
 
 def _pivotear(filas, *, con_color: bool, con_peso: bool = False, con_familia: bool = False) -> list[FilaComparativoResponse]:
@@ -243,6 +284,7 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
     _agregar_apartados(rollos_pivotados, _reservas_rollos(db, empresa))
     totales_por_empresa = {} if empresa else _agregar_por_empresa(db, rollos_pivotados)
     _agregar_apartados(productos_pivotados, _reservas_productos(db))
+    _agregar_por_empresa_productos(db, productos_pivotados, empresa)
     peso_actual_total_por_bodega: dict[int, float] = {}
     for fila in rollos_pivotados:
         for bodega_id, peso in fila.peso_actual_por_bodega.items():

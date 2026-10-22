@@ -132,12 +132,24 @@ class ApartadoItem(Base):
     producto_id: Mapped[int | None] = mapped_column(ForeignKey("productos.id"), nullable=True)  # solo POR_STOCK
     stock_descontado: Mapped[bool] = mapped_column(default=False)  # solo POR_STOCK
 
+    # Empresa de la que sale el material de ESTA línea cuando no es la de la
+    # cotización ("" = la de la cotización): una cotización de Asia puede
+    # llevar lámina o caballetes de Arquitejas. Sigue siendo una sola
+    # cotización; lo que sale de la otra empresa queda como préstamo (ver
+    # services/prestamos.py). Usar `empresa_de_linea`, no este campo solo.
+    empresa_material: Mapped[str] = mapped_column(String(10), default="", server_default="")
+
     # "Rollo completo": la línea vende un rollo entero y ESE rollo queda
     # apartado solo para esta cotización (nadie más lo puede consumir,
     # producir ni trasladar). Sigue siendo POR_ROLLO: código, metros
     # requeridos y consumidos funcionan igual que siempre. No va a Planta:
     # se le da salida al rollo entero desde Apartados.
     rollo_id: Mapped[int | None] = mapped_column(ForeignKey("rollos.id"), nullable=True, index=True)
+
+    @property
+    def empresa_de_linea(self) -> str:
+        """De qué empresa sale el material de esta línea."""
+        return self.empresa_material or (self.apartado.empresa if self.apartado is not None else "") or ""
 
     @property
     def rollo_referencia(self) -> str | None:

@@ -21,6 +21,8 @@ export type ProductoResumen = Apartado & {
   codigo: string; descripcion: string; calibre: string; familia: string;
   referencia: string; tipoProducto: string; metrosPorUnidad: number | null;
   porBodega: Record<string, number>; total: number;
+  // Lo de cada empresa (el mismo código existe en Arquitejas y en Asia).
+  porEmpresa: Record<string, MetrosEmpresa>; porBodegaEmpresa: Record<string, Record<string, number>>;
 };
 type Comparativo = {
   bodegas: { id: number; nombre: string }[]; rollos: RolloResumen[]; productos: ProductoResumen[];
@@ -113,6 +115,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
           referencia: f.referencia || "", tipoProducto: f.tipo_producto || "",
           metrosPorUnidad: f.metros_por_unidad == null ? null : Number(f.metros_por_unidad),
           porBodega: f.por_bodega, total: f.total,
+          porEmpresa: f.por_empresa || {}, porBodegaEmpresa: f.por_bodega_empresa || {},
           ...apartado(f),
         })),
         pesoActualTotalPorBodega: datos.peso_actual_total_por_bodega || {},
