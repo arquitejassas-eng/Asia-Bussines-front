@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
-from sqlalchemy import case
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
@@ -178,6 +178,20 @@ def buscar_productos_para_apartar(
 
     # Lo de esta bodega primero dentro de cada grupo (los que empiezan y los demás).
     resultado = sorted(propios + list(otros.values()), key=lambda p: (not empieza_con(p), p.bodega_id != bodega))[:20]
+    # El código EXACTO siempre sale si existe (aunque esté en 0 o en otra
+    # bodega): así se ve que ya existe y nadie lo vuelve a crear.
+    vistos = {(p.codigo.upper(), p.empresa) for p in resultado}
+    exactos = (
+        db.query(Producto)
+        .filter(func.upper(Producto.codigo) == texto.upper(), Producto.familia != FAMILIA_ROLLOS,
+                *((Producto.empresa == empresa.strip().upper(),) if empresa.strip() else ()))
+        .order_by(case((Producto.bodega_id == bodega, 0), else_=1), Producto.stock.desc())
+        .all()
+    )
+    for p in exactos:
+        if (p.codigo.upper(), p.empresa) not in vistos:
+            vistos.add((p.codigo.upper(), p.empresa))
+            resultado.insert(0, p)
     # Cuánto se puede prometer de cada uno en toda la empresa: la pantalla no
     # deja escoger lo que no tiene (ej. un caballete en negativo).
     for p in resultado:

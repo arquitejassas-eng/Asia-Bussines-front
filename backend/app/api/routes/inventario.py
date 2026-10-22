@@ -84,22 +84,31 @@ def crear_producto(datos: ProductoCrear, db: Session = Depends(get_db), usuario:
     codigo = datos.codigo.strip()
     if not codigo or not datos.descripcion.strip():
         raise HTTPException(status_code=400, detail="Código y descripción son obligatorios.")
-    existente = (
+    # El mismo código y empresa (sin importar mayúsculas) en cualquier bodega.
+    mismos = (
         db.query(Producto)
-        .filter(Producto.bodega_id == bodega.id, Producto.codigo == codigo, Producto.empresa == datos.empresa)
+        .filter(func.upper(Producto.codigo) == codigo.upper(), Producto.empresa == datos.empresa,
+                Producto.familia != "Rollos de acero")
         .with_for_update()
-        .first()
+        .all()
     )
-    if existente:
-        raise HTTPException(status_code=409, detail=f"Ya existe el producto '{codigo}' de esa empresa en {bodega.nombre}.")
+    if any(p.bodega_id == bodega.id for p in mismos):
+        raise HTTPException(status_code=409, detail=f"El producto '{codigo}' de esa empresa ya existe en {bodega.nombre}: búscalo y úsalo.")
     cantidad = float(datos.stock or 0)
     validar_cantidad_entera_si_aplica(db, datos.familia, cantidad)
-    campos = datos.model_dump(exclude={"bodega_id"})
-    producto = Producto(bodega_id=bodega.id, **{**campos, "codigo": codigo, "stock": cantidad, "entrada": cantidad})
+    if mismos:
+        # Ya existe en otra bodega: es el MISMO producto que ahora llega aquí,
+        # así que lleva sus mismos datos (no una descripción distinta).
+        producto = srv_productos.nuevo_producto_en_bodega(mismos[0], bodega_id=bodega.id, cantidad=cantidad)
+        if datos.stock_minimo is not None:
+            producto.stock_minimo = datos.stock_minimo
+    else:
+        campos = datos.model_dump(exclude={"bodega_id"})
+        producto = Producto(bodega_id=bodega.id, **{**campos, "codigo": codigo, "stock": cantidad, "entrada": cantidad})
     if cantidad > 0:
         db.add(Movimiento(
             fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.ENTRADA, motivo="compra_proveedor",
-            producto_codigo=codigo, producto_descripcion=datos.descripcion.strip(),
+            producto_codigo=producto.codigo, producto_descripcion=producto.descripcion,
             bodega_origen_id=None, bodega_destino_id=bodega.id, cantidad=cantidad,
             usuario=usuario.correo, observaciones="Ingreso al crear el producto (Admin Inventario).",
         ))
@@ -112,7 +121,8 @@ def crear_producto(datos: ProductoCrear, db: Session = Depends(get_db), usuario:
     # producto (ej. Tornillos) con metros_por_unidad puesto por error quede
     # ambiguo: el campo que dice "qué es esto" queda escrito una sola vez,
     # en la fuente, no inferido cada vez que se agrupa o se muestra.
-    producto.tipo_producto = "conversion" if (producto.metros_por_unidad or 0) > 0 else ""
+    if not mismos:  # el copiado ya trae su tipo (ej. caballete)
+        producto.tipo_producto = "conversion" if (producto.metros_por_unidad or 0) > 0 else ""
     db.add(producto); db.commit(); db.refresh(producto)
     return producto
 

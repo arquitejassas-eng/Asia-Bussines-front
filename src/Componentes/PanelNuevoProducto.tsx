@@ -45,7 +45,7 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
     setError("");
     setListo("");
     try {
-      await api.post("/inventario/productos", {
+      const creado = await api.post<{ descripcion?: string }>("/inventario/productos", {
         bodega_id: Number(formulario.bodegaId),
         empresa: formulario.empresa,
         codigo: formulario.codigo.trim(),
@@ -59,8 +59,10 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
       });
       const bodega = bodegas.find((b) => String(b.id) === formulario.bodegaId)?.nombre || "la bodega";
       const cantidad = Number(formulario.cantidad) || 0;
+      const copiado = creado?.descripcion && creado.descripcion !== formulario.descripcion.trim();
       setListo(`Listo: ${formulario.codigo.trim()} quedó creado en ${bodega} con ${cantidad} en stock`
-        + (cantidad ? " (quedó como entrada en su historial)." : ". Lo que llegue después lo registra la bodega en Movimientos."));
+        + (cantidad ? " (quedó como entrada en su historial)." : ". Lo que llegue después lo registra la bodega en Movimientos.")
+        + (copiado ? ` Ese código ya existía en otra bodega: se usaron sus mismos datos ("${creado?.descripcion}").` : ""));
       // Se deja la bodega y la empresa para crear el siguiente más rápido.
       setFormulario((actual) => ({ ...VACIO, bodegaId: actual.bodegaId, empresa: actual.empresa }));
       alCrear?.();
