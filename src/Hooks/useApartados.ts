@@ -22,6 +22,8 @@ const ITEM_VACIO = {
   bodegaId: "",
   // Empresa de la que sale el material ("" = la de la cotización).
   empresa: "",
+  // Solo stock: el sistema no lo tiene (0 o negativo) pero sí está en la bodega.
+  hayFisico: false,
 };
 const FORMULARIO_VACIO = { bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
 
@@ -36,6 +38,7 @@ type ItemFormulario = {
   bodegaId?: string;
   // Empresa de la que sale su material ("" = la de la cotización).
   empresa?: string;
+  hayFisico?: boolean;
   // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
   id?: number; metrosConsumidos?: number; stockDescontado?: boolean;
 };
@@ -49,6 +52,7 @@ type ApartadoItem = {
   metrosPendientes: number | null; tieneProduccionRegistrada: boolean;
   rolloId: number | null; rolloReferencia: string; tipoProducto: string;
   empresaMaterial: string; // "" = la de la cotización
+  hayFisico: boolean;
 };
 export type RolloParaApartar = {
   id: number; identificadorRollo: string; codigoInterno: string; descripcion: string;
@@ -190,6 +194,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         metrosConsumidos: it.metrosConsumidos, stockDescontado: it.stockDescontado,
         bodegaId: String(parte.bodegaId),
         empresa: empresaMaterial && empresaMaterial !== empresaCotizacion ? empresaMaterial : "",
+        hayFisico: it.hayFisico,
         };
       })),
     });
@@ -332,7 +337,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     setResultadosBusquedaProducto((actual) => quitarPosicion(actual, indice));
   }
 
-  function actualizarItemApartado(indice: number, campo: keyof ItemFormulario, valor: string) {
+  function actualizarItemApartado(indice: number, campo: keyof ItemFormulario, valor: string | boolean) {
     setFormulario((actual) => ({
       ...actual,
       items: actual.items.map((item, i) => (i === indice ? { ...item, [campo]: valor } : item)),
@@ -474,7 +479,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       ...actual,
       items: actual.items.map((item, i) => (i === indice ? {
         ...item, productoId: producto.id, productoCodigo: producto.codigo, productoDescripcion: producto.descripcion,
-        busquedaProducto: "",
+        busquedaProducto: "", hayFisico: false,
         // Si no escribió una descripción propia, se autocompleta con el
         // código del producto -- así la lista de apartados (que no vuelve a
         // consultar el Producto) puede seguir mostrando qué es cada línea.
@@ -552,6 +557,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
           return i.modalidad === "por_stock"
             // "Cortar a (m)" es opcional en una línea de stock (ej. teja UPVC de 11,80 cortada a 7).
             ? { id: i.id, bodega_id, empresa, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad),
+                hay_fisico: Boolean(i.hayFisico),
                 medida: Number(String(i.medida).replace(",", ".")) > 0 ? Number(String(i.medida).replace(",", ".")) : undefined }
             : { id: i.id, bodega_id, empresa, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida),
                 tipo_producto: i.tipoProducto || "" };

@@ -138,6 +138,12 @@ class ApartadoItem(Base):
     # cotización; lo que sale de la otra empresa queda como préstamo (ver
     # services/prestamos.py). Usar `empresa_de_linea`, no este campo solo.
     empresa_material: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    # Solo POR_STOCK: el sistema no tenía ese producto (en 0 o en negativo)
+    # pero Admin Inventario confirmó que sí está en la bodega. La línea no
+    # aparta stock (no cuenta como reservado ni como faltante) y al salir
+    # entra y sale la misma cantidad: el número del sistema no cambia y queda
+    # en "Sacado sin existencia" (ver apartados.sacar_sin_existencia).
+    hay_fisico: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     # "Rollo completo": la línea vende un rollo entero y ESE rollo queda
     # apartado solo para esta cotización (nadie más lo puede consumir,

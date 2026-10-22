@@ -24,7 +24,7 @@ from app.models.usuario import Usuario
 from app.schemas.apartados import RegistrarSalidaRequest
 from app.services.apartados import (
     ESTADOS_RESERVA_ACTIVA, bloquear_rollos_codigo, exigir_rollo_de_la_empresa_de_linea, exigir_rollo_libre,
-    validar_reserva_rollos,
+    sacar_sin_existencia, validar_reserva_rollos,
 )
 from app.services.envios import envio_pendiente_del_rollo
 from app.services.prestamos import LAMINA, PRODUCTO, registrar_prestamo
@@ -137,6 +137,11 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
         )
         if producto is None:
             raise HTTPException(status_code=404, detail="El producto de esa línea ya no existe.")
+        if item.hay_fisico:
+            # El sistema no lo tenía pero estaba en la bodega: entra y sale lo mismo.
+            sacar_sin_existencia(db, apartado=apartado, item=item, producto=producto, usuario=usuario,
+                                 quien="Admin Inventario", origen="salida", fecha=ahora)
+            continue
         if float(producto.stock) + TOLERANCIA < item.cantidad:
             raise HTTPException(
                 status_code=400,

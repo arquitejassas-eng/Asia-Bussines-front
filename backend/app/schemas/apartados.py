@@ -39,9 +39,15 @@ class ApartadoItemCrear(BaseModel):
     # la cantidad (1) y la medida (sus metros) los pone el backend.
     rollo_id: int | None = None
 
+    # Solo POR_STOCK: el sistema no tiene ese producto (0 o negativo) pero
+    # sí está en la bodega; se aparta igual (ver ApartadoItem.hay_fisico).
+    hay_fisico: bool = False
+
     @model_validator(mode="after")
     def _exigir_campos_segun_modalidad(self) -> "ApartadoItemCrear":
         self.empresa = (self.empresa or "").strip().upper()
+        if self.modalidad != ModalidadApartado.POR_STOCK:
+            self.hay_fisico = False
         if self.empresa and self.empresa not in EMPRESAS_CONOCIDAS:
             raise ValueError("La empresa del material de cada línea debe ser Arquitejas o Asia Business.")
         self.tipo_producto = (self.tipo_producto or "").strip().lower()
@@ -169,6 +175,7 @@ class ApartadoItemResponse(BaseModel):
     tipo_producto: str = ""
     # "" = material de la empresa de la cotización.
     empresa_material: str = ""
+    hay_fisico: bool = False
 
 
 class RolloParaApartarResponse(BaseModel):

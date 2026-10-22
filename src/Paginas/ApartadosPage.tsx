@@ -333,6 +333,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     Material de {EMPRESAS[it.empresaMaterial] || it.empresaMaterial}
                   </span>
                 )}
+                {it.modalidad === "por_stock" && it.hayFisico && !it.stockDescontado && (
+                  <span className="etiqueta-otra-empresa" title="El sistema no lo tenía; se confirmó que está en la bodega">
+                    Sin existencia en el sistema
+                  </span>
+                )}
                 {it.modalidad === "por_stock" && (it.medida || pideCorte(it.descripcion)) && (
                   <span className="apartado-linea-cortar">CORTAR{it.medida ? ` a ${it.medida} m` : ""}</span>
                 )}
@@ -802,14 +807,19 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           })()}
                           {a.resultadosBusquedaProducto[indice]?.length > 0 && (
                             <div className="inventario-tabla-contenedor" style={{ maxHeight: "180px", overflowY: "auto" }}>
-                              {a.resultadosBusquedaProducto[indice].map((p: Record<string, any>) => (
+                              {a.resultadosBusquedaProducto[indice].map((p: Record<string, any>) => {
+                                // Sin stock en el sistema: solo se puede escoger el de ESTA bodega
+                                // (si de verdad está ahí, se aparta marcando "Sí están en la bodega").
+                                const sinStock = (p.disponible_empresa ?? 1) <= 0;
+                                const deEstaBodega = p.bodega_id === Number(item.bodegaId || a.formulario.bodegaId);
+                                return (
                                 <button
                                   type="button"
                                   key={p.id}
                                   className="inventario-resultado-busqueda"
-                                  style={{ display: "block", width: "100%", textAlign: "left", padding: "0.4rem", opacity: (p.disponible_empresa ?? 1) > 0 ? 1 : 0.55 }}
-                                  disabled={(p.disponible_empresa ?? 1) <= 0}
-                                  title={(p.disponible_empresa ?? 1) <= 0 ? "No hay de este producto sin prometer en toda la empresa" : undefined}
+                                  style={{ display: "block", width: "100%", textAlign: "left", padding: "0.4rem", opacity: !sinStock ? 1 : deEstaBodega ? 0.85 : 0.55 }}
+                                  disabled={sinStock && !deEstaBodega}
+                                  title={sinStock ? (deEstaBodega ? "El sistema no lo tiene: si está en la bodega, puedes apartarlo igual" : "No hay de este producto sin prometer en toda la empresa") : undefined}
                                   onClick={() => a.seleccionarProductoParaItem(indice, p)}
                                 >
                                   <strong>{p.codigo}</strong> — {p.descripcion} · {EMPRESAS[p.empresa] || p.empresa || "sin empresa"} (stock: {p.stock})
@@ -817,16 +827,19 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                     <em style={{ display: "block", fontSize: "0.8rem", color: p.disponible_empresa > 0 ? undefined : "#b3261e" }}>
                                       {p.disponible_empresa > 0
                                         ? `Disponible en toda la empresa: ${p.disponible_empresa}`
-                                        : "Sin stock disponible en la empresa: no se puede apartar"}
+                                        : deEstaBodega
+                                          ? "El sistema no lo tiene: si está en la bodega, escógelo y marca \"Sí están en la bodega\""
+                                          : "Sin stock disponible en la empresa: no se puede apartar"}
                                     </em>
                                   )}
-                                  {p.bodega_id !== Number(item.bodegaId || a.formulario.bodegaId) && (
+                                  {!deEstaBodega && (
                                     <em style={{ display: "block", fontSize: "0.8rem" }}>
                                       Está en {almacen.bodegas.find((b) => b.id === p.bodega_id)?.nombre || "otra bodega"}: se pide con un traslado.
                                     </em>
                                   )}
                                 </button>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </>
@@ -855,7 +868,20 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           )}
                         </p>
                       )}
-                      {item.modalidad === "por_stock" && avisoOtraBodega(item, indice)}
+                      {item.modalidad === "por_stock" && item.productoId && !item.stockDescontado
+                        && (item.hayFisico
+                          || (disponibilidadItems[indice]?.datos?.cantidadDisponible ?? Infinity) + 0.005 < (Number(item.cantidad) || 1)) && (
+                        <label className="apartado-aviso-otra-bodega" style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", cursor: "pointer" }}>
+                          <input type="checkbox" checked={Boolean(item.hayFisico)}
+                            onChange={(e) => a.actualizarItemApartado(indice, "hayFisico", e.target.checked)} />
+                          <span>
+                            <strong>Sí están en la bodega.</strong> El sistema no los tiene, pero se apartan igual: al terminar la
+                            producción entran y salen de una vez (el número del sistema no cambia) y quedan en "Sacado sin
+                            existencia" para corregir el inventario.
+                          </span>
+                        </label>
+                      )}
+                      {item.modalidad === "por_stock" && !item.hayFisico && avisoOtraBodega(item, indice)}
                     </div>
                   )}
 

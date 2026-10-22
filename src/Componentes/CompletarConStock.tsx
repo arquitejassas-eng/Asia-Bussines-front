@@ -66,15 +66,21 @@ function CompletarConStock({ itemId, descripcion, alTerminar, alCerrar }: {
       setError(`A esta línea solo le faltan ${maxUnidades} por producir.`);
       return;
     }
-    if (sinExistencia && !hayFisico) {
-      setError("El sistema no tiene esas unidades libres. Si de verdad están en la bodega, marca \"Sí las tengo en la bodega\".");
-      return;
+    // El sistema no las tiene: se pregunta en una ventana (la casilla sola no se veía).
+    let confirmado = hayFisico;
+    if (sinExistencia && !confirmado) {
+      confirmado = window.confirm(
+        `El sistema tiene ${Math.max(elegido.disponible, 0)} libres de ${elegido.codigo} y vas a sacar ${n}.\n\n` +
+        "¿Sí las tienes en la bodega? Si le das Aceptar, salen de una vez para esta cotización y Admin Inventario lo ve para corregir el inventario.",
+      );
+      if (!confirmado) return;
+      setHayFisico(true);
     }
     setGuardando(true);
     setError("");
     try {
       await api.post(`/apartados/items/${itemId}/completar-con-stock`,
-        { producto_id: elegido.id, cantidad: n, hay_fisico: sinExistencia && hayFisico });
+        { producto_id: elegido.id, cantidad: n, hay_fisico: sinExistencia && confirmado });
       alTerminar();
     } catch (err) {
       setError(err instanceof ErrorApi ? err.message : "No se pudo completar con stock.");
@@ -119,25 +125,29 @@ function CompletarConStock({ itemId, descripcion, alTerminar, alCerrar }: {
         <label>¿Cuántas salen de stock?</label>
         <input type="number" min="1" max={maxUnidades || undefined} step="1" value={cantidad}
           onChange={(e) => setCantidad(e.target.value)} style={{ width: "6rem" }} />
+      </div>
+      {/* Antes de los botones y resaltado: abajo de "Completar" nadie lo veía. */}
+      {sinExistencia && elegido && (
+        <label style={{
+          display: "flex", gap: "0.6rem", alignItems: "flex-start", cursor: "pointer", margin: "0.6rem 0",
+          padding: "0.7rem 0.8rem", borderRadius: "8px", border: "2px solid var(--at-terra, #b7451f)",
+          background: "color-mix(in srgb, var(--at-terra, #b7451f) 8%, transparent)",
+        }}>
+          <input type="checkbox" checked={hayFisico} onChange={(e) => setHayFisico(e.target.checked)}
+            style={{ width: "1.3rem", height: "1.3rem", marginTop: "0.1rem", flex: "0 0 auto" }} />
+          <span>
+            El sistema tiene <strong>{Math.max(elegido.disponible, 0)}</strong> libres de {elegido.codigo} y vas a sacar{" "}
+            <strong>{n}</strong>. <strong>Marca aquí si sí las tienes en la bodega:</strong> salen de una vez para esta
+            cotización y Admin Inventario lo ve para corregir el inventario.
+          </span>
+        </label>
+      )}
+      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginTop: "0.5rem" }}>
         <button type="button" className="produccion-boton-primario" disabled={guardando || !elegido} onClick={completar}>
           {guardando ? "Guardando..." : "Completar"}
         </button>
         <button type="button" className="produccion-boton-secundario" onClick={alCerrar}>Cancelar</button>
       </div>
-      {sinExistencia && elegido && (
-        <div>
-          <p style={{ margin: "0.5rem 0 0.25rem" }}>
-            El sistema tiene <strong>{Math.max(elegido.disponible, 0)}</strong> libres de {elegido.codigo}, pero vas a sacar {n}.
-          </p>
-          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", cursor: "pointer" }}>
-            <input type="checkbox" checked={hayFisico} onChange={(e) => setHayFisico(e.target.checked)} />
-            <span>
-              <strong>Sí las tengo en la bodega.</strong> Salen de una vez para esta cotización y Admin Inventario
-              lo ve para corregir el inventario.
-            </span>
-          </label>
-        </div>
-      )}
       {error && <p className="produccion-error">{error}</p>}
     </div>
   );

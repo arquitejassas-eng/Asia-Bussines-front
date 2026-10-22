@@ -103,7 +103,7 @@ def _reservas_productos(db: Session) -> dict[tuple[str, int], float]:
         .join(ApartadoItem, ApartadoItem.producto_id == Producto.id)
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
         .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
-                ApartadoItem.stock_descontado.is_(False))
+                ApartadoItem.stock_descontado.is_(False), ApartadoItem.hay_fisico.is_(False))
         .group_by(Producto.codigo, Apartado.bodega_id)
         .all()
     )
@@ -126,7 +126,7 @@ def _agregar_por_empresa_productos(db: Session, filas: list[FilaComparativoRespo
         .join(ApartadoItem, ApartadoItem.producto_id == Producto.id)
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
         .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
-                ApartadoItem.stock_descontado.is_(False), *filtro)
+                ApartadoItem.stock_descontado.is_(False), ApartadoItem.hay_fisico.is_(False), *filtro)
         .group_by(Producto.codigo, Producto.empresa)
         .all()
     )

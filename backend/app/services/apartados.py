@@ -264,7 +264,8 @@ def cobertura_rollo(db: Session, *, bodega_id: int | None, codigo_interno: str, 
 
 def cobertura_producto(db: Session, *, producto: Producto) -> dict[int, float]:
     """Unidades realmente cubiertas de cada ítem POR_STOCK activo del producto."""
-    items = _items_activos_en_orden(db, bodega_id=producto.bodega_id, filtro=ApartadoItem.producto_id == producto.id)
+    items = _items_activos_en_orden(db, bodega_id=producto.bodega_id,
+                                    filtro=(ApartadoItem.producto_id == producto.id) & ApartadoItem.hay_fisico.is_(False))
     return _repartir_en_orden(items, lambda it: 0 if it.stock_descontado else it.cantidad, float(producto.stock))
 
 
@@ -322,7 +323,7 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
         faltantes: list[str] = []
         for item in apartado.items:
             if item.modalidad == ModalidadApartado.POR_STOCK:
-                if item.stock_descontado:
+                if item.stock_descontado or item.hay_fisico:
                     continue
                 producto = db.get(Producto, item.producto_id)
                 if producto is None:
@@ -490,6 +491,7 @@ def cantidad_reservada_producto(db: Session, *, bodega_id: int, producto_id: int
             ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
             ApartadoItem.producto_id == producto_id,
             ApartadoItem.stock_descontado.is_(False),
+            ApartadoItem.hay_fisico.is_(False),  # no aparta: el sistema no lo tenía
         )
         .scalar()
     )
@@ -773,6 +775,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     solicitado_por_producto: dict[int, float] = {}
     for item in datos.items:
         if item.modalidad == ModalidadApartado.POR_STOCK:
+            if item.hay_fisico:
+                continue  # el sistema no lo tiene: se confirmó que está en la bodega
             solicitado_por_producto[item.producto_id] = solicitado_por_producto.get(item.producto_id, 0) + item.cantidad
         else:
             metros = metros_de_linea(item.cantidad, item.medida, item.tipo_producto)
@@ -804,7 +808,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 apartado_id=apartado.id, modalidad=ModalidadApartado.POR_STOCK,
                 producto_id=item.producto_id, descripcion=item.descripcion, cantidad=item.cantidad,
                 medida=item.medida,  # opcional: cortar cada unidad a esta medida (m)
-                empresa_material=_empresa_material_linea(db, item, datos.empresa),
+                empresa_material=_empresa_material_linea(db, item, datos.empresa), hay_fisico=item.hay_fisico,
             ))
         else:
             db.add(ApartadoItem(
@@ -928,7 +932,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     if misma_bodega:
         for item in apartado.items:
             if item.modalidad == ModalidadApartado.POR_STOCK:
-                if not item.stock_descontado:
+                if not item.stock_descontado and not item.hay_fisico:
                     antes_producto[item.producto_id] = antes_producto.get(item.producto_id, 0) + item.cantidad
             else:
                 antes_codigo[item.codigo_interno] = antes_codigo.get(item.codigo_interno, 0) + (item.metros_requeridos or 0)
@@ -936,7 +940,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     despues_producto: dict[int, float] = {}
     for linea in datos.items:
         if linea.modalidad == ModalidadApartado.POR_STOCK:
-            if linea.id and actuales[linea.id].stock_descontado:
+            if (linea.id and actuales[linea.id].stock_descontado) or linea.hay_fisico:
                 continue
             despues_producto[linea.producto_id] = despues_producto.get(linea.producto_id, 0) + linea.cantidad
         else:
@@ -963,6 +967,8 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             item.empresa_material = empresa_material
             if item.modalidad == ModalidadApartado.POR_STOCK:
                 item.producto_id, item.cantidad, item.medida = linea.producto_id, linea.cantidad, linea.medida
+                if not item.stock_descontado:
+                    item.hay_fisico = linea.hay_fisico
             else:
                 item.codigo_interno, item.cantidad, item.medida = linea.codigo_interno, linea.cantidad, linea.medida
                 item.tipo_producto = linea.tipo_producto
@@ -971,7 +977,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             apartado.items.append(ApartadoItem(
                 modalidad=ModalidadApartado.POR_STOCK, producto_id=linea.producto_id,
                 descripcion=linea.descripcion, cantidad=linea.cantidad, medida=linea.medida,
-                empresa_material=empresa_material,
+                empresa_material=empresa_material, hay_fisico=linea.hay_fisico,
             ))
         else:
             apartado.items.append(ApartadoItem(
@@ -1212,24 +1218,37 @@ def completar_con_stock(
     )
     apartado.items.append(linea_stock)
     if sin_existencia:
-        # Entran como ajuste y salen de una vez: el stock del sistema no cambia.
-        ahora = datetime.now(timezone.utc)
-        nota = (f"Planta sacó {cantidad:g} de la bodega para la cotización {apartado.numero_cotizacion}, "
-                f"aunque el sistema tenía {float(producto.stock):g}.")
-        for tipo, motivo, origen, destino in (
-            (TipoMovimiento.ENTRADA, MOTIVO_SACADO_SIN_EXISTENCIA, None, apartado.bodega_id),
-            (TipoMovimiento.SALIDA, "apartado_stock", apartado.bodega_id, None),
-        ):
-            db.add(Movimiento(
-                fecha=ahora, tipo=tipo, motivo=motivo, producto_codigo=producto.codigo,
-                producto_descripcion=producto.descripcion, bodega_origen_id=origen, bodega_destino_id=destino,
-                cantidad=cantidad, usuario=usuario.correo, observaciones=nota, cotizacion=apartado.numero_cotizacion,
-            ))
-        linea_stock.stock_descontado = True
-        registrar_prestamo(db, apartado=apartado, empresa_material=producto.empresa, tipo=PRODUCTO, codigo=producto.codigo,
-                           descripcion=producto.descripcion, cantidad=cantidad, usuario=usuario, origen="stock_planta", fecha=ahora)
+        sacar_sin_existencia(db, apartado=apartado, item=linea_stock, producto=producto, usuario=usuario,
+                             quien="Planta", origen="stock_planta")
     db.flush()
     return apartado
+
+
+def sacar_sin_existencia(
+    db: Session, *, apartado: Apartado, item: ApartadoItem, producto: Producto, usuario: Usuario,
+    quien: str, origen: str, fecha: datetime | None = None,
+) -> None:
+    """Sale una línea de stock que el sistema no tenía (en 0 o en negativo)
+    pero que sí estaba en la bodega: entra como ajuste y sale de una vez la
+    misma cantidad, así que el stock del sistema no cambia (el negativo se
+    corrige con un conteo). Queda en Movimientos con motivo
+    MOTIVO_SACADO_SIN_EXISTENCIA ("Sacado sin existencia" en Préstamos) y, si
+    el producto es de la otra empresa, como préstamo."""
+    ahora = fecha or datetime.now(timezone.utc)
+    nota = (f"{quien} sacó {item.cantidad:g} de la bodega para la cotización {apartado.numero_cotizacion}, "
+            f"aunque el sistema tenía {float(producto.stock):g}.")
+    for tipo, motivo, origen_bodega, destino in (
+        (TipoMovimiento.ENTRADA, MOTIVO_SACADO_SIN_EXISTENCIA, None, apartado.bodega_id),
+        (TipoMovimiento.SALIDA, "apartado_stock", apartado.bodega_id, None),
+    ):
+        db.add(Movimiento(
+            fecha=ahora, tipo=tipo, motivo=motivo, producto_codigo=producto.codigo,
+            producto_descripcion=producto.descripcion, bodega_origen_id=origen_bodega, bodega_destino_id=destino,
+            cantidad=item.cantidad, usuario=usuario.correo, observaciones=nota, cotizacion=apartado.numero_cotizacion,
+        ))
+    item.stock_descontado = True
+    registrar_prestamo(db, apartado=apartado, empresa_material=producto.empresa, tipo=PRODUCTO, codigo=producto.codigo,
+                       descripcion=producto.descripcion, cantidad=item.cantidad, usuario=usuario, origen=origen, fecha=ahora)
 
 
 def _partir_linea(item: ApartadoItem, cantidad: float, nueva_id: int) -> ApartadoItem:
@@ -1240,7 +1259,7 @@ def _partir_linea(item: ApartadoItem, cantidad: float, nueva_id: int) -> Apartad
         apartado_id=nueva_id, modalidad=item.modalidad, codigo_interno=item.codigo_interno,
         descripcion=_cantidad_en_descripcion(item.descripcion, item.cantidad, cantidad),
         cantidad=cantidad, medida=item.medida, producto_id=item.producto_id, stock_descontado=item.stock_descontado,
-        tipo_producto=item.tipo_producto, empresa_material=item.empresa_material,
+        tipo_producto=item.tipo_producto, empresa_material=item.empresa_material, hay_fisico=item.hay_fisico,
     )
     if item.metros_requeridos is not None:
         copia.metros_requeridos = round(item.metros_requeridos * proporcion, 2)
@@ -1438,9 +1457,11 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
     # producto_id, por si el mismo producto aparece en más de un ítem) antes
     # de descontar nada, para que un fallo en cualquiera de ellos no deje
     # descuentos parciales de los demás.
-    cantidad_por_producto: dict[int, float] = {}
+    # Las líneas "sí está en la bodega" (hay_fisico) no descuentan: no cuentan aquí.
+    cantidad_por_producto: dict[int, float] = {item.producto_id: 0 for item in items_stock}
     for item in items_stock:
-        cantidad_por_producto[item.producto_id] = cantidad_por_producto.get(item.producto_id, 0) + item.cantidad
+        if not item.hay_fisico:
+            cantidad_por_producto[item.producto_id] += item.cantidad
 
     productos_bloqueados: dict[int, Producto] = {}
     for producto_id, cantidad_total in cantidad_por_producto.items():
@@ -1452,7 +1473,7 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
         )
         if producto is None:
             raise HTTPException(status_code=404, detail=f"Producto {producto_id} no encontrado.")
-        if cantidad_total > producto.stock:
+        if cantidad_total > 0 and cantidad_total > producto.stock:
             raise HTTPException(
                 status_code=400,
                 detail=f"Stock insuficiente de '{producto.codigo}' para completar este apartado.",
@@ -1464,6 +1485,10 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
     ahora = datetime.now(timezone.utc)
     for item in items_stock:
         producto = productos_bloqueados[item.producto_id]
+        if item.hay_fisico:
+            sacar_sin_existencia(db, apartado=apartado, item=item, producto=producto, usuario=usuario,
+                                 quien="Planta", origen="fin_produccion", fecha=ahora)
+            continue
         # Producto.stock es Numeric (Decimal en tiempo de ejecucion) mientras
         # que ApartadoItem.cantidad es Float -- no se pueden restar
         # directamente (TypeError). Mismo patron de conversion que ya usa

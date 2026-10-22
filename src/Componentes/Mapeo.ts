@@ -124,7 +124,9 @@ export function apartadoItemDesdeApi(i: RegistroApi) {
     // Solo por rollo: "" = teja; "caballete" / "flanche" (apartan cortes × medida).
     tipoProducto: texto(i.tipo_producto),
     // Empresa del material de la línea cuando no es la de la cotización ("" = la misma).
-    empresaMaterial: texto(i.empresa_material) };
+    empresaMaterial: texto(i.empresa_material),
+    // Stock que el sistema no tenía pero sí estaba en la bodega (se apartó igual).
+    hayFisico: Boolean(i.hay_fisico) };
 }
 
 export function apartadoDesdeApi(a: RegistroApi) {
