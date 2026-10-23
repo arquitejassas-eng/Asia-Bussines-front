@@ -318,7 +318,11 @@ def registrar_movimiento(datos: MovimientoCrear, db: Session = Depends(get_db), 
 def historial(
     codigo_producto: str = "", codigo_rollo: str = "", cotizacion: str = "", empresa_externa: str = "", tipo: TipoMovimiento | None = None, fecha_desde: datetime | None = None,
     fecha_hasta: datetime | None = None, pagina: int = Query(1, ge=1), tamano: int = Query(30, ge=1, le=100),
-    paginado: bool = False, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+    paginado: bool = False,
+    # Varias cotizaciones EXACTAS a la vez (?cotizaciones=a&cotizaciones=b):
+    # el historial agrupa por cotización y antes pedía una por una.
+    cotizaciones: list[str] = Query(default=[]),
+    db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Movimiento] | PaginaMovimientos:
     # Una bodega solo ve los movimientos en que fue origen o destino. Las
     # cuentas sin bodega (admin_inventario, vendedor, superadmin) no tienen
@@ -334,6 +338,7 @@ def historial(
     if codigo_producto: consulta = consulta.filter(Movimiento.producto_codigo.ilike(f"%{codigo_producto}%"))
     if codigo_rollo: consulta = consulta.filter(Movimiento.identificador_rollo.ilike(f"%{codigo_rollo}%"))
     if cotizacion: consulta = consulta.filter(Movimiento.cotizacion.ilike(f"%{cotizacion}%"))
+    if cotizaciones: consulta = consulta.filter(Movimiento.cotizacion.in_(cotizaciones))
     if empresa_externa: consulta = consulta.filter(Movimiento.empresa_externa.ilike(f"%{empresa_externa}%"))
     if tipo: consulta = consulta.filter(Movimiento.tipo == tipo)
     if fecha_desde: consulta = consulta.filter(Movimiento.fecha >= fecha_desde)

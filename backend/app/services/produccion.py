@@ -332,6 +332,16 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
                 detail=f"Este apartado es de {apartado_item.codigo_interno} y elegiste rollos de {codigo}. "
                 f"Selecciona rollos del código {apartado_item.codigo_interno}.",
             )
+        # Una línea de caballete/flanche se produce como lo que es. Al revés
+        # sí se deja: las líneas viejas de teja a veces eran caballetes.
+        tipo_linea = apartado_item.tipo_producto or ""
+        if tipo_linea in SECCIONES_POR_TIPO_PRODUCTO and datos.tipo_producto != tipo_linea:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Esa línea de la cotización es de {NOMBRE_POR_TIPO_PRODUCTO[tipo_linea]} y la estás registrando "
+                f"como {NOMBRE_POR_TIPO_PRODUCTO.get(datos.tipo_producto, 'teja')}. Vuelve a elegir la línea en "
+                "\"Iniciar producción\" para que el formulario quede con el tipo correcto.",
+            )
 
     # Varias líneas de la misma cotización y el mismo código (color +
     # espesor) en una sola producción: solo cambia la medida de las tejas.
@@ -510,11 +520,15 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     # Lo que se aplica al apartado sale de SU PROPIA reserva; solo el resto
     # (producción libre, o lo que exceda al apartado) tiene que caber en el
     # material libre del código -- nunca en lo que otros apartados reservaron.
+    empresas_rollos = {r.empresa or "" for r in bloqueados}
     validar_reserva_rollos(
         db, bodega_id=usuario.bodega_id, codigo_interno=codigo, metros_salen=total,
         metros_reserva_propia=aplicado_al_apartado, rollos_codigo=rollos_codigo,
         apartado_item_id=apartado_item.id if apartado_item else None,
         otros_item_ids=[it.id for it in items_produccion[1:]],
+        # La empresa de los rollos que salen (si son de una sola): la cuenta
+        # de libre es de esa empresa (ver validar_reserva_rollos).
+        empresa=next(iter(empresas_rollos)) if len(empresas_rollos) == 1 else "",
     )
 
     sello = ahora.strftime("%Y%m%d%H%M%S"); codigo_unico = f"PROD-{sello}-{token_hex(3).upper()}"

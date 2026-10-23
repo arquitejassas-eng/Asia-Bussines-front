@@ -192,18 +192,19 @@ def marcar_envio_no_llego(db: Session, envio_id: int, usuario: Usuario) -> Envio
     for item in envio.items:
         if item.producto_codigo is not None:
             cantidad = _decimal(item.cantidad or 0)
-            producto_admin = (
-                db.query(Producto)
-                .filter(Producto.codigo == item.producto_codigo, Producto.bodega_id.is_(None))
-                .with_for_update()
-                .first()
-            )
+            # Vuelve al producto de LA MISMA empresa (el mismo código existe en
+            # Arquitejas y en Asia). Un envío viejo sin empresa se devuelve
+            # como antes, por el código.
+            consulta = db.query(Producto).filter(Producto.codigo == item.producto_codigo, Producto.bodega_id.is_(None))
+            if item.empresa:
+                consulta = consulta.filter(Producto.empresa == item.empresa)
+            producto_admin = consulta.order_by(Producto.id).with_for_update().first()
             if producto_admin:
                 producto_admin.stock += cantidad
             else:
                 db.add(Producto(
                     bodega_id=None, codigo=item.producto_codigo, descripcion=item.descripcion,
-                    entrada=item.cantidad, stock=item.cantidad,
+                    empresa=item.empresa or "", entrada=item.cantidad, stock=item.cantidad,
                 ))
         # Los rollos nunca cambiaron de bodega_id — no hay nada que revertir.
 

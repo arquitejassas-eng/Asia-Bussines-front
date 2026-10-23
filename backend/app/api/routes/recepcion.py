@@ -293,16 +293,17 @@ def _rollo_a_schema(r: srv.RolloClasificado) -> dict:
 def _marcar_problemas_de_referencia(db: Session, rollos: list[srv.RolloClasificado], bodega_id: int | None) -> None:
     """La referencia es el identificador único del rollo físico: marca las
     filas sin referencia, las repetidas dentro del mismo archivo y las que
-    ya están registradas en esta bodega (ej. el mismo packing list subido
-    dos veces). Se recalcula al confirmar, por si otro usuario registró
-    algo entre la verificación y la confirmación."""
+    ya están registradas en CUALQUIER bodega o en Admin Inventario (ej. el
+    mismo packing list subido dos veces, o un rollo que ya entró por otra
+    sede): un rollo físico existe una sola vez. Se recalcula al confirmar,
+    por si otro usuario registró algo entre la verificación y la confirmación."""
     referencias = [(r.rollo or "").strip() for r in rollos]
     conteo = Counter(ref for ref in referencias if ref)
     existentes: set[str] = set()
     if conteo:
         existentes = {
             ref for (ref,) in db.query(Rollo.identificador_rollo)
-            .filter(Rollo.bodega_id == bodega_id, Rollo.identificador_rollo.in_(list(conteo)))
+            .filter(Rollo.identificador_rollo.in_(list(conteo)))
             .all()
         }
     for rollo, ref in zip(rollos, referencias):

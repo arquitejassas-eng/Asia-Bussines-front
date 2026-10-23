@@ -82,14 +82,20 @@ export function useHistorialInventario(bodegaId: number | undefined) {
         );
       const movimientosDeMiBodega = deMiBodega(datos.items);
 
+      // Todos los movimientos de las cotizaciones de esta página en UNA sola
+      // petición (antes era una por cotización: hasta 31 cada 10 segundos).
       const cotizaciones = [...new Set(movimientosDeMiBodega.map((m) => m.cotizacion).filter(Boolean))];
-      const movimientosPorCotizacion = new Map(await Promise.all(cotizaciones.map(async (cotizacion) => {
-        const consultaCotizacion = new URLSearchParams(filtrosApi);
-        consultaCotizacion.set("cotizacion", cotizacion);
-        const todos = await api.get<Record<string, unknown>[]>(`/inventario/historial?${consultaCotizacion.toString()}`);
-        // El filtro de la API es "contiene"; aquí solo la cotización exacta.
-        return [cotizacion, deMiBodega(todos || []).filter((m) => m.cotizacion === cotizacion)] as const;
-      })));
+      const movimientosPorCotizacion = new Map<string, Movimiento[]>();
+      if (cotizaciones.length) {
+        const consultaCotizaciones = new URLSearchParams(filtrosApi);
+        cotizaciones.forEach((cotizacion) => consultaCotizaciones.append("cotizaciones", cotizacion));
+        const todos = await api.get<Record<string, unknown>[]>(`/inventario/historial?${consultaCotizaciones.toString()}`);
+        for (const m of deMiBodega(todos || [])) {
+          if (!cotizaciones.includes(m.cotizacion)) continue;
+          if (!movimientosPorCotizacion.has(m.cotizacion)) movimientosPorCotizacion.set(m.cotizacion, []);
+          movimientosPorCotizacion.get(m.cotizacion)!.push(m);
+        }
+      }
       if (consulta !== ultimaConsulta.current) return;
       setHistorial(movimientosDeMiBodega);
       setFilasHistorial(agruparPorCotizacion(movimientosDeMiBodega, movimientosPorCotizacion));

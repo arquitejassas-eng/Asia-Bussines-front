@@ -69,7 +69,7 @@ def registrar_consumo_rollo(
     cantidad = round(min(cantidad, rollo.metros_disponibles), 2)
     validar_reserva_rollos(
         db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
-        metros_salen=cantidad, rollos_codigo=rollos_codigo,
+        metros_salen=cantidad, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
     )
     ahora = datetime.now(timezone.utc)
     rollo.metros_disponibles = _metros_limpios(rollo.metros_disponibles - cantidad)
@@ -101,7 +101,7 @@ def registrar_salida_externa_rollo(
         raise HTTPException(status_code=400, detail="Este rollo ya está agotado, no tiene metros disponibles.")
     validar_reserva_rollos(
         db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
-        metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo,
+        metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
     )
     ahora = datetime.now(timezone.utc)
     cantidad = round(rollo.metros_disponibles, 2)

@@ -97,6 +97,19 @@ def exigir_rollo_libre(db: Session, rollo: Rollo, *, item_id: int | None = None)
         )
 
 
+def rollos_en_traslado(db: Session, rollo_ids) -> set[int]:
+    """De esos rollos, los aceptados o en camino para un traslado: siguen
+    anotados en su bodega hasta que los reciben, pero ya no son de ella (no
+    cubren cotizaciones ni dejan sacar otro rollo contando con sus metros)."""
+    from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, Solicitud
+
+    ids = [i for i in rollo_ids if i is not None]
+    if not ids:
+        return set()
+    return {i for (i,) in db.query(Solicitud.rollo_id).filter(
+        Solicitud.rollo_id.in_(ids), Solicitud.estado.in_(ESTADOS_TRASLADO_EN_CURSO))}
+
+
 def rollos_apartados_completos(db: Session, rollo_ids) -> set[int]:
     ids = list(rollo_ids)
     if not ids:
@@ -253,15 +266,6 @@ def _repartir_en_orden(items: list[ApartadoItem], pendiente, fisico: float) -> d
     return cubierto
 
 
-def cobertura_rollo(db: Session, *, bodega_id: int | None, codigo_interno: str, fisico: float | None = None) -> dict[int, float]:
-    """Metros realmente cubiertos de cada ítem POR_ROLLO activo del código."""
-    if fisico is None:
-        rollos = db.query(Rollo).filter(Rollo.bodega_id == bodega_id, Rollo.codigo_interno == codigo_interno)
-        fisico = sum(r.metros_disponibles for r in rollos)
-    items = _items_activos_en_orden(db, bodega_id=bodega_id, filtro=ApartadoItem.codigo_interno == codigo_interno)
-    return _repartir_en_orden(items, lambda it: (it.metros_requeridos or 0) - (it.metros_consumidos or 0), fisico)
-
-
 def cobertura_producto(db: Session, *, producto: Producto) -> dict[int, float]:
     """Unidades realmente cubiertas de cada ítem POR_STOCK activo del producto."""
     items = _items_activos_en_orden(db, bodega_id=producto.bodega_id,
@@ -398,7 +402,7 @@ def _libre_por_bodega_codigos(db: Session, claves: set[tuple[str, str]]) -> dict
 def validar_reserva_rollos(
     db: Session, *, bodega_id: int | None, codigo_interno: str, metros_salen: float,
     rollos_codigo: list[Rollo], metros_reserva_propia: float = 0.0, apartado_item_id: int | None = None,
-    otros_item_ids: list[int] | tuple[int, ...] = (),
+    otros_item_ids: list[int] | tuple[int, ...] = (), empresa: str = "",
 ) -> None:
     """Impide que salga material de un código que ya está apartado.
 
@@ -409,9 +413,26 @@ def validar_reserva_rollos(
     reservado): solo el resto tiene que caber en lo libre. Así, después de
     la operación, lo físico nunca queda por debajo de lo reservado.
     `rollos_codigo` deben venir de `bloquear_rollos_codigo` (ya bloqueados)
-    para que nadie cambie los números mientras se valida."""
-    fisico = round(sum(r.metros_disponibles for r in rollos_codigo), 2)
-    reservado = metros_reservados_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno)
+    para que nadie cambie los números mientras se valida.
+
+    Con `empresa` (la del rollo que sale), la cuenta es solo de esa empresa:
+    sus rollos y las líneas con material suyo, igual que los faltantes de
+    Apartados. Antes se sumaban las dos y un rollo de Arquitejas "cubría" una
+    cotización de Asia (y al revés). Los rollos y las cotizaciones viejas sin
+    empresa cuentan para las dos."""
+    filtro = ApartadoItem.codigo_interno == codigo_interno
+    if empresa:
+        rollos_codigo = [r for r in rollos_codigo if (r.empresa or "") in (empresa, "")]
+        filtro = filtro & func.coalesce(EMPRESA_DE_LINEA, "").in_((empresa, ""))
+    # Un rollo que ya se va en un traslado no cuenta: si no, se podía aceptar
+    # otro traslado (o consumir otro rollo) con los metros de ese.
+    en_traslado = rollos_en_traslado(db, [r.id for r in rollos_codigo])
+    fisico = round(sum(r.metros_disponibles for r in rollos_codigo if r.id not in en_traslado), 2)
+    reservado = round(float(
+        db.query(func.coalesce(func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos), 0))
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), filtro)
+        .scalar() or 0), 2)
     # Con material "en camino" lo reservado puede superar lo físico: lo libre
     # nunca baja de 0 y la reserva propia solo cuenta lo que de verdad está
     # cubierto (por orden de creación), así una cotización anterior produce
@@ -419,16 +440,18 @@ def validar_reserva_rollos(
     libre = round(max(fisico - reservado, 0), 2)
     if apartado_item_id is not None:
         # Varias líneas producidas juntas: su reserva propia es la de todas.
-        cobertura = cobertura_rollo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, fisico=fisico)
+        cobertura = _repartir_en_orden(_items_activos_en_orden(db, bodega_id=bodega_id, filtro=filtro),
+                                       lambda it: (it.metros_requeridos or 0) - (it.metros_consumidos or 0), fisico)
         cubierto = sum(cobertura.get(i, 0) for i in (apartado_item_id, *otros_item_ids))
         metros_reserva_propia = min(metros_reserva_propia, cubierto)
     neto = round(metros_salen - metros_reserva_propia, 2)
     if neto > libre + 0.005:
-        cotizaciones = _cotizaciones_que_reservan(db, bodega_id=bodega_id, filtro=ApartadoItem.codigo_interno == codigo_interno)
+        cotizaciones = _cotizaciones_que_reservan(db, bodega_id=bodega_id, filtro=filtro)
+        de_empresa = f" de {EMPRESAS_CONOCIDAS.get(empresa, empresa)}" if empresa else ""
         raise HTTPException(
             status_code=400,
             detail=(
-                f"No hay suficiente material libre del código {codigo_interno}: hay {fisico} m en la bodega, "
+                f"No hay suficiente material libre{de_empresa} del código {codigo_interno}: hay {fisico} m en la bodega, "
                 f"pero {reservado} m están apartados para cotizaciones{cotizaciones}. "
                 f"Libres: {libre} m; esta operación necesita {neto} m. "
                 "Para usar material apartado, regístralo desde la producción de ese apartado o cancela el apartado."
@@ -493,7 +516,9 @@ def disponibilidad_por_codigo(db: Session, *, bodega_id: int, codigo_interno: st
     if empresa:
         rollos = [r for r in rollos if r.empresa == empresa]
 
-    metros_disponibles_rollos = round(sum(r.metros_disponibles for r in rollos), 2)
+    # Lo que ya se va en un traslado no se puede apartar aquí (ver validar_reserva_rollos).
+    en_traslado = rollos_en_traslado(db, [r.id for r in rollos])
+    metros_disponibles_rollos = round(sum(r.metros_disponibles for r in rollos if r.id not in en_traslado), 2)
     metros_consumidos = round(sum(r.metros_consumidos for r in rollos), 2)
     reservados = metros_reservados_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, empresa=empresa)
     # Bolsa de la empresa (no de una bodega): lo que viene en camino más lo
@@ -1450,23 +1475,63 @@ def cancelar_apartado(db: Session, apartado_id: int, usuario: Usuario) -> Aparta
     solo se podía en APARTADO: si el cliente desistía después de enviarlo a
     producción, la reserva quedaba bloqueada para siempre. Al cancelar, lo
     que faltaba por producir deja de estar reservado (la reserva se deriva
-    del estado, ver metros_reservados_codigo); lo ya producido no se revierte.
-    El stock de ítems POR_STOCK solo se descuenta al terminar la producción,
-    así que en estos estados todavía no hay nada que devolver."""
+    del estado, ver metros_reservados_codigo); la lámina ya producida no se
+    revierte. Los productos de stock que ya se descontaron (al terminar la
+    producción con rollos completos sin salida, o por la hoja de vida)
+    vuelven a la bodega y su préstamo entre empresas se anula: no salieron
+    al cliente."""
     apartado_de_mi_bodega(db, apartado_id, usuario)
     apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
     if apartado.estado not in ESTADOS_CANCELABLES:
         raise HTTPException(status_code=400, detail="Este apartado ya terminó su producción, fue entregado o ya estaba cancelado: no se puede cancelar.")
+    _devolver_stock_descontado(db, apartado, usuario)
     apartado.estado = EstadoApartado.CANCELADO
     apartado.cancelado_por = usuario.correo
     apartado.fecha_cancelado = datetime.now(timezone.utc)
     return apartado
 
 
+def _devolver_stock_descontado(db: Session, apartado: Apartado, usuario: Usuario) -> None:
+    """Las líneas de stock ya descontadas de una cotización que se cancela:
+    sus unidades vuelven al producto y los préstamos de producto de esta
+    cotización que no se han saldado se borran (el préstamo no ocurrió). Una
+    línea "sacada sin existencia" nunca bajó el stock del sistema (entró y
+    salió lo mismo), así que tampoco se le suma nada."""
+    from app.models.prestamo import PrestamoEmpresa
+
+    devueltas = [it for it in apartado.items if it.modalidad == ModalidadApartado.POR_STOCK
+                 and it.stock_descontado and it.producto_id]
+    if not devueltas:
+        return
+    ahora = datetime.now(timezone.utc)
+    productos = {p.id: p for p in db.query(Producto).filter(Producto.id.in_({it.producto_id for it in devueltas}))
+                 .order_by(Producto.id).with_for_update().populate_existing()}
+    for item in devueltas:
+        producto = productos.get(item.producto_id)
+        item.stock_descontado = False
+        if producto is None or item.hay_fisico:
+            continue
+        producto.stock += Decimal(str(item.cantidad))
+        db.add(Movimiento(
+            fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo="cancelacion_apartado",
+            producto_codigo=producto.codigo, producto_descripcion=producto.descripcion,
+            bodega_origen_id=None, bodega_destino_id=apartado.bodega_id,
+            cantidad=item.cantidad, usuario=usuario.correo, cotizacion=apartado.numero_cotizacion,
+            observaciones=f"Cotización {apartado.numero_cotizacion} cancelada: vuelve a la bodega.",
+        ))
+    db.query(PrestamoEmpresa).filter(
+        PrestamoEmpresa.apartado_id == apartado.id, PrestamoEmpresa.tipo == PRODUCTO, PrestamoEmpresa.saldado.is_(False),
+    ).delete(synchronize_session=False)
+
+
 def eliminar_apartado_cancelado(db: Session, apartado_id: int, usuario: Usuario) -> None:
     """Borra una cotización cancelada (ej. quedó mal y se creó de nuevo).
     Solo canceladas: las activas se cancelan primero. Nunca una con
-    producción registrada, para no perder el registro de lo producido."""
+    producción registrada o con salida (la hoja de vida no crea producción),
+    ni una con préstamos entre empresas: se perdería de qué cotización salió
+    ese material."""
+    from app.models.prestamo import PrestamoEmpresa
+
     apartado_de_mi_bodega(db, apartado_id, usuario)
     apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
     if apartado.estado != EstadoApartado.CANCELADO:
@@ -1475,6 +1540,16 @@ def eliminar_apartado_cancelado(db: Session, apartado_id: int, usuario: Usuario)
         raise HTTPException(
             status_code=400,
             detail="Esta cotización tiene producción registrada: no se puede eliminar para no perder ese registro.",
+        )
+    if any(_tiene_salida(item) for item in apartado.items):
+        raise HTTPException(
+            status_code=400,
+            detail="A esta cotización ya se le dio salida a material (hoja de vida): no se puede eliminar para no perder ese registro.",
+        )
+    if db.query(PrestamoEmpresa.id).filter(PrestamoEmpresa.apartado_id == apartado.id).first() is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Esta cotización tiene préstamos entre empresas anotados: no se puede eliminar para no perder de dónde salió ese material.",
         )
     db.delete(apartado)
 

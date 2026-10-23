@@ -11,7 +11,7 @@ import { nombreEmpresa } from "../Utils/empresas";
 import "../Style/Recepcionverificacion.css";
 
 const ETIQUETAS_PROBLEMA_REFERENCIA = {
-  ya_existe: { texto: "Ya existe — se omitirá", ayuda: "Este rollo ya está registrado en esta bodega; no se volverá a crear." },
+  ya_existe: { texto: "Ya existe — se omitirá", ayuda: "Este rollo ya está registrado en el inventario (en esta u otra bodega); no se volverá a crear." },
   repetida_en_archivo: { texto: "Repetido en el Excel", ayuda: "Esta referencia aparece en más de una fila del archivo." },
   sin_referencia: { texto: "Sin referencia", ayuda: "La fila no trae la referencia (identificador único) del rollo." },
 };
@@ -76,9 +76,11 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
   const puedeEditarEquivalencias = ["admin_inventario", "superadmin"].includes(sesion?.rol);
 
   // ---- Detección de equivalencias faltantes (para guiar a la encargada) ----
-  // El controlador ya marca esMaterialNuevo (tipo/color sin equivalencia) y
-  // pesoPorMetro === null (espesor sin equivalencia). Aquí solo agrupamos esa
-  // información para mostrar avisos accionables en vez de un simple "Nuevo".
+  // El controlador ya marca esMaterialNuevo (tipo/color sin equivalencia); el
+  // espesor se compara con la tabla de espesores, igual que hace el backend
+  // (antes se miraba un pesoPorMetro que el rollo nunca trae y el aviso no
+  // salía). Aquí solo agrupamos esa información para mostrar avisos
+  // accionables en vez de un simple "Nuevo".
   const tiposFaltantes = [
     ...new Set(
       c.rollos.filter((r) => r.esMaterialNuevo && r.tipoMaterial).map((r) => r.tipoMaterial)
@@ -100,9 +102,9 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
 
   const espesoresFaltantes = [
     ...new Set(
-      c.rollos.filter((r) => r.pesoPorMetro === null && r.espesor !== null).map((r) => r.espesor)
+      c.rollos.filter((r) => r.espesor !== null && r.espesor !== undefined && r.espesor !== "").map((r) => Number(r.espesor))
     ),
-  ];
+  ].filter((esp) => Number.isFinite(esp) && c.tablaEspesor.length > 0 && !c.tablaEspesor.some((e) => Math.abs(Number(e.espesor) - esp) < 1e-9));
 
   const hayEquivalenciasFaltantes =
     tiposFaltantes.length > 0 || coloresFaltantes.length > 0 || espesoresFaltantes.length > 0;

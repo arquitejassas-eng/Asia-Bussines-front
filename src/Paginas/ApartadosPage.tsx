@@ -414,7 +414,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           titulo: `¿Cancelar el apartado ${ap.numeroCotizacion}?`,
           mensaje: ap.estado === "apartado"
             ? "El material que tenía reservado queda libre para otras ventas."
-            : "Ya fue enviado a producción. Al cancelarlo, el material que faltaba por producir queda libre para otras ventas. Lo que ya se produjo NO vuelve al inventario.",
+            : "Ya fue enviado a producción. Al cancelarlo, el material que faltaba por producir queda libre para otras ventas y los productos de stock que ya se descontaron vuelven a la bodega. La lámina que ya se produjo NO vuelve al inventario.",
           textoConfirmar: "Sí, cancelar apartado",
           ejecutar: () => a.cancelarApartado(ap.id),
         })}>Cancelar</button>
@@ -502,7 +502,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
           titulo: `¿Cancelar la cotización ${numero}?`,
           mensaje: `Se cancela completa (${activas.map((p) => p.bodegaNombre).join(" y ")}). El material que tenía reservado queda libre para otras ventas. `
-            + "Lo que ya se produjo NO vuelve al inventario.",
+            + "Los productos de stock que ya se descontaron vuelven a la bodega; la lámina que ya se produjo NO vuelve al inventario.",
           textoConfirmar: "Sí, cancelar cotización",
           ejecutar: () => a.cancelarVarios(activas.map((p) => p.id)),
         })}>Cancelar</button>

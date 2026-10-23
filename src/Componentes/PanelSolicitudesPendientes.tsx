@@ -2,6 +2,7 @@
 import { Fragment, useState } from "react";
 import { EMPRESAS } from "../Utils/empresas";
 import CompletarConStock from "./CompletarConStock";
+import ModalConfirmacion from "./ModalConfirmacion";
 
 // Línea con material de la otra empresa (préstamo marcado en la cotización):
 // Planta tiene que sacar de los rollos o del stock de ESA empresa.
@@ -34,6 +35,9 @@ function PanelSolicitudesPendientes({
   const primera = solicitudesPendientes[0] || stockParaAlistar[0];
   // Línea que se está completando con una unidad (o más) que ya estaba en stock.
   const [completando, setCompletando] = useState(null);
+  // Igual que en Apartados: terminar descuenta stock y no se puede deshacer.
+  const [confirmarTerminado, setConfirmarTerminado] = useState(false);
+  const [terminando, setTerminando] = useState(false);
   return (
     <section className="produccion-tarjeta">
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -46,10 +50,28 @@ function PanelSolicitudesPendientes({
             )}
           </p>
         </div>
-        <button type="button" className="produccion-boton-secundario" onClick={() => marcarProduccionTerminada(primera.apartadoId)}>
-          Marcar producción terminada
+        <button type="button" className="produccion-boton-secundario" disabled={terminando} onClick={() => setConfirmarTerminado(true)}>
+          {terminando ? "Marcando..." : "Marcar producción terminada"}
         </button>
       </div>
+      {confirmarTerminado && (
+        <ModalConfirmacion
+          titulo={`¿Marcar como terminada la producción de ${primera?.numeroCotizacion}?`}
+          mensaje="Se cierra la producción de esta cotización y se descuenta el stock de sus productos apartados. No se puede deshacer."
+          textoConfirmar="Sí, marcar terminada"
+          textoCancelar="No, volver"
+          onCancelar={() => setConfirmarTerminado(false)}
+          onConfirmar={async () => {
+            setConfirmarTerminado(false);
+            setTerminando(true);
+            try {
+              await marcarProduccionTerminada(primera.apartadoId);
+            } finally {
+              setTerminando(false);
+            }
+          }}
+        />
+      )}
       {errorSolicitudPendiente && <p className="produccion-error">{errorSolicitudPendiente}</p>}
       {/* Una cotización solo de stock (ej. caballetes con corte) no tiene lámina por producir. */}
       {solicitudesPendientes.length > 0 && (<>

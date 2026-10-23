@@ -105,6 +105,7 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
         validar_reserva_rollos(
             db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno, metros_salen=metros,
             rollos_codigo=rollos_codigo, metros_reserva_propia=min(metros, pendiente), apartado_item_id=item.id,
+            empresa=rollo.empresa or "",
         )
         restante = round(rollo.metros_disponibles - metros, 2)
         rollo.metros_disponibles = 0.0 if restante < TOLERANCIA else restante

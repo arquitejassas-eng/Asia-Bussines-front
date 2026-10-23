@@ -57,7 +57,7 @@ def crear_solicitud_transferencia(
         # material está apartado en la otra bodega no se puede pedir.
         validar_reserva_rollos(
             db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
-            metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo,
+            metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
         )
         if db.query(Solicitud.id).filter(
             Solicitud.rollo_id == rollo.id, Solicitud.estado == EstadoSolicitud.PENDIENTE
@@ -143,7 +143,7 @@ def aceptar_solicitud_transferencia(
         # El rollo sale completo de esta bodega: no puede llevarse metros apartados aquí.
         validar_reserva_rollos(
             db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
-            metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo,
+            metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
         )
         solicitud.cantidad = rollo.metros_disponibles
     else:

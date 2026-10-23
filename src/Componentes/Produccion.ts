@@ -353,7 +353,14 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       setTipoProducto(solicitud.tipoProducto);
       setMetrosPorUnidad(String(solicitud.medida));
       setCantidadProductos(String(Math.max(1, Math.round(solicitud.metrosPendientes / porUnidad))));
+    } else {
+      // Línea de teja: si antes se eligió una de caballete, el formulario se
+      // quedaba en caballete y registraba la teja como caballete.
+      setTipoProducto("teja");
+      setMetrosPorUnidad("");
     }
+    // El sobrante de la línea anterior no es de esta (se vuelve a sembrar solo).
+    setStockAdicional([]);
     setCodigoBusqueda(solicitud.codigoInterno); // llena la tabla de "rollos disponibles" con este código.
     setEmpresaFiltro(solicitud.empresa || ""); // y solo los rollos de la empresa de la cotización.
 
@@ -599,6 +606,10 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   // ejecución, así que el flujo se retoma en confirmarSeparacionYRegistrar().
   const [confirmacionStockPendiente, setConfirmacionStockPendiente] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  // Un registro a la vez: el estado "guardando" tarda un render en apagar el
+  // botón, y mientras se confirmaba la separación de stock ni siquiera se
+  // ponía, así que un doble clic registraba la producción dos veces.
+  const registrandoRef = useRef(false);
   const [produccionConfirmada, setProduccionConfirmada] = useState(null);
 
   function validar() {
@@ -708,6 +719,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
 
   async function registrarProduccion(evento: { preventDefault: () => void }) {
     evento.preventDefault();
+    if (registrandoRef.current || confirmacionStockPendiente) return;
     if (!puedeRegistrarProduccion) {
       setErrorValidacion("Tu usuario no tiene permiso para registrar producción.");
       return;
@@ -738,13 +750,20 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   async function confirmarSeparacionYRegistrar() {
     const apartado = confirmacionStockPendiente;
     setConfirmacionStockPendiente(null);
-    if (!apartado) return;
+    if (!apartado || registrandoRef.current) return;
+    registrandoRef.current = true;
+    setGuardando(true);
     try {
       await api.patch(`/apartados/${apartado.id}/confirmar-separacion-stock`);
     } catch (err) {
       setErrorValidacion(err instanceof ErrorApi ? err.message : "No se pudo confirmar la separación de stock.");
+      registrandoRef.current = false;
+      setGuardando(false);
       return;
     }
+    // Ya quedó confirmada: un siguiente registro no vuelve a abrir la ventana.
+    setApartadosPendientes((actual) => actual.map((ap) => (ap.id === apartado.id ? { ...ap, stockSeparadoConfirmado: true } : ap)));
+    registrandoRef.current = false;
     await enviarProduccion();
   }
 
@@ -754,6 +773,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   }
 
   async function enviarProduccion() {
+    if (registrandoRef.current) return;
+    registrandoRef.current = true;
     setGuardando(true);
     setErrorValidacion("");
     try {
@@ -826,6 +847,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         err instanceof ErrorApi ? err.message : "No se pudo registrar la producción. Intenta de nuevo."
       );
     } finally {
+      registrandoRef.current = false;
       setGuardando(false);
     }
   }
