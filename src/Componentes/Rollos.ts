@@ -145,14 +145,32 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
     return Array.from(mapa.values()).sort((a, b) => a.codigoInterno.localeCompare(b.codigoInterno));
   }, [rollosFiltrados, reservasPorCodigo]);
 
+  // Opciones de Familia y Color de TODOS los rollos de la bodega (no solo de
+  // la página en pantalla, que ya viene filtrada: al elegir una familia, el
+  // desplegable se quedaba solo con esa). Se suman las de la página por si
+  // entró un rollo nuevo después de cargarlas, y la elegida para no perderla.
+  const [opcionesFiltro, setOpcionesFiltro] = useState<{ familias: string[]; colores: string[] }>({ familias: [], colores: [] });
+  const cargarOpcionesFiltro = useCallback(async () => {
+    try {
+      const datos = await api.get<{ familias?: string[]; colores?: string[] }>("/rollos/opciones-filtro");
+      setOpcionesFiltro({ familias: datos?.familias ?? [], colores: datos?.colores ?? [] });
+    } catch {
+      /* se queda con las de la página */
+    }
+  }, []);
+  useEffect(() => { cargarOpcionesFiltro(); }, [cargarOpcionesFiltro]);
+
+  const unirOpciones = (...listas: unknown[][]) => [...new Set(listas.flat().filter(Boolean).map(String))]
+    .sort((x, y) => x.localeCompare(y, "es", { sensitivity: "base" }));
+
   const familiasDisponibles = useMemo(
-    () => [...new Set(misRollos.map((r) => r.familia))].filter(Boolean),
-    [misRollos]
+    () => unirOpciones(opcionesFiltro.familias, misRollos.map((r) => r.familia), [filtros.familia]),
+    [opcionesFiltro, misRollos, filtros.familia]
   );
 
   const coloresDisponibles = useMemo(
-    () => [...new Set(misRollos.map((r) => r.colorMaterial))].filter(Boolean),
-    [misRollos]
+    () => unirOpciones(opcionesFiltro.colores, misRollos.map((r) => r.colorMaterial), [filtros.colorMaterial]),
+    [opcionesFiltro, misRollos, filtros.colorMaterial]
   );
 
   const [rolloParaConsumo, setRolloParaConsumo] = useState<Rollo | null>(null);

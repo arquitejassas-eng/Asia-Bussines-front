@@ -173,6 +173,18 @@ def _clasificacion_reconocida(db: Session, usuario: Usuario, prefijo: str) -> bo
     return existe_hermano or _match_equivalencias(db, prefijo) is not None
 
 
+@router.get("/opciones-filtro")
+def opciones_de_filtro(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> dict:
+    """Familias y colores de TODOS los rollos de la bodega, para los filtros de
+    Rollos almacenados: sacarlos de la página en pantalla (30 rollos, ya
+    filtrados) dejaba solo la familia elegida y escondía las de otras páginas."""
+    base = db.query(Rollo).filter(coincide_bodega(Rollo.bodega_id, usuario.bodega_id))
+    def distintos(columna) -> list[str]:
+        # Tal cual (sin recortar): el filtro de familia compara exacto.
+        return sorted({v for (v,) in base.with_entities(columna).distinct() if v and v.strip()}, key=str.upper)
+    return {"familias": distintos(Rollo.familia), "colores": distintos(Rollo.color_material)}
+
+
 @router.get("/clasificacion-sugerida", response_model=ClasificacionSugeridaResponse)
 def sugerir_clasificacion_por_codigo(
     codigo_interno: str = Query(..., min_length=1),
