@@ -97,13 +97,17 @@ def _agregar_por_empresa(db: Session, filas: list[FilaComparativoResponse]) -> d
     return {sigla: {k: round(v, 2) for k, v in t.items()} for sigla, t in totales.items()}
 
 
-def _reservas_productos(db: Session) -> dict[tuple[str, int], float]:
+def _reservas_productos(db: Session, empresa: str = "") -> dict[tuple[str, int], float]:
+    """Unidades apartadas por (código, sede). Con filtro de empresa, solo las
+    de los productos de esa empresa (antes se restaba lo apartado de las dos
+    y la empresa filtrada se veía con menos libre del que tenía)."""
+    filtro = [Producto.empresa == filtro_empresa(empresa)] if empresa else []
     filas = (
         db.query(Producto.codigo, Apartado.bodega_id, func.sum(ApartadoItem.cantidad))
         .join(ApartadoItem, ApartadoItem.producto_id == Producto.id)
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
         .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
-                ApartadoItem.stock_descontado.is_(False), ApartadoItem.hay_fisico.is_(False))
+                ApartadoItem.stock_descontado.is_(False), ApartadoItem.hay_fisico.is_(False), *filtro)
         .group_by(Producto.codigo, Apartado.bodega_id)
         .all()
     )
@@ -283,7 +287,7 @@ def comparativo_inventario(empresa: str = "", db: Session = Depends(get_db)) -> 
     # filtro, todo lo apartado (y además el desglose por empresa).
     _agregar_apartados(rollos_pivotados, _reservas_rollos(db, empresa))
     totales_por_empresa = {} if empresa else _agregar_por_empresa(db, rollos_pivotados)
-    _agregar_apartados(productos_pivotados, _reservas_productos(db))
+    _agregar_apartados(productos_pivotados, _reservas_productos(db, empresa))
     _agregar_por_empresa_productos(db, productos_pivotados, empresa)
     peso_actual_total_por_bodega: dict[int, float] = {}
     for fila in rollos_pivotados:
