@@ -90,6 +90,77 @@ function PanelStockAdicionalProduccion({
               />
             </div>
           )}
+          {/* Una teja de Segunda puede ser lámina lisa (sin el perfil de la teja):
+              se usa para caballetes o flanches y entra como esos pedazos. */}
+          {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && linea.calidad === "segunda" && (
+            <div>
+              <label className="produccion-label">¿Qué es?</label>
+              <select
+                className="produccion-input"
+                value={linea.lisaPara ? "lisa" : "teja"}
+                onChange={(e) => actualizarLineaStock(indice, "lisaPara", e.target.value === "lisa" ? "caballete" : "")}
+              >
+                <option value="teja">Teja (como la producción)</option>
+                <option value="lisa">Lámina lisa</option>
+              </select>
+            </div>
+          )}
+          {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && linea.calidad === "segunda" && linea.lisaPara && (
+            <>
+              <div>
+                <label className="produccion-label">¿Para qué se va a usar?</label>
+                <select
+                  className="produccion-input"
+                  value={linea.lisaPara}
+                  onChange={(e) => actualizarLineaStock(indice, "lisaPara", e.target.value)}
+                >
+                  <option value="caballete">Caballetes</option>
+                  <option value="flanche">Flanches</option>
+                </select>
+              </div>
+              <div>
+                <label className="produccion-label">¿Cuántos pedazos salen?</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  className="produccion-input"
+                  placeholder="Ej. 3"
+                  value={linea.piezas ?? ""}
+                  onChange={(e) => actualizarLineaStock(indice, "piezas", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="produccion-label">Medida de cada pedazo (m)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  className="produccion-input"
+                  placeholder="Ej. 3"
+                  value={linea.metrosPieza ?? ""}
+                  onChange={(e) => actualizarLineaStock(indice, "metrosPieza", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="produccion-label">Calidad de los pedazos</label>
+                <select
+                  className="produccion-input"
+                  value={linea.calidadPiezas || "segunda"}
+                  onChange={(e) => actualizarLineaStock(indice, "calidadPiezas", e.target.value)}
+                >
+                  <option value="primera">Primera</option>
+                  <option value="segunda">Segunda</option>
+                </select>
+              </div>
+              <p className="produccion-texto-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                Entran al inventario como {Number(linea.piezas) > 0 ? linea.piezas : "los"}{" "}
+                {linea.lisaPara === "flanche" ? "flanches" : "caballetes"}
+                {Number(linea.metrosPieza) > 0 ? ` de ${String(linea.metrosPieza).replace(".", ",")} m` : ""}, no como teja.
+              </p>
+            </>
+          )}
           <div>
             <button type="button" className="produccion-boton-secundario" onClick={() => quitarLineaStock(indice)}>
               Quitar

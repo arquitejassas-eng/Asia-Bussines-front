@@ -382,6 +382,8 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     # necesidad que no es múltiplo de N igual exige el corte completo (ver
     # SECCIONES_POR_TIPO_PRODUCTO arriba).
     sobrante_seccionado = 0
+    if datos.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO and any(i.lamina_lisa_para for i in datos.stock_adicional):
+        raise HTTPException(status_code=400, detail="La lámina lisa solo se declara en una producción de tejas.")
     if datos.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO:
         secciones = SECCIONES_POR_TIPO_PRODUCTO[datos.tipo_producto]
         nombre = NOMBRE_POR_TIPO_PRODUCTO[datos.tipo_producto]
@@ -604,15 +606,30 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         ancho_rollo_stock = None
 
     for indice, item_stock in enumerate(datos.stock_adicional, start=1):
-        metros_linea = metros_de_linea_stock(datos, item_stock)
         # El stock es de la empresa del rollo de donde salió ("Salió del rollo",
         # o el primero si no se dijo).
         empresa_linea = ((rollo_de_linea.get(indice - 1) or bloqueados[0]).empresa or "")
-        descripcion = _descripcion_stock(datos, codigo_rollo_origen_stock, metros_linea) + (
+        datos_linea, familia_linea, tipo_linea, ancho_linea = datos, familia_stock, tipo_producto_stock, ancho_rollo_stock
+        if item_stock.lamina_lisa_para:
+            # Lámina lisa: entra como los caballetes/flanches que salen de ella,
+            # con la medida y la calidad que dijo Planta.
+            tipo_linea = item_stock.lamina_lisa_para
+            familia_linea = FAMILIA_POR_TIPO_PRODUCTO[tipo_linea]
+            ancho_linea = bloqueados[0].ancho_material
+            datos_linea = datos.model_copy(update={"tipo_producto": tipo_linea, "metros_por_unidad": item_stock.metros_pieza})
+            item_stock = item_stock.model_copy(update={
+                "calidad": item_stock.calidad_piezas, "cantidad": item_stock.piezas,
+                "motivo_segunda": item_stock.motivo_segunda if item_stock.calidad_piezas == "segunda" else "",
+            })
+            metros_linea = item_stock.metros_pieza
+        else:
+            metros_linea = metros_de_linea_stock(datos, item_stock)
+        descripcion = _descripcion_stock(datos_linea, codigo_rollo_origen_stock, metros_linea) + (
+            " (de lámina lisa)" if tipo_linea != tipo_producto_stock else "") + (
             " (Segunda)" if item_stock.calidad == "segunda" else "")
 
         producto_existente = _buscar_producto_existente(
-            db, usuario, datos, item_stock, familia_stock, codigo_rollo_origen_stock, ancho_rollo_stock, metros_linea,
+            db, usuario, datos_linea, item_stock, familia_linea, codigo_rollo_origen_stock, ancho_linea, metros_linea,
             empresa_linea,
         )
 
@@ -628,15 +645,15 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
                 empresa=empresa_linea,
                 codigo=f"{codigo_unico}-{indice}",
                 descripcion=descripcion[:255],
-                familia=familia_stock,
+                familia=familia_linea,
                 codigo_rollo_origen=codigo_rollo_origen_stock,
-                ancho_rollo=ancho_rollo_stock,
-                tipo_producto=tipo_producto_stock,
+                ancho_rollo=ancho_linea,
+                tipo_producto=tipo_linea,
                 # Recortados al largo de su columna (Postgres rechaza más largo).
                 calibre=datos.calibre[:30],
                 color=datos.color[:60],
                 ral=datos.ral[:20],
-                referencia=datos.modelo.strip()[:50] if familia_stock == "TEJA" else "",
+                referencia=datos.modelo.strip()[:50] if familia_linea == "TEJA" else "",
                 calidad=item_stock.calidad,
                 motivo_segunda=item_stock.motivo_segunda[:255] if item_stock.calidad == "segunda" else "",
                 metros_por_unidad=metros_linea,

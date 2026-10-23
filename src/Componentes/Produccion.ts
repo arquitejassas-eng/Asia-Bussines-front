@@ -700,6 +700,14 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         if (linea.calidad === "segunda" && !linea.motivoSegunda.trim()) {
           return "Indica el motivo/descripción del defecto para cada unidad de Segunda.";
         }
+        if (linea.calidad === "segunda" && linea.lisaPara) {
+          if (!Number.isInteger(Number(linea.piezas)) || Number(linea.piezas) <= 0) {
+            return "Para la lámina lisa indica cuántos pedazos salen (un número entero).";
+          }
+          if (!(Number(String(linea.metrosPieza ?? "").replace(",", ".")) > 0)) {
+            return "Para la lámina lisa indica cuánto mide cada pedazo.";
+          }
+        }
         metrosNecesarios += Number(linea.cantidad) * Number(linea.metros);
       }
       // El material de las unidades adicionales también tiene que salir del
@@ -806,6 +814,13 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
           motivo_segunda: linea.calidad === "segunda" ? linea.motivoSegunda.trim() : "",
           metros_por_unidad: SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] ? null : Number(linea.metros) || null,
           rollo_id: rollosSeleccionados.length === 1 ? rollosSeleccionados[0].rollo.id : Number(linea.rolloId) || null,
+          // Segunda que es lámina lisa: entra como caballetes o flanches.
+          ...(!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && linea.calidad === "segunda" && linea.lisaPara ? {
+            lamina_lisa_para: linea.lisaPara,
+            piezas: Number(linea.piezas),
+            metros_pieza: Number(String(linea.metrosPieza).replace(",", ".")),
+            calidad_piezas: linea.calidadPiezas || "segunda",
+          } : {}),
         })),
       };
 

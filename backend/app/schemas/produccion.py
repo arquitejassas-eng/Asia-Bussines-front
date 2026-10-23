@@ -27,11 +27,25 @@ class StockAdicionalItemCrear(BaseModel):
     # De cuál de los rollos de esta producción salió (si se usaron varios).
     # Solo para el historial del rollo: no descuenta nada aparte.
     rollo_id: int | None = None
+    # Una teja de Segunda que en realidad es lámina lisa (sin el perfil de la
+    # teja) se usa para caballetes o flanches: Planta dice para qué, cuántos
+    # pedazos salen, cuánto mide cada uno y de qué calidad quedan, y entran
+    # como esos caballetes/flanches. `cantidad` y `metros_por_unidad` siguen
+    # siendo los de la lámina (lo que salió del rollo).
+    lamina_lisa_para: Literal["", "caballete", "flanche"] = ""
+    piezas: int | None = Field(default=None, gt=0)
+    metros_pieza: float | None = Field(default=None, gt=0)
+    calidad_piezas: Literal["primera", "segunda"] = "segunda"
 
     @model_validator(mode="after")
     def _exigir_motivo_si_segunda(self) -> "StockAdicionalItemCrear":
         if self.calidad == "segunda" and not self.motivo_segunda.strip():
             raise ValueError("Indica el motivo/descripción del defecto para una unidad de Segunda.")
+        if self.lamina_lisa_para:
+            if self.calidad != "segunda":
+                raise ValueError("Solo una línea de Segunda puede marcarse como lámina lisa.")
+            if not self.piezas or not self.metros_pieza:
+                raise ValueError("Para la lámina lisa indica cuántos pedazos salen y cuánto mide cada uno.")
         return self
 
 
