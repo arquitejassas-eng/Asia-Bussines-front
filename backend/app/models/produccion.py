@@ -72,8 +72,8 @@ class RolloUtilizadoProduccion(Base):
     __tablename__ = "rollos_utilizados_produccion"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    produccion_id: Mapped[int] = mapped_column(ForeignKey("producciones.id"), nullable=False)
-    rollo_id: Mapped[int] = mapped_column(ForeignKey("rollos.id"), nullable=False)
+    produccion_id: Mapped[int] = mapped_column(ForeignKey("producciones.id"), nullable=False, index=True)
+    rollo_id: Mapped[int] = mapped_column(ForeignKey("rollos.id"), nullable=False, index=True)
     identificador_rollo: Mapped[str] = mapped_column(String(60), default="")
     metros_consumidos: Mapped[float] = mapped_column(Float, nullable=False)
 

@@ -59,7 +59,7 @@ class Apartado(Base):
 
     creado_por: Mapped[str] = mapped_column(String(150), default="")
     fecha_creacion: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
-    estado: Mapped[EstadoApartado] = mapped_column(Enum(EstadoApartado), default=EstadoApartado.APARTADO)
+    estado: Mapped[EstadoApartado] = mapped_column(Enum(EstadoApartado), default=EstadoApartado.APARTADO, index=True)
 
     enviado_a_produccion_por: Mapped[str] = mapped_column(String(150), default="")
     fecha_enviado_a_produccion: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -116,7 +116,7 @@ class ApartadoItem(Base):
 
     modalidad: Mapped[ModalidadApartado] = mapped_column(String(20), default=ModalidadApartado.POR_ROLLO)
 
-    codigo_interno: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    codigo_interno: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
     descripcion: Mapped[str] = mapped_column(String(255), default="")
     cantidad: Mapped[float] = mapped_column(Float, nullable=False)
     # POR_ROLLO: metros por unidad. POR_STOCK (opcional): cortar cada unidad a
@@ -129,7 +129,7 @@ class ApartadoItem(Base):
     tipo_producto: Mapped[str] = mapped_column(String(20), default="", server_default="")
     metros_consumidos: Mapped[float] = mapped_column(Float, default=0)
 
-    producto_id: Mapped[int | None] = mapped_column(ForeignKey("productos.id"), nullable=True)  # solo POR_STOCK
+    producto_id: Mapped[int | None] = mapped_column(ForeignKey("productos.id"), nullable=True, index=True)  # solo POR_STOCK
     stock_descontado: Mapped[bool] = mapped_column(default=False)  # solo POR_STOCK
 
     # Empresa de la que sale el material de ESTA línea cuando no es la de la

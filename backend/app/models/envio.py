@@ -54,7 +54,7 @@ class EnvioItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     envio_id: Mapped[int] = mapped_column(ForeignKey("envios.id"), nullable=False, index=True)
 
-    rollo_id: Mapped[int | None] = mapped_column(ForeignKey("rollos.id"), nullable=True)
+    rollo_id: Mapped[int | None] = mapped_column(ForeignKey("rollos.id"), nullable=True, index=True)
     producto_codigo: Mapped[str | None] = mapped_column(String(60), nullable=True)
     # Empresa del producto enviado (el mismo código puede ser de las dos).
     empresa: Mapped[str] = mapped_column(String(10), default="", server_default="")

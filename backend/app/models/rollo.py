@@ -33,10 +33,10 @@ class Rollo(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     # NULL = material de Admin Inventario, aún sin repartir a ninguna sede.
     bodega_id: Mapped[int | None] = mapped_column(ForeignKey("bodegas.id"), nullable=True, index=True)
-    recepcion_id: Mapped[int | None] = mapped_column(ForeignKey("recepciones.id"), nullable=True)
+    recepcion_id: Mapped[int | None] = mapped_column(ForeignKey("recepciones.id"), nullable=True, index=True)
 
     codigo_interno: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
-    identificador_rollo: Mapped[str] = mapped_column(String(60), nullable=False)
+    identificador_rollo: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     codigo_proveedor: Mapped[str] = mapped_column(String(60), default="")
     # Sigla de la empresa dueña del rollo ("AR" = Arquitejas, "ABG" = Asia
     # Business). Se deduce sola de `identificador_rollo` al crear el rollo

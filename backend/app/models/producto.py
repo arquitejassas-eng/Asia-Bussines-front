@@ -50,7 +50,7 @@ class Producto(Base):
     calidad: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "primera" | "segunda"
     motivo_segunda: Mapped[str] = mapped_column(String(255), default="")
     metros_por_unidad: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
-    produccion_id: Mapped[int | None] = mapped_column(ForeignKey("producciones.id"), nullable=True)
+    produccion_id: Mapped[int | None] = mapped_column(ForeignKey("producciones.id"), nullable=True, index=True)
     fecha_produccion: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Código de clasificación del rollo del que salió este stock — separado
     # de `familia` porque productos como Caballetes usan una familia fija

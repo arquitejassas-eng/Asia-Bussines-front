@@ -40,7 +40,7 @@ class CargamentoRollo(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cargamento_id: Mapped[int] = mapped_column(ForeignKey("cargamentos_en_camino.id", ondelete="CASCADE"), nullable=False, index=True)
-    identificador_rollo: Mapped[str] = mapped_column(String(120), default="")
+    identificador_rollo: Mapped[str] = mapped_column(String(120), default="", index=True)
     codigo_interno: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     empresa: Mapped[str] = mapped_column(String(10), default="")
     descripcion: Mapped[str] = mapped_column(String(255), default="")

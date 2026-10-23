@@ -28,7 +28,8 @@ class Movimiento(Base):
     tipo: Mapped[TipoMovimiento] = mapped_column(Enum(TipoMovimiento), nullable=False)
     motivo: Mapped[str] = mapped_column(String(60), default="")
 
-    producto_codigo: Mapped[str] = mapped_column(String(60), default="")
+    # Índice creado en la migración 20260903_01 (aquí para que el modelo lo diga también).
+    producto_codigo: Mapped[str] = mapped_column(String(60), default="", index=True)
     producto_descripcion: Mapped[str] = mapped_column(String(255), default="")
 
     rollo_id: Mapped[int | None] = mapped_column(ForeignKey("rollos.id"), nullable=True, index=True)

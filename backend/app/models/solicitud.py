@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -33,11 +33,17 @@ class Solicitud(Base):
     """Solicitud de material entre bodegas (módulo "Bodegas", punto 14)."""
 
     __tablename__ = "solicitudes"
+    # La campanita y Bodegas preguntan seguido "lo de mi bodega en tal estado"
+    # (pendientes, por despachar, en camino).
+    __table_args__ = (
+        Index("ix_solicitudes_propietaria_estado", "bodega_propietaria_id", "estado"),
+        Index("ix_solicitudes_solicitante_estado", "bodega_solicitante_id", "estado"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     fecha: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
     estado: Mapped[EstadoSolicitud] = mapped_column(
-        Enum(EstadoSolicitud), default=EstadoSolicitud.PENDIENTE
+        Enum(EstadoSolicitud), default=EstadoSolicitud.PENDIENTE, index=True
     )
     tipo_operacion: Mapped[TipoOperacionSolicitud] = mapped_column(Enum(TipoOperacionSolicitud))
 
