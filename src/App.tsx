@@ -119,7 +119,7 @@ export default function App() {
       />
       <Route
         path="/recepcion"
-        element={paginaProtegida(["administrativo", "admin_inventario"], RecepcionVerificacionPage)}
+        element={paginaProtegida(["admin_inventario"], RecepcionVerificacionPage)}
       />
       <Route
         path="/bodegas"

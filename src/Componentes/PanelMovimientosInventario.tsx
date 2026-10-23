@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
 
-// Pestaña "Movimientos" de Inventario: registrar entrada/salida/traslado,
+// Pestaña "Movimientos" de Inventario: registrar entrada/salida (los traslados van por Bodegas),
 // incluida la lógica de Porcelanato (cantidad por cajas o por m²).
 // Extraído de InventarioPage.tsx sin cambiar props ni comportamiento -- todo
 // el estado/derivados que solo usaba esta pestaña (productoSeleccionadoMov,
@@ -89,7 +89,9 @@ function PanelMovimientosInventario({
       ) : (
         <form className="inventario-form" onSubmit={registrarMovimiento} noValidate>
           <div className="inventario-tipos">
-            {["entrada", "salida", "traslado"].map((tipo) => (
+            {/* Sin "Traslado": entre bodegas se traslada desde Bodegas (pedir,
+                aceptar, despachar y recibir), para que la otra bodega lo confirme. */}
+            {["entrada", "salida"].map((tipo) => (
               <button
                 key={tipo}
                 type="button"
@@ -104,6 +106,9 @@ function PanelMovimientosInventario({
               </button>
             ))}
           </div>
+          <p className="inventario-carga-ayuda" style={{ margin: "0 0 0.75rem" }}>
+            Para pasar material a otra bodega usa <strong>Bodegas</strong>: allá se pide, se acepta, se despacha y la otra bodega confirma que lo recibió.
+          </p>
 
           <div className="inventario-form-grid">
             {(formularioMov.tipo === "entrada" || formularioMov.tipo === "salida") && (

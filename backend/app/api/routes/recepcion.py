@@ -32,7 +32,7 @@ from app.schemas.recepcion import (
 )
 from app.schemas.material_en_camino import CargamentoResponse, GuardarEnCaminoRequest
 from app.services import clasificacion as srv
-from app.services.material_en_camino import resumen_cargamento
+from app.services.material_en_camino import marcar_llegados_por_recepcion, resumen_cargamento
 from app.services import archivos_recepcion
 from app.core.config import settings
 
@@ -77,7 +77,7 @@ def _tablas_equivalencia_desde_bd(db: Session) -> srv.TablasEquivalencia:
 
 
 @router.post("/previsualizar", response_model=PrevisualizacionRecepcionResponse,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 async def previsualizar_archivo(
     archivo: UploadFile,
     db: Session = Depends(get_db),
@@ -197,7 +197,7 @@ async def previsualizar_archivo(
 
 
 @router.post("/hoja", response_model=PrevisualizacionRecepcionResponse,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def cambiar_hoja_recepcion(
     datos: SeleccionarHojaRecepcionRequest, usuario: Usuario = Depends(usuario_actual),
 ) -> PrevisualizacionRecepcionResponse:
@@ -231,7 +231,7 @@ def cambiar_hoja_recepcion(
 
 
 @router.post("/verificar", response_model=VerificacionRecepcionResponse,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def verificar(
     datos: ProcesarRecepcionRequest,
     db: Session = Depends(get_db),
@@ -354,7 +354,7 @@ def _lista_corta(referencias: list[str]) -> str:
 
 
 @router.post("/confirmar", response_model=RecepcionResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def confirmar(
     datos: ConfirmarRecepcionRequest,
     db: Session = Depends(get_db),
@@ -450,6 +450,8 @@ def confirmar(
             )
         )
 
+    # Si esos rollos venían en un checklist de material en camino, ya llegaron.
+    marcar_llegados_por_recepcion(db, [r.rollo.strip() for r in a_registrar], usuario)
     db.commit()
     db.refresh(recepcion)
     archivos_recepcion.eliminar(usuario.id)

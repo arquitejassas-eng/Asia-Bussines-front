@@ -95,6 +95,30 @@ def registrar_llegada(db: Session, cargamento: Cargamento, rollos: list[Cargamen
     return len(nuevos)
 
 
+def marcar_llegados_por_recepcion(db: Session, referencias: list[str], usuario: Usuario) -> int:
+    """Rollos que entraron por Recepción y estaban en un checklist de material
+    en camino: se marcan como llegados (si no, sus metros contaban dos veces:
+    en la bodega y "en camino"). Un checklist al que ya le llegó todo se
+    cierra solo, igual que al marcar la llegada. Devuelve cuántos marcó."""
+    referencias = [r for r in referencias if r]
+    if not referencias:
+        return 0
+    ahora = datetime.now(timezone.utc)
+    pendientes = (
+        db.query(CargamentoRollo)
+        .join(Cargamento, Cargamento.id == CargamentoRollo.cargamento_id)
+        .filter(Cargamento.estado == EN_CAMINO, CargamentoRollo.llego.is_(False),
+                CargamentoRollo.identificador_rollo.in_(referencias))
+        .all()
+    )
+    for r in pendientes:
+        r.llego, r.llego_por, r.fecha_llegada = True, usuario.correo, ahora
+    for cargamento in {r.cargamento for r in pendientes}:
+        if all(x.llego for x in cargamento.rollos):
+            cargamento.estado, cargamento.cerrado_por, cargamento.fecha_cierre = CERRADO, usuario.correo, ahora
+    return len(pendientes)
+
+
 def resumen_cargamento(db: Session, cargamento: Cargamento) -> dict:
     """Avance del checklist (cuántos rollos llegaron) y, para ayudar a marcar
     cada mula, qué rollos pendientes ya tienen ingreso en Recepción (misma

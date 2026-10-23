@@ -23,7 +23,7 @@ export function metrosDeLinea(cantidad: number, medida: number, tipoProducto = "
 
 type ApartadoItemPendiente = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string;
-  cantidad: number; medida: number | null; metrosPendientes: number | null;
+  cantidad: number; medida: number | null; metrosPendientes: number | null; metrosRequeridos?: number | null;
   rolloId?: number | null; rolloReferencia?: string; stockDescontado?: boolean; tipoProducto?: string;
   empresaMaterial?: string; // "" = la de la cotización
 };
@@ -36,7 +36,18 @@ export type SolicitudProduccionPendiente = {
   rolloCompleto?: boolean; rolloReferencia?: string;
   // "" = teja; "caballete" / "flanche": se corta a lo ancho del rollo.
   tipoProducto?: string;
+  // Metros que apartó la línea (después de "Separar" no son cortes × medida).
+  metrosRequeridos?: number | null;
 };
+
+/** Metros que vale cada unidad de una línea de caballete/flanche, igual que
+ * el backend (produccion.py): lo que la línea apartó ÷ su cantidad. Después
+ * de "Separar" los metros se reparten en proporción y ya no son cortes ×
+ * medida; recalcularlos hacía que Planta viera más unidades de las que eran. */
+export function metrosPorUnidadDeLinea(solicitud: SolicitudProduccionPendiente) {
+  if (solicitud.metrosRequeridos && solicitud.cantidad) return solicitud.metrosRequeridos / solicitud.cantidad;
+  return metrosDeLinea(solicitud.cantidad, solicitud.medida ?? 0, solicitud.tipoProducto ?? "").metros / solicitud.cantidad;
+}
 
 /** Ítems POR_ROLLO de apartados ya enviados a producción que todavía tienen
  * metros pendientes por producir -- explícito por `modalidad` (nunca por un
@@ -58,6 +69,7 @@ export function calcularSolicitudesPendientes(apartados: ApartadoParaProduccion[
         metrosPendientes: it.metrosPendientes ?? 0,
         rolloCompleto: Boolean(it.rolloId), rolloReferencia: it.rolloReferencia || "",
         tipoProducto: it.tipoProducto || "",
+        metrosRequeridos: it.metrosRequeridos ?? null,
       }))
   );
 }

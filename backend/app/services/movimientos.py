@@ -90,14 +90,15 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
     if cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero.")
 
-    if usuario.bodega_id is None and datos.tipo == TipoMovimiento.TRASLADO:
-        # TRASLADO empuja stock directo a otra bodega sin que esta lo confirme
-        # (comportamiento ya existente entre sedes). Para Admin Inventario eso
-        # se saltaría el flujo de Envíos (que sí exige confirmación de la sede
-        # destino antes de mover nada) — se bloquea a propósito.
+    if datos.tipo == TipoMovimiento.TRASLADO:
+        # El traslado directo empujaba stock a otra bodega al instante, sin que
+        # la otra lo confirmara ni quedara "en camino" (y saltándose la regla
+        # de las bodegas que no trasladan). Entre sedes se usa el traslado en
+        # 4 pasos de Bodegas; Admin Inventario reparte con Envíos.
         raise HTTPException(
             status_code=400,
-            detail="Admin Inventario no traslada directo a una sede; usa /envios para que la sede confirme la llegada.",
+            detail="Los traslados entre bodegas se hacen desde Bodegas (pedir, aceptar, despachar y recibir). "
+            "Admin Inventario reparte material con Envíos.",
         )
 
     # Una entrada manual puede crear el producto en la misma transaccion.

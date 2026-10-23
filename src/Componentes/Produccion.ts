@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, produccionDesdeApi, rolloDesdeApi } from "./Mapeo";
 import {
-  calcularSolicitudesPendientes, calcularStockParaAlistar, cotizacionesParaPlanta, metrosDeLinea, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO,
+  calcularSolicitudesPendientes, calcularStockParaAlistar, cotizacionesParaPlanta, metrosPorUnidadDeLinea, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO,
 } from "../Utils/produccion";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import { coincideKilos, kilosBuscados } from "../Utils/kilos";
@@ -237,7 +237,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       // línea de caballete/flanche apartó cortes × medida (5 de 3 m = 6 m);
       // una vieja de teja, cantidad × medida (la longitud).
       const porUnidad = SECCIONES_POR_TIPO_PRODUCTO[solicitud.tipoProducto] && solicitud.cantidad
-        ? metrosDeLinea(solicitud.cantidad, solicitud.medida, solicitud.tipoProducto).metros / solicitud.cantidad
+        ? metrosPorUnidadDeLinea(solicitud)
         : longitud;
       const pendienteUnidades = Math.round(solicitud.metrosPendientes / porUnidad);
       const unidadesHaciaApartado = Math.min(necesidad, Math.max(0, pendienteUnidades));
@@ -349,7 +349,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     // Una línea de caballete/flanche ya dice el tipo y la longitud: se llenan
     // solos, con las unidades que todavía le faltan a la línea.
     if (SECCIONES_POR_TIPO_PRODUCTO[solicitud.tipoProducto] && solicitud.medida) {
-      const porUnidad = metrosDeLinea(solicitud.cantidad, solicitud.medida, solicitud.tipoProducto).metros / solicitud.cantidad;
+      const porUnidad = metrosPorUnidadDeLinea(solicitud);
       setTipoProducto(solicitud.tipoProducto);
       setMetrosPorUnidad(String(solicitud.medida));
       setCantidadProductos(String(Math.max(1, Math.round(solicitud.metrosPendientes / porUnidad))));
