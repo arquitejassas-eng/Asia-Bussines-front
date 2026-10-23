@@ -335,6 +335,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     // mostraba la disponibilidad de otro código.
     setDisponibilidadItems((actual) => quitarPosicion(actual, indice));
     setResultadosBusquedaProducto((actual) => quitarPosicion(actual, indice));
+    consultasDisponibilidad.current = quitarPosicion(consultasDisponibilidad.current, indice);
   }
 
   function actualizarItemApartado(indice: number, campo: keyof ItemFormulario, valor: string | boolean) {
@@ -398,10 +399,27 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }));
   }
 
+  // La consulta de disponibilidad más reciente de cada línea. Si llega tarde
+  // la respuesta de una anterior (ej. se cambió la empresa dos veces seguidas
+  // con internet lento), se descarta: antes podía quedar en pantalla la
+  // disponibilidad de la otra empresa. Va por posición y sube con la línea al
+  // quitar una de arriba (ver quitarItemApartado).
+  const consultasDisponibilidad = useRef<Record<number, object>>({});
+  function iniciarConsultaDisponibilidad(indice: number) {
+    const consulta = {};
+    consultasDisponibilidad.current = { ...consultasDisponibilidad.current, [indice]: consulta };
+    return consulta;
+  }
+  function posicionDeConsulta(consulta: object) {
+    const encontrada = Object.entries(consultasDisponibilidad.current).find(([, c]) => c === consulta);
+    return encontrada ? Number(encontrada[0]) : null;
+  }
+
   // POR_ROLLO: disponibilidad por código de clasificación (comportamiento original).
   async function consultarDisponibilidadItem(indice: number, codigoInterno: string, bodegaElegida?: string, empresaElegida?: string) {
     const bodega = bodegaElegida ?? bodegaDeItem(indice);
     const codigo = codigoInterno.trim();
+    const consulta = iniciarConsultaDisponibilidad(indice);
     if (!codigo) {
       setDisponibilidadItems((actual) => {
         const { [indice]: _quitado, ...resto } = actual;
@@ -418,20 +436,29 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       // Solo lo de la empresa del material: el mismo código existe en Arquitejas y en Asia.
       const empresa = empresaElegida ?? empresaDeItem(indice);
       const datos = await api.get(`/apartados/disponibilidad?codigo_interno=${encodeURIComponent(codigo)}&bodega_id=${bodega}&empresa=${encodeURIComponent(empresa)}`);
-      setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, datos: disponibilidadCodigoDesdeApi(datos as Record<string, unknown>) } }));
+      const posicion = posicionDeConsulta(consulta);
+      if (posicion === null) return;
+      setDisponibilidadItems((actual) => ({ ...actual, [posicion]: { cargando: false, datos: disponibilidadCodigoDesdeApi(datos as Record<string, unknown>) } }));
     } catch {
-      setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, error: true } }));
+      const posicion = posicionDeConsulta(consulta);
+      if (posicion === null) return;
+      setDisponibilidadItems((actual) => ({ ...actual, [posicion]: { cargando: false, error: true } }));
     }
   }
 
   // POR_STOCK: disponibilidad de un Producto concreto ya seleccionado.
   async function consultarDisponibilidadProductoItem(indice: number, productoId: number, bodegaElegida?: string) {
+    const consulta = iniciarConsultaDisponibilidad(indice);
     setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: true } }));
     try {
       const datos = await api.get(`/apartados/disponibilidad-producto?producto_id=${productoId}&bodega_id=${bodegaElegida ?? bodegaDeItem(indice)}`);
-      setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, datos: disponibilidadProductoDesdeApi(datos as Record<string, unknown>) } }));
+      const posicion = posicionDeConsulta(consulta);
+      if (posicion === null) return;
+      setDisponibilidadItems((actual) => ({ ...actual, [posicion]: { cargando: false, datos: disponibilidadProductoDesdeApi(datos as Record<string, unknown>) } }));
     } catch {
-      setDisponibilidadItems((actual) => ({ ...actual, [indice]: { cargando: false, error: true } }));
+      const posicion = posicionDeConsulta(consulta);
+      if (posicion === null) return;
+      setDisponibilidadItems((actual) => ({ ...actual, [posicion]: { cargando: false, error: true } }));
     }
   }
 

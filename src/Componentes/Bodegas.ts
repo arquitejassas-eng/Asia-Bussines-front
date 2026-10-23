@@ -86,18 +86,25 @@ export function useControladorBodegas(sesion: Sesion | null | undefined, almacen
 
   useEffect(() => {
     if (!bodegaSeleccionadaId) return;
-    (async () => {
+    // Espera a que se termine de escribir y descarta la respuesta de una
+    // búsqueda anterior que llegue tarde: antes se consultaba con cada tecla
+    // y con internet lento quedaba en pantalla el resultado de "LA" aunque el
+    // buscador dijera "LA501".
+    let vigente = true;
+    const espera = setTimeout(async () => {
       try {
         const parametros = new URLSearchParams();
         if (busquedaProductoBodega) parametros.set("busqueda", busquedaProductoBodega);
         const datos = await api.get<RegistroApi[]>(`/bodegas/${bodegaSeleccionadaId}/inventario?${parametros.toString()}`) || [];
+        if (!vigente) return;
         setInventarioBodegaSeleccionada(
           datos.map((p) => ({ ...productoDesdeApi(p), bodegaNombre: bodegaSeleccionada?.nombre || "—" }))
         );
       } catch {
-        setInventarioBodegaSeleccionada([]);
+        if (vigente) setInventarioBodegaSeleccionada([]);
       }
-    })();
+    }, busquedaProductoBodega ? 350 : 0);
+    return () => { vigente = false; clearTimeout(espera); };
   }, [bodegaSeleccionadaId, busquedaProductoBodega, bodegaSeleccionada]);
 
   // ---------- Formulario para solicitar un material ----------

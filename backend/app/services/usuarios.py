@@ -8,7 +8,27 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.security import hashear_contrasena
+from app.models.bodega import Bodega
 from app.models.usuario import RolUsuario, Usuario
+
+# Las cuentas de una sede trabajan con SU bodega; las globales (Admin
+# Inventario, superadmin, vendedor) no tienen bodega. Una combinación
+# equivocada no fallaba al guardar, pero después nada le servía: Admin
+# Inventario con bodega se volvía una sede, y una sede sin bodega veía y
+# movía el inventario de Admin Inventario como si fuera suyo.
+ROLES_CON_BODEGA = (RolUsuario.ADMINISTRATIVO, RolUsuario.JEFE_PLANTA)
+
+
+def _validar_rol_y_bodega(db: Session, rol: RolUsuario, bodega_id: int | None) -> None:
+    if rol in ROLES_CON_BODEGA:
+        if bodega_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Una cuenta de bodega o de Planta tiene que tener su bodega: escógela.")
+        if db.get(Bodega, bodega_id) is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Esa bodega no existe.")
+    elif bodega_id is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Admin Inventario, superadmin y vendedor no llevan bodega (ven todas): deja \"Sin bodega fija\".")
 
 
 def _validar_alcance_creacion(rol: RolUsuario, bodega_id: int | None, creador: Usuario) -> None:
@@ -28,6 +48,7 @@ def crear_usuario(
     db: Session, *, correo: str, contrasena: str, rol: RolUsuario, bodega_id: int | None, creador: Usuario,
 ) -> Usuario:
     _validar_alcance_creacion(rol, bodega_id, creador)
+    _validar_rol_y_bodega(db, rol, bodega_id)
 
     existente = db.query(Usuario).filter(Usuario.correo == correo).first()
     if existente is not None:
@@ -58,6 +79,7 @@ def actualizar_usuario(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No puedes quitarte a ti mismo el rol SUPERADMIN.")
         if bodega_id != usuario.bodega_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No puedes cambiar tu propia bodega como SUPERADMIN.")
+    _validar_rol_y_bodega(db, rol, bodega_id)
     usuario.rol = rol
     usuario.bodega_id = bodega_id
     return usuario
