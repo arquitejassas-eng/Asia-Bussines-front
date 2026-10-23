@@ -31,23 +31,27 @@ function PanelAdminEquivalencias({
   // inmediato y, si el servidor lo rechazaba, lo escrito se perdía sin aviso.
   const [errorGuardado, setErrorGuardado] = useState("");
   const MENSAJE_NO_GUARDADO = "No se pudo guardar. Revisa los datos (o si ya existe) e intenta de nuevo.";
+  // true = guardado; un texto = el motivo que dio el servidor; false = datos incompletos.
+  const motivo = (resultado) => (typeof resultado === "string" ? resultado : MENSAJE_NO_GUARDADO);
 
   async function enviarColor(e) {
     e.preventDefault();
     if (!formColor.ral || !formColor.nombre) return;
     setErrorGuardado("");
-    if (await agregarEquivalenciaColor(formColor.ral, formColor.nombre, formColor.codigoInterno)) {
+    const resultado = await agregarEquivalenciaColor(formColor.ral, formColor.nombre, formColor.codigoInterno);
+    if (resultado === true) {
       setFormColor({ ral: "", nombre: "", codigoInterno: "" });
-    } else setErrorGuardado(MENSAJE_NO_GUARDADO);
+    } else setErrorGuardado(motivo(resultado));
   }
 
   async function enviarTipo(e) {
     e.preventDefault();
     if (!formTipo.nombre || !formTipo.codigoInterno) return;
     setErrorGuardado("");
-    if (await agregarEquivalenciaTipo(formTipo.nombre, formTipo.codigoInterno)) {
+    const resultado = await agregarEquivalenciaTipo(formTipo.nombre, formTipo.codigoInterno);
+    if (resultado === true) {
       setFormTipo({ nombre: "", codigoInterno: "" });
-    } else setErrorGuardado(MENSAJE_NO_GUARDADO);
+    } else setErrorGuardado(motivo(resultado));
   }
 
   async function enviarEspesor(e) {
@@ -58,8 +62,8 @@ function PanelAdminEquivalencias({
       mtPorTonTexto: formEspesor.mtPorTon,
       pesoPorMetroTexto: formEspesor.pesoPorMetro,
     });
-    if (guardado) setFormEspesor({ espesor: "", mtPorTon: "", pesoPorMetro: "" });
-    else setErrorGuardado(MENSAJE_NO_GUARDADO);
+    if (guardado === true) setFormEspesor({ espesor: "", mtPorTon: "", pesoPorMetro: "" });
+    else setErrorGuardado(motivo(guardado));
   }
 
   return (

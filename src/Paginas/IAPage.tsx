@@ -65,13 +65,17 @@ function useControladorIa(sesion: Sesion) {
 
   const [alertas, setAlertas] = useState<ReturnType<typeof alertaIaDesdeApi>[]>([]);
   const [cargandoAlertas, setCargandoAlertas] = useState(true);
+  // Si fallan, se avisa: antes quedaba vacío y parecía que no había alertas críticas.
+  const [errorAlertas, setErrorAlertas] = useState("");
   const cargarAlertas = useCallback(async () => {
     setCargandoAlertas(true);
+    setErrorAlertas("");
     try {
       const datos = await api.get<Record<string, unknown>[]>("/ia/alertas");
       setAlertas((datos ?? []).map(alertaIaDesdeApi));
     } catch {
       setAlertas([]);
+      setErrorAlertas("No se pudieron revisar las alertas de inventario. Recarga la página para intentar de nuevo.");
     } finally {
       setCargandoAlertas(false);
     }
@@ -112,7 +116,7 @@ function useControladorIa(sesion: Sesion) {
     mensajes, textoChat, setTextoChat, enviandoChat, errorChat,
     enviarMensaje, enviarSugerencia: enviarTexto,
     limpiarChat: () => { setMensajes([]); setErrorChat(""); },
-    alertas, cargandoAlertas,
+    alertas, cargandoAlertas, errorAlertas,
     prediccionNegocio, prediccionesStock, cargandoPredicciones,
   };
 }
@@ -139,6 +143,7 @@ function IAPage({ sesion, onCerrarSesion }: { sesion: Sesion; onCerrarSesion: ()
             <div className="ia-estado"><span className="ia-estado-punto" /> Disponible ahora</div>
           </header>
 
+          {ia.errorAlertas && <p className="inventario-error" style={{ margin: "0 0 1rem" }}>{ia.errorAlertas}</p>}
           {alertasCriticas.length > 0 && (
             <section className="ia-alerta-banner">
               <button className="ia-alerta-banner-boton" onClick={() => setAlertaExpandida((valor) => !valor)}>

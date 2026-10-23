@@ -76,7 +76,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
         datos.filter((solicitud) => solicitud.estado === "pendiente").map((solicitud) => solicitudDesdeApi(solicitud))
       );
     } catch {
-      setSolicitudes([]);
+      /* Sin conexión un momento: se conserva lo que había (antes se vaciaba y los avisos desaparecían). */
     }
   }, [sesion?.correo]);
 
@@ -89,7 +89,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
       // cualquier módulo (el detalle completo vive en Bodegas.ts).
       setEnvios(datos.map((e) => envioDesdeApi(e)));
     } catch {
-      setEnvios([]);
+      /* Sin conexión un momento: se conserva lo que había (antes se vaciaba y los avisos desaparecían). */
     }
   }, [sesion?.correo]);
 
@@ -111,7 +111,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
       // Producción: también las que solo tienen stock por alistar.
       setProduccionPendienteCount(cotizacionesParaPlanta(apartadosPendientes).size);
     } catch {
-      setProduccionPendienteCount(0);
+      /* Sin conexión un momento: se conserva lo que había (antes se vaciaba y los avisos desaparecían). */
     }
   }, [sesion?.rol]);
 
@@ -130,7 +130,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
       ]);
       setTrasladosPendientes([...(porDespachar || []), ...(enCamino || [])].map((s) => solicitudDesdeApi(s)));
     } catch {
-      setTrasladosPendientes([]);
+      /* Sin conexión un momento: se conserva lo que había (antes se vaciaba y los avisos desaparecían). */
     }
   }, [sesion?.rol]);
 
@@ -142,7 +142,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
       const datos = await api.get<Record<string, unknown>[]>("/apartados?estado=apartado") || [];
       setApartadosPorEnviarCount(datos.map(apartadoDesdeApi).filter((ap) => ap.faltantes.length === 0).length);
     } catch {
-      setApartadosPorEnviarCount(0);
+      /* Sin conexión un momento: se conserva lo que había (antes se vaciaba y los avisos desaparecían). */
     }
   }, [sesion?.rol]);
 

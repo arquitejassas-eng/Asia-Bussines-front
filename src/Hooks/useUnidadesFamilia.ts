@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { api } from "../Componentes/Api";
+import { api, ErrorApi } from "../Componentes/Api";
 import type { UnidadFamilia } from "../types/dominio";
 
 type UnidadFamiliaApi = { id: number; familia: string; unidad: string; permite_decimales: boolean };
@@ -27,8 +27,11 @@ export function useUnidadesFamilia() {
     try {
       await api.post("/inventario/unidades-familia", { familia, unidad, permite_decimales: permiteDecimales });
       await cargarUnidadesFamilia();
-      return true;
-    } catch { return false; }
+      return true as const;
+    } catch (err) {
+      // El mensaje del servidor (antes solo false y un aviso genérico).
+      return err instanceof ErrorApi ? err.message : "No se pudo guardar la unidad.";
+    }
   }
 
   const unidadPorFamilia = Object.fromEntries(unidadesFamilia.map((u) => [u.familia, u.unidad]));

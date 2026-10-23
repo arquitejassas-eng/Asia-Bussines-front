@@ -48,7 +48,7 @@ export type AlmacenGlobal = {
   unidadPorFamilia: Record<string, string>; decimalesPorFamilia: Record<string, boolean>;
   cargarBodegas: () => Promise<void>; refrescarSolicitudesPendientes: () => Promise<void>;
   refrescarEnviosPendientes: () => Promise<void>; cargarUnidadesFamilia: () => Promise<void>;
-  guardarUnidadFamilia: (familia: string, unidad: string, permiteDecimales?: boolean) => Promise<boolean>;
+  guardarUnidadFamilia: (familia: string, unidad: string, permiteDecimales?: boolean) => Promise<true | string | boolean>;
   mostrarFormularioBodega: boolean; setMostrarFormularioBodega: (valor: boolean) => void;
   nombreBodegaNueva: string; setNombreBodegaNueva: (valor: string) => void;
   guardandoBodega: boolean; errorBodega: string;

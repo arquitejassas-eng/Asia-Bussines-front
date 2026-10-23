@@ -11,7 +11,7 @@ import type { UnidadFamilia } from "../types/dominio";
  */
 function PanelAdminUnidadesFamilia({ unidadesFamilia, guardarUnidadFamilia }: {
   unidadesFamilia: UnidadFamilia[];
-  guardarUnidadFamilia?: (familia: string, unidad: string, permiteDecimales?: boolean) => Promise<boolean> | void;
+  guardarUnidadFamilia?: (familia: string, unidad: string, permiteDecimales?: boolean) => Promise<true | string | boolean> | void;
 }) {
   const [form, setForm] = useState({ familia: "", unidad: "", permiteDecimales: true });
   const [error, setError] = useState("");
@@ -22,8 +22,8 @@ function PanelAdminUnidadesFamilia({ unidadesFamilia, guardarUnidadFamilia }: {
     if (!form.familia.trim() || !form.unidad.trim()) return;
     setError("");
     const guardado = await guardarUnidadFamilia?.(form.familia.trim(), form.unidad.trim(), form.permiteDecimales);
-    if (guardado === false) {
-      setError("No se pudo guardar la unidad. Revisa los datos e intenta de nuevo.");
+    if (guardado === false || typeof guardado === "string") {
+      setError(typeof guardado === "string" ? guardado : "No se pudo guardar la unidad. Revisa los datos e intenta de nuevo.");
       return;
     }
     setForm({ familia: "", unidad: "", permiteDecimales: true });

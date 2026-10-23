@@ -204,8 +204,9 @@ export function useProductosInventario() {
       await api.delete(`/inventario/productos/${id}`);
       setProductos((actual) => actual.filter((producto) => producto.id !== id));
       await cargarAlertasStock();
-    } catch {
-      setErrorProductos("No se pudo eliminar el producto.");
+    } catch (err) {
+      // El motivo real ("tiene stock", "está en la cotización…").
+      setErrorProductos(err instanceof ErrorApi ? err.message : "No se pudo eliminar el producto.");
     }
   }
 
