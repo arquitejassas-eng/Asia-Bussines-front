@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import case, func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
 from app.models.apartado import Apartado, ApartadoItem, EstadoApartado, ModalidadApartado
@@ -288,9 +288,14 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
                 raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
             raise
     db.commit()
-    for apartado in creados:
-        db.refresh(apartado)
-    return _con_faltantes(db, creados)[0]
+    # Recargadas con sus líneas y producciones de una vez (con refresh, la
+    # respuesta pedía las producciones línea por línea).
+    ids = [a.id for a in creados]
+    por_id = {a.id: a for a in db.query(Apartado).options(
+        selectinload(Apartado.items).selectinload(ApartadoItem.producciones),
+        selectinload(Apartado.items).selectinload(ApartadoItem.rollo),
+    ).filter(Apartado.id.in_(ids)).populate_existing()}
+    return _con_faltantes(db, [por_id[i] for i in ids])[0]
 
 
 @router.get("", response_model=list[ApartadoResponse])

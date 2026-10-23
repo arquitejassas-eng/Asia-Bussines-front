@@ -596,6 +596,42 @@ def disponibilidad_producto(db: Session, *, bodega_id: int, producto_id: int, bl
     }
 
 
+def disponibles_productos_bodega(db: Session, productos: list[Producto], *, bodega_id: int) -> dict[int, float]:
+    """`cantidad_disponible` de disponibilidad_producto para varios productos
+    de una bodega con dos consultas (antes eran ~4 por producto): stock menos
+    lo apartado en cotizaciones activas y lo aceptado para un traslado."""
+    from app.models.solicitud import EstadoSolicitud, Solicitud
+
+    if not productos:
+        return {}
+    reservado = dict(
+        db.query(ApartadoItem.producto_id, func.sum(ApartadoItem.cantidad))
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(
+            Apartado.bodega_id == bodega_id,
+            Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+            ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
+            ApartadoItem.producto_id.in_([p.id for p in productos]),
+            ApartadoItem.stock_descontado.is_(False),
+            ApartadoItem.hay_fisico.is_(False),
+        )
+        .group_by(ApartadoItem.producto_id).all()
+    )
+    en_traslado = {
+        (c, e): float(t or 0) for c, e, t in
+        db.query(Solicitud.producto_codigo, Solicitud.empresa, func.sum(Solicitud.cantidad))
+        .filter(Solicitud.bodega_propietaria_id == bodega_id, Solicitud.rollo_id.is_(None),
+                Solicitud.producto_codigo.in_({p.codigo for p in productos}), Solicitud.estado == EstadoSolicitud.ACEPTADA)
+        .group_by(Solicitud.producto_codigo, Solicitud.empresa)
+    }
+    resultado = {}
+    for p in productos:
+        traslado = round(en_traslado.get((p.codigo, p.empresa or ""), 0.0), 2) if p.bodega_id == bodega_id else 0.0
+        apartado_total = round(float(reservado.get(p.id) or 0) + traslado, 2)
+        resultado[p.id] = round(float(p.stock) - apartado_total, 2)
+    return resultado
+
+
 def bodega_de_consulta(db: Session, usuario: Usuario, bodega_id: int | None) -> int:
     """Bodega sobre la que se consulta o se aparta material. Admin Inventario
     crea los apartados de todas las bodegas, así que elige cuál (bodega_id);
@@ -635,31 +671,64 @@ def disponible_empresa_codigo(db: Session, *, codigo_interno: str, bodega_despac
     deja su bodega en negativo, así que lo que ya está prometido de otra
     bodega se resta solo), más lo que viene en camino o está por repartir.
     Devuelve también dónde hay libre fuera de la bodega de despacho."""
+    return disponible_empresa_codigos(db, [codigo_interno], bodega_despacho=bodega_despacho, empresa=empresa)[codigo_interno]
+
+
+def disponible_empresa_codigos(
+    db: Session, codigos, *, bodega_despacho: int, empresa: str = "",
+) -> dict[str, tuple[float, list[tuple[str, float]]]]:
+    """disponible_empresa_codigo de varios códigos con cinco consultas en total
+    (antes eran cinco por código: una cotización de 10 líneas hacía ~170)."""
+    from app.models.material_en_camino import Cargamento, CargamentoRollo
+    from app.services.material_en_camino import EN_CAMINO
+
+    codigos = list(dict.fromkeys(c for c in codigos if c))
+    if not codigos:
+        return {}
     # Con `empresa`, solo sus rollos y sus cotizaciones (ver disponibilidad_por_codigo).
-    fisico = dict(
-        db.query(Rollo.bodega_id, func.sum(Rollo.metros_disponibles))
-        .filter(Rollo.codigo_interno == codigo_interno, Rollo.bodega_id.isnot(None),
+    fisico: dict[str, dict[int, float]] = {}
+    for codigo, bodega_id, total in (
+        db.query(Rollo.codigo_interno, Rollo.bodega_id, func.sum(Rollo.metros_disponibles))
+        .filter(Rollo.codigo_interno.in_(codigos), Rollo.bodega_id.isnot(None),
                 *((Rollo.empresa == empresa,) if empresa else ()))
-        .group_by(Rollo.bodega_id).all()
-    )
-    reservado = dict(
-        db.query(Apartado.bodega_id, func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
-        .join(ApartadoItem, ApartadoItem.apartado_id == Apartado.id)
-        .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.codigo_interno == codigo_interno,
+        .group_by(Rollo.codigo_interno, Rollo.bodega_id)
+    ):
+        fisico.setdefault(codigo, {})[bodega_id] = total
+    reservado: dict[str, dict[int, float]] = {}
+    for codigo, bodega_id, total in (
+        db.query(ApartadoItem.codigo_interno, Apartado.bodega_id, func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.codigo_interno.in_(codigos),
                 *((EMPRESA_DE_LINEA == empresa,) if empresa else ()))
-        .group_by(Apartado.bodega_id).all()
+        .group_by(ApartadoItem.codigo_interno, Apartado.bodega_id)
+    ):
+        reservado.setdefault(codigo, {})[bodega_id] = total
+    en_camino = dict(
+        db.query(CargamentoRollo.codigo_interno, func.sum(CargamentoRollo.metros))
+        .join(Cargamento, Cargamento.id == CargamentoRollo.cargamento_id)
+        .filter(Cargamento.estado == EN_CAMINO, CargamentoRollo.llego.is_(False), CargamentoRollo.codigo_interno.in_(codigos),
+                *((CargamentoRollo.empresa == empresa,) if empresa else ()))
+        .group_by(CargamentoRollo.codigo_interno).all()
+    )
+    por_repartir = dict(
+        db.query(Rollo.codigo_interno, func.sum(Rollo.metros_disponibles))
+        .filter(Rollo.bodega_id.is_(None), Rollo.codigo_interno.in_(codigos), *((Rollo.empresa == empresa,) if empresa else ()))
+        .group_by(Rollo.codigo_interno).all()
     )
     bodegas = _bodegas_por_id(db)
-    total, donde = 0.0, []
-    for bodega_id in set(fisico) | set(reservado):
-        libre = float(fisico.get(bodega_id) or 0) - float(reservado.get(bodega_id) or 0)
-        total += _libre_que_cuenta(libre, bodegas.get(bodega_id), bodega_despacho)
-        bodega = bodegas.get(bodega_id)
-        if bodega_id != bodega_despacho and libre > 0.005 and bodega is not None and not bodega.sin_traslado:
-            donde.append((bodega.nombre, round(libre, 2)))
-    total += (metros_en_camino_codigo(db, codigo_interno=codigo_interno, empresa=empresa)
-              + metros_por_repartir_codigo(db, codigo_interno=codigo_interno, empresa=empresa))
-    return round(total, 2), sorted(donde, key=lambda d: -d[1])
+    resultado = {}
+    for codigo in codigos:
+        fis, res = fisico.get(codigo, {}), reservado.get(codigo, {})
+        total, donde = 0.0, []
+        for bodega_id in set(fis) | set(res):
+            libre = float(fis.get(bodega_id) or 0) - float(res.get(bodega_id) or 0)
+            total += _libre_que_cuenta(libre, bodegas.get(bodega_id), bodega_despacho)
+            bodega = bodegas.get(bodega_id)
+            if bodega_id != bodega_despacho and libre > 0.005 and bodega is not None and not bodega.sin_traslado:
+                donde.append((bodega.nombre, round(libre, 2)))
+        total += round(float(en_camino.get(codigo) or 0), 2) + round(float(por_repartir.get(codigo) or 0), 2)
+        resultado[codigo] = (round(total, 2), sorted(donde, key=lambda d: -d[1]))
+    return resultado
 
 
 def disponible_empresa_producto(db: Session, *, producto: Producto, bodega_despacho: int) -> tuple[float, list[tuple[str, float]]]:
@@ -775,15 +844,21 @@ def producto_en_bodega(db: Session, producto_id: int | None, bodega_id: int) -> 
 def disponible_las_dos_empresas_producto(db: Session, *, producto: Producto, bodega_despacho: int) -> float:
     """Lo que se puede prometer de un producto sumando Arquitejas y Asia (el
     mismo código existe en las dos): una fila de cada empresa que lo tenga."""
-    total = 0.0
-    vistas: set[str] = set()
-    for otro in db.query(Producto).filter(Producto.codigo == producto.codigo).order_by(Producto.id):
-        empresa = otro.empresa or ""
-        if empresa in vistas:
-            continue
-        vistas.add(empresa)
-        total += disponible_empresa_producto(db, producto=otro, bodega_despacho=bodega_despacho)[0]
-    return round(total, 2)
+    return disponible_las_dos_empresas_productos(db, [producto], bodega_despacho=bodega_despacho)[producto.id]
+
+
+def disponible_las_dos_empresas_productos(db: Session, productos: list[Producto], *, bodega_despacho: int) -> dict[int, float]:
+    """Lo mismo para varios productos, con pocas consultas en total."""
+    codigos = {p.codigo for p in productos}
+    representantes: dict[tuple[str, str], Producto] = {}
+    if codigos:
+        for otro in db.query(Producto).filter(Producto.codigo.in_(codigos)).order_by(Producto.id):
+            representantes.setdefault((otro.codigo, otro.empresa or ""), otro)
+    disponibles = disponible_empresa_productos(db, list(representantes.values()), bodega_despacho=bodega_despacho)
+    por_codigo: dict[str, float] = {}
+    for (codigo, _), otro in representantes.items():
+        por_codigo[codigo] = por_codigo.get(codigo, 0.0) + disponibles[otro.id][0]
+    return {p.id: round(por_codigo.get(p.codigo, 0.0), 2) for p in productos}
 
 
 def _validar_que_quepa(
@@ -798,13 +873,15 @@ def _validar_que_quepa(
     cotización queda "esperando material" (la pantalla avisa dónde hay y de
     qué empresa). Misma regla al crear y al editar. `material_en_camino` y
     `empresa` se dejan por compatibilidad."""
+    # Bloquea los rollos de cada código en la bodega (serializa apartados
+    # simultáneos) y después mira lo libre de todos los códigos a la vez.
+    # Siempre se mira el total, aunque la bodega lo tenga: su material puede
+    # estar prometido a una cotización de otra bodega que lo está esperando.
+    for codigo_interno in solicitado_por_codigo:
+        bloquear_rollos_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno)
+    libres_codigo = disponible_empresa_codigos(db, solicitado_por_codigo, bodega_despacho=bodega_id)
     for codigo_interno, metros_solicitados in solicitado_por_codigo.items():
-        # Bloquea los rollos del código en la bodega (serializa apartados
-        # simultáneos). Siempre se mira el total, aunque la bodega lo tenga:
-        # su material puede estar prometido a una cotización de otra bodega
-        # que lo está esperando.
-        disponibilidad_por_codigo(db, bodega_id=bodega_id, codigo_interno=codigo_interno, bloquear=True)
-        libre, _ = disponible_empresa_codigo(db, codigo_interno=codigo_interno, bodega_despacho=bodega_id)
+        libre, _ = libres_codigo[codigo_interno]
         if metros_solicitados > libre + 0.005:
             raise HTTPException(
                 status_code=400,
@@ -815,10 +892,18 @@ def _validar_que_quepa(
                 ),
             )
 
+    # Los productos pedidos, bloqueados en una sola consulta.
+    bloqueados = {p.id: p for p in (
+        db.query(Producto).filter(Producto.id.in_(list(solicitado_por_producto)), Producto.bodega_id == bodega_id)
+        .order_by(Producto.id).with_for_update().all()
+    )} if solicitado_por_producto else {}
+    faltante = next((i for i in solicitado_por_producto if i not in bloqueados), None)
+    if faltante is not None:
+        raise HTTPException(status_code=404, detail=f"Producto {faltante} no encontrado.")
+    libres_producto = disponible_las_dos_empresas_productos(db, list(bloqueados.values()), bodega_despacho=bodega_id)
     for producto_id, cantidad_solicitada in solicitado_por_producto.items():
-        resumen = disponibilidad_producto(db, bodega_id=bodega_id, producto_id=producto_id, bloquear=True)
-        producto = db.get(Producto, producto_id)
-        libre = disponible_las_dos_empresas_producto(db, producto=producto, bodega_despacho=bodega_id)
+        resumen = {"codigo": bloqueados[producto_id].codigo}
+        libre = libres_producto[producto_id]
         if cantidad_solicitada > libre + 0.005:
             raise HTTPException(
                 status_code=400,
@@ -866,6 +951,11 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     rollos_pedidos = [item.rollo_id for item in datos.items if item.rollo_id]
     if len(rollos_pedidos) != len(set(rollos_pedidos)):
         raise HTTPException(status_code=400, detail="El mismo rollo está dos veces en la cotización.")
+    # Los productos de las líneas de stock en una sola consulta; la lista los
+    # mantiene en la sesión para que las revisiones de cada línea no los
+    # vuelvan a pedir uno por uno.
+    ids_producto = {item.producto_id for item in datos.items if item.producto_id}
+    productos_de_lineas = db.query(Producto).filter(Producto.id.in_(ids_producto)).all() if ids_producto else []  # noqa: F841
     for item in datos.items:
         if item.rollo_id:
             preparar_rollo_completo(db, item, bodega_id)
@@ -1252,10 +1342,9 @@ def stock_para_completar(db: Session, item_id: int, usuario: Usuario, busqueda: 
     else:
         codigo = (item.codigo_interno or "").strip()
         consulta = consulta.filter((Producto.codigo_rollo_origen == codigo) | Producto.codigo.ilike(f"%{codigo[1:]}%"))
-    productos = []
-    for producto in consulta.order_by(Producto.codigo).limit(30):
-        libre = disponibilidad_producto(db, bodega_id=apartado.bodega_id, producto_id=producto.id)["cantidad_disponible"]
-        productos.append({"id": producto.id, "codigo": producto.codigo, "descripcion": producto.descripcion, "disponible": libre})
+    encontrados = consulta.order_by(Producto.codigo).limit(30).all()
+    libres = disponibles_productos_bodega(db, encontrados, bodega_id=apartado.bodega_id)
+    productos = [{"id": p.id, "codigo": p.codigo, "descripcion": p.descripcion, "disponible": libres[p.id]} for p in encontrados]
     # Primero los que tienen libre, y entre ellos los de la misma medida de la
     # línea (ej. "-5" para tejas de 5 m).
     medida = f"-{item.medida:g}".replace(".", ",") if item.medida else ""
