@@ -218,10 +218,23 @@ def recibir_solicitud(db: Session, solicitud_id: int, usuario: Usuario) -> Solic
         if producto_destino:
             producto_destino.stock += cantidad
             producto_destino.entrada += cantidad
-        elif producto_origen is not None:
-            db.add(nuevo_producto_en_bodega(producto_origen, bodega_id=solicitud.bodega_solicitante_id, cantidad=solicitud.cantidad))
         else:
-            raise HTTPException(status_code=400, detail="El producto ya no existe en la bodega de donde salió.")
+            # Si la fila de origen ya no existe (se borró en 0 mientras iba en
+            # camino), se copia de cualquier bodega con ese código y empresa:
+            # antes el traslado no se podía recibir nunca.
+            plantilla = producto_origen or (
+                db.query(Producto)
+                .filter(Producto.codigo == solicitud.producto_codigo, Producto.empresa == (solicitud.empresa or ""))
+                .order_by(Producto.id).first()
+            )
+            if plantilla is not None:
+                db.add(nuevo_producto_en_bodega(plantilla, bodega_id=solicitud.bodega_solicitante_id, cantidad=solicitud.cantidad))
+            else:
+                db.add(Producto(
+                    bodega_id=solicitud.bodega_solicitante_id, codigo=solicitud.producto_codigo,
+                    descripcion=solicitud.producto_descripcion, empresa=solicitud.empresa or "",
+                    entrada=solicitud.cantidad, stock=solicitud.cantidad,
+                ))
         descripcion = solicitud.producto_descripcion
     db.add(Movimiento(
         fecha=ahora, tipo=TipoMovimiento.TRANSFERENCIA, motivo=solicitud.tipo_operacion.value,

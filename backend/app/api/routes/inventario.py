@@ -10,6 +10,7 @@ from app.models.apartado import Apartado, ApartadoItem
 from app.models.bodega import Bodega
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
+from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, EstadoSolicitud, Solicitud
 from app.models.unidad_familia import TablaUnidadFamilia
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.inventario import (
@@ -192,6 +193,18 @@ def eliminar_producto(producto_id: int, db: Session = Depends(get_db)) -> None:
     )
     if usado:
         raise HTTPException(status_code=400, detail=f"{producto.codigo} está en la cotización {usado[0]}: no se puede eliminar.")
+    # Un traslado de este producto (pedido, aceptado o en camino) necesita la
+    # fila de origen para recibirlo: borrarla lo dejaba atascado para siempre.
+    traslado = (
+        db.query(Solicitud.id)
+        .filter(Solicitud.rollo_id.is_(None), Solicitud.producto_codigo == producto.codigo,
+                Solicitud.empresa == (producto.empresa or ""),
+                Solicitud.estado.in_((EstadoSolicitud.PENDIENTE, *ESTADOS_TRASLADO_EN_CURSO)),
+                (Solicitud.bodega_propietaria_id == producto.bodega_id) | (Solicitud.bodega_solicitante_id == producto.bodega_id))
+        .first()
+    )
+    if traslado:
+        raise HTTPException(status_code=400, detail=f"{producto.codigo} tiene el traslado #{traslado[0]} sin terminar: no se puede eliminar hasta que lo reciban o lo rechacen.")
     db.delete(producto); db.commit()
 
 

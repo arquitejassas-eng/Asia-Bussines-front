@@ -417,8 +417,8 @@ def leer_hoja_equivalencia_espesor(df: pd.DataFrame) -> tuple[list[dict], list[d
                 "peso_por_metro": peso_por_metro,
             }
 
-        tipo_material = str(fila.get(mapeo["tipo_material"]) or "").strip() if mapeo["tipo_material"] else ""
-        codigo_tipo = str(fila.get(mapeo["codigo_tipo"]) or "").strip() if mapeo["codigo_tipo"] else ""
+        tipo_material = _texto_celda(fila.get(mapeo["tipo_material"])) if mapeo["tipo_material"] else ""
+        codigo_tipo = _texto_celda(fila.get(mapeo["codigo_tipo"])) if mapeo["codigo_tipo"] else ""
         if tipo_material and codigo_tipo:
             tipos_por_nombre[normalizar_texto(tipo_material)] = {
                 "nombre": tipo_material,
@@ -426,6 +426,15 @@ def leer_hoja_equivalencia_espesor(df: pd.DataFrame) -> tuple[list[dict], list[d
             }
 
     return list(espesores_por_valor.values()), list(tipos_por_nombre.values())
+
+
+def _texto_celda(valor) -> str:
+    """Texto de una celda del Excel. Una celda vacía llega como NaN, y
+    `str(NaN or "")` daba "nan" (NaN cuenta como verdadero): se guardaban
+    tipos y colores llamados "nan"."""
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return ""
+    return str(valor).strip()
 
 
 def leer_hoja_equivalencia_color(df: pd.DataFrame) -> list[dict]:
@@ -438,11 +447,11 @@ def leer_hoja_equivalencia_color(df: pd.DataFrame) -> list[dict]:
     filas_por_ral: dict[str, dict] = {}
 
     for _, fila in df.iterrows():
-        ral = str(fila.get(mapeo["ral"]) or "").strip()
+        ral = _texto_celda(fila.get(mapeo["ral"]))
         if not ral:
             continue
-        nombre = str(fila.get(mapeo["nombre"]) or "").strip() if mapeo["nombre"] else ""
-        codigo_interno = str(fila.get(mapeo["codigo_interno"]) or "").strip() if mapeo["codigo_interno"] else ""
+        nombre = _texto_celda(fila.get(mapeo["nombre"])) if mapeo["nombre"] else ""
+        codigo_interno = _texto_celda(fila.get(mapeo["codigo_interno"])) if mapeo["codigo_interno"] else ""
         if not codigo_interno:
             continue
         ral_normalizado = ral.upper().replace(" ", "")
