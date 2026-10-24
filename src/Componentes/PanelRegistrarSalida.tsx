@@ -1,13 +1,27 @@
 import { useEffect, useState } from "react";
 import { api, ErrorApi } from "./Api";
+import { coincideKilos, kilosBuscados, kilosDelRollo } from "../Utils/kilos";
 
 type Item = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string; cantidad: number;
   metrosPendientes: number | null; stockDescontado: boolean;
   rolloId?: number | null; rolloReferencia?: string;
 };
-type Apartado = { id: number; numeroCotizacion: string; cliente: string; bodegaNombre: string; items: Item[] };
+type Apartado = { id: number; numeroCotizacion: string; cliente: string; bodegaId?: number | null; bodegaNombre: string; items: Item[] };
 type RolloUsado = { itemId: number; referencia: string; metros: string };
+type RolloOpcion = { referencia: string; pesoNeto: number | null; metros: number; empresa: string };
+
+// Rollos que coinciden con lo escrito: por kilos ("4248", "4.248 kg") o por
+// parte de la referencia. Si ya está escrita la referencia exacta, nada.
+function opcionesPara(texto: string, rollos: RolloOpcion[]) {
+  const t = texto.trim().toUpperCase();
+  if (!t || rollos.some((r) => r.referencia.toUpperCase() === t)) return [];
+  const kilos = kilosBuscados(texto);
+  const encontrados = kilos
+    ? rollos.filter((r) => coincideKilos(r.pesoNeto, kilos))
+    : t.length >= 2 ? rollos.filter((r) => r.referencia.toUpperCase().includes(t)) : [];
+  return encontrados.slice(0, 6);
+}
 
 /** Admin Inventario registra la salida de una cotización con la hoja de vida
  * física: por cada línea de rollo, la referencia del rollo usado y los metros
@@ -29,6 +43,25 @@ export default function PanelRegistrarSalida({ apartado: apartadoActual, alTermi
   const [stock, setStock] = useState<Set<number>>(new Set());
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+
+  // Los rollos con metros de cada código, en la bodega de la cotización: para
+  // buscar el rollo por los kilos de la etiqueta en vez de la referencia.
+  const [rollosPorCodigo, setRollosPorCodigo] = useState<Record<string, RolloOpcion[]>>({});
+  useEffect(() => {
+    const codigos = [...new Set(lineasRollo.filter((it) => !it.rolloId && it.codigoInterno).map((it) => it.codigoInterno as string))];
+    codigos.forEach(async (codigo) => {
+      try {
+        const datos = await api.get<Record<string, unknown>[]>(`/admin-inventario/rollos-por-codigo?codigo_interno=${encodeURIComponent(codigo)}`) || [];
+        const rollosCodigo = datos
+          .filter((r) => (apartado.bodegaId == null || Number(r.bodega_id) === apartado.bodegaId) && Number(r.metros_disponibles) > 0)
+          .map((r) => ({ referencia: String(r.identificador_rollo || ""), pesoNeto: r.peso_neto == null ? null : Number(r.peso_neto),
+            metros: Number(r.metros_disponibles), empresa: String(r.empresa || "") }));
+        setRollosPorCodigo((actual) => ({ ...actual, [codigo]: rollosCodigo }));
+      } catch { /* sin sugerencias: igual se puede escribir la referencia */ }
+    });
+    // Solo al abrir el panel (la cotización queda fija mientras está abierto).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Mientras está abierto, la página de atrás no se desplaza y Esc lo cierra.
   useEffect(() => {
@@ -96,7 +129,7 @@ export default function PanelRegistrarSalida({ apartado: apartadoActual, alTermi
 
         <div className="separar-cuerpo">
           <p className="separar-ayuda">
-            Con la hoja de vida física: escribe la <strong>referencia del rollo</strong> que se usó y los metros. Puedes
+            Con la hoja de vida física: escribe la <strong>referencia del rollo</strong> que se usó (o sus <strong>kilos</strong> y lo escoges de la lista) y los metros. Puedes
             dejar líneas en blanco y registrarlas después; la cotización se cierra sola cuando todas tienen salida.
           </p>
 
@@ -117,15 +150,31 @@ export default function PanelRegistrarSalida({ apartado: apartadoActual, alTermi
                       <p className="salida-rollo-completo">
                         Rollo completo <strong>{it.rolloReferencia}</strong>: sale entero ({it.metrosPendientes} m).
                       </p>
-                    ) : filas.map(({ r, indice }, n) => (
+                    ) : filas.map(({ r, indice }, n) => {
+                      const opciones = opcionesPara(r.referencia, rollosPorCodigo[it.codigoInterno || ""] || []);
+                      return (
                       <div key={indice} className="salida-rollo">
                         <label className="salida-campo salida-campo-referencia">
-                          <span>{n === 0 ? "Rollo usado (referencia)" : "Otro rollo"}</span>
+                          <span>{n === 0 ? "Rollo usado (referencia o kilos)" : "Otro rollo (referencia o kilos)"}</span>
                           <input
                             autoCapitalize="characters" autoCorrect="off" spellCheck={false}
-                            placeholder={`Ej. ${it.codigoInterno}-05`} value={r.referencia}
+                            placeholder={`Ej. ${it.codigoInterno}-05 o 4248`} value={r.referencia}
                             onChange={(e) => cambiar(indice, "referencia", e.target.value)}
                           />
+                          {opciones.length > 0 && (
+                            <span className="salida-opciones">
+                              {opciones.map((o) => (
+                                <button key={o.referencia} type="button" className="salida-opcion" onClick={() => cambiar(indice, "referencia", o.referencia)}>
+                                  <strong>{o.referencia}</strong>
+                                  {kilosDelRollo(o.pesoNeto) != null && <> · {kilosDelRollo(o.pesoNeto)!.toLocaleString("es-CO")} kg</>}
+                                  {" · "}{o.metros.toLocaleString("es-CO")} m{o.empresa ? ` · ${o.empresa}` : ""}
+                                </button>
+                              ))}
+                            </span>
+                          )}
+                          {kilosBuscados(r.referencia) && opciones.length === 0 && (
+                            <small className="salida-sin-opciones">Ningún rollo de {it.codigoInterno} en esta bodega pesa {r.referencia.trim()} kg.</small>
+                          )}
                         </label>
                         <label className="salida-campo salida-campo-metros">
                           <span>Metros</span>
@@ -136,7 +185,8 @@ export default function PanelRegistrarSalida({ apartado: apartadoActual, alTermi
                           <button type="button" className="salida-quitar" aria-label="Quitar este rollo" onClick={() => quitar(indice)}>×</button>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                     {!it.rolloId && <button type="button" className="salida-otro" onClick={() => otroRollo(it.id)}>+ Se usó otro rollo</button>}
                   </li>
                 );

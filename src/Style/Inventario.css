@@ -1106,6 +1106,15 @@
 .salida-rollo { display: flex; gap: 0.5rem; align-items: flex-end; }
 .salida-campo { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
 .salida-campo-referencia { flex: 1; }
+/* Rollos que coinciden con los kilos (o la referencia) escritos: tocar uno llena la referencia. */
+.salida-opciones { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.3rem; }
+.salida-opcion {
+  text-align: left; padding: 0.4rem 0.6rem; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--at-border, #E1D5C0); background: var(--at-surface-2, #F1E9DC);
+  color: var(--at-text, #251C14); font-size: 0.85rem; font-family: var(--at-font-mono, monospace);
+}
+.salida-opcion:hover { border-color: var(--at-accent, #C2410C); }
+.salida-sin-opciones { margin-top: 0.25rem; color: var(--at-muted, #7C6A56); font-size: 0.8rem; }
 .salida-campo-metros { width: 6.5rem; flex: none; }
 .salida-campo > span {
   font-size: 0.7rem;
