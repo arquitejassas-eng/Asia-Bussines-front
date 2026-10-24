@@ -80,7 +80,9 @@ class Apartado(Base):
     stock_separado_por: Mapped[str] = mapped_column(String(150), default="")
     stock_separado_en: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    items = relationship("ApartadoItem", back_populates="apartado", cascade="all, delete-orphan")
+    # Siempre en el orden en que se escribieron (Postgres no garantiza ningún
+    # orden sin ORDER BY: en línea las líneas salían revueltas al editar).
+    items = relationship("ApartadoItem", back_populates="apartado", cascade="all, delete-orphan", order_by="ApartadoItem.id")
     bodega = relationship("Bodega")
 
     @property

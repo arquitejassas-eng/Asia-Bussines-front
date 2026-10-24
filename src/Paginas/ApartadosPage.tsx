@@ -47,8 +47,9 @@ function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number
 }
 
 // Pestañas de la lista: las abiertas, y aparte las entregadas y las canceladas.
-// "Pendientes por dar salida": ya salieron pero falta saber de qué rollo
-// (REFERENCIA "SI" en el Excel); se cierran con Registrar salida.
+// "Pendientes por dar salida": las que Planta ya terminó (la bodega les da
+// "Salida") y las que ya salieron pero falta saber de qué rollo (REFERENCIA
+// "SI" en el Excel; se cierran con Registrar salida).
 type Pestana = "cotizaciones" | "pendientes_salida" | "entregadas" | "canceladas";
 const PESTANAS: Record<Pestana, string> = {
   cotizaciones: "Cotizaciones", pendientes_salida: "Pendientes por dar salida", entregadas: "Entregadas", canceladas: "Canceladas",
@@ -65,7 +66,8 @@ function vaEnPestana(ap: { estado: string; salidaPendiente: boolean }, pestana: 
   const estadoPropio = ESTADO_DE_PESTANA[pestana];
   if (estadoPropio) return ap.estado === estadoPropio;
   if (CERRADAS.includes(ap.estado)) return false;
-  return porDarSalida(ap) === (pestana === "pendientes_salida");
+  const pendienteDeSalida = porDarSalida(ap) || ap.estado === "produccion_terminada";
+  return pendienteDeSalida === (pestana === "pendientes_salida");
 }
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
@@ -1040,7 +1042,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     value={a.filtroEstado} onChange={(e) => a.setFiltroEstado(e.target.value)} aria-label="Estado"
                   >
                     <option value="">Todos los estados</option>
-                    {Object.entries(ETIQUETAS_ESTADO).filter(([valor]) => !Object.values(ESTADO_DE_PESTANA).includes(valor)).map(([valor, etiqueta]) => (
+                    {Object.entries(ETIQUETAS_ESTADO).filter(([valor]) => !Object.values(ESTADO_DE_PESTANA).includes(valor) && valor !== "produccion_terminada").map(([valor, etiqueta]) => (
                       <option key={valor} value={valor}>{etiqueta}</option>
                     ))}
                   </select>
@@ -1073,7 +1075,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               {!a.cargandoApartados && (
                 <p className="inventario-carga-ayuda" style={{ margin: "0 0 0.5rem" }}>
                   {pestana === "pendientes_salida"
-                    ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización" : "cotizaciones"} con material que ya salió, pero falta saber de qué rollo. Cuando revisen la hoja de vida, usa "Registrar salida" con la referencia del rollo.`
+                    ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización" : "cotizaciones"}: las de "Producción terminada" ya las terminó Planta y la bodega les da "Salida" cuando el pedido sale; `
+                      + `las de "Por dar salida" ya salieron pero falta saber de qué rollo (cuando revisen la hoja de vida, Admin Inventario usa "Registrar salida" con la referencia del rollo).`
                     : pestana === "entregadas"
                     ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización entregada" : "cotizaciones entregadas"} al cliente.`
                     : pestana === "canceladas"
