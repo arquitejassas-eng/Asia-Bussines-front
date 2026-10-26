@@ -20,6 +20,7 @@ from app.services.apartados import (
 )
 from app.services.modelos_teja import modelo_en_descripcion, normalizar_modelo_teja
 from app.services.prestamos import LAMINA, registrar_prestamo
+from app.services.productos import nuevo_producto_en_bodega
 from app.services.seccionados import LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO
 
 # Regla física de los productos "seccionados": el ancho del rollo se divide
@@ -813,39 +814,38 @@ def convertir_lamina_lisa(db: Session, datos: ConvertirLaminaLisa, usuario: Usua
         cantidad=datos.laminas, usuario=usuario.correo, observaciones=nota, cotizacion=orden,
     ))
 
+    # Los caballetes/flanches entran con el código de siempre (el del rollo con
+    # "C" o "FC24" en vez de "L": LA50170,25 -> CA50170,25) y se suman al
+    # producto que ya existe con ese código: misma tarjeta que los demás.
+    codigo_destino = codigo_de_conversion(db, tipo, lamina)
     destino = (
         db.query(Producto)
-        .filter(
-            Producto.bodega_id == usuario.bodega_id,
-            Producto.familia == familia,
-            func.coalesce(Producto.empresa, "") == (lamina.empresa or ""),
-            func.coalesce(Producto.codigo_rollo_origen, "") == (lamina.codigo_rollo_origen or ""),
-            Producto.ancho_rollo == lamina.ancho_rollo,
-            Producto.metros_por_unidad == lamina.metros_por_unidad,
-            Producto.calidad == calidad,
-        )
-        .with_for_update().first()
+        .filter(Producto.bodega_id == usuario.bodega_id, func.upper(Producto.codigo) == codigo_destino,
+                func.coalesce(Producto.empresa, "") == (lamina.empresa or ""), Producto.familia != "Rollos de acero")
+        .order_by(Producto.id).with_for_update().first()
     )
     if destino is not None:
         destino.stock = round(destino.stock + piezas, 2)
         destino.entrada = round(destino.entrada + piezas, 2)
     else:
-        partes = [tipo.upper(), f"{_numero(float(lamina.metros_por_unidad))} m"]
-        if lamina.calibre: partes.append(f"CAL {lamina.calibre}")
-        if lamina.color: partes.append(lamina.color.upper())
-        if lamina.ral: partes.append(f"(RAL {lamina.ral})")
-        descripcion = " ".join(partes) + (f" - rollo {lamina.codigo_rollo_origen}" if lamina.codigo_rollo_origen else "") + (
-            " (de lámina lisa)") + (" (Segunda)" if calidad == "segunda" else "")
-        destino = Producto(
-            bodega_id=usuario.bodega_id, empresa=lamina.empresa or "",
-            codigo=f"CONV-{ahora.strftime('%Y%m%d%H%M%S')}-{token_hex(3).upper()}",
-            descripcion=descripcion[:255], familia=familia, codigo_rollo_origen=lamina.codigo_rollo_origen,
-            ancho_rollo=lamina.ancho_rollo, tipo_producto=tipo, calibre=lamina.calibre or "",
-            color=lamina.color or "", ral=lamina.ral or "", calidad=calidad,
-            motivo_segunda=(lamina.motivo_segunda or "") if calidad == "segunda" else "",
-            metros_por_unidad=lamina.metros_por_unidad, fecha_produccion=ahora,
-            entrada=piezas, stock=piezas,
+        # En otra bodega ya existe: es el mismo producto (mismos datos).
+        plantilla = (
+            db.query(Producto)
+            .filter(func.upper(Producto.codigo) == codigo_destino, func.coalesce(Producto.empresa, "") == (lamina.empresa or ""),
+                    Producto.familia != "Rollos de acero")
+            .order_by(Producto.id).first()
         )
+        if plantilla is not None:
+            destino = nuevo_producto_en_bodega(plantilla, bodega_id=usuario.bodega_id, cantidad=piezas)
+        else:
+            destino = Producto(
+                bodega_id=usuario.bodega_id, empresa=lamina.empresa or "", codigo=codigo_destino,
+                descripcion=descripcion_de_conversion(db, tipo, lamina)[:255], familia=familia,
+                calibre=lamina.calibre or "", color=lamina.color or "", ral=lamina.ral or "",
+                calidad=calidad, motivo_segunda=(lamina.motivo_segunda or "") if calidad == "segunda" else "",
+                codigo_rollo_origen=lamina.codigo_rollo_origen, ancho_rollo=lamina.ancho_rollo,
+                fecha_produccion=ahora, entrada=piezas, stock=piezas,
+            )
         db.add(destino)
         db.flush()
     db.add(Movimiento(
@@ -858,3 +858,37 @@ def convertir_lamina_lisa(db: Session, datos: ConvertirLaminaLisa, usuario: Usua
     cerrar_orden_interna_si_terminó(item.apartado)
     return {"lamina_codigo": lamina.codigo, "laminas": datos.laminas, "producto_codigo": destino.codigo,
             "producto_descripcion": destino.descripcion, "piezas": piezas}
+
+
+_CODIGO_LAMINA = re.compile(r"^L([A-Z]+)(\d{4})(\d,\d+)$")
+
+
+def _desarrollo_flanche(ancho) -> int:
+    """Ancho de cada flanche en cm (el rollo se parte en 5): 122 cm -> 24."""
+    ancho = float(ancho or 122)
+    return int((ancho if ancho > 10 else ancho * 100) // SECCIONES_POR_TIPO_PRODUCTO["flanche"])
+
+
+def codigo_de_conversion(db: Session, tipo: str, lamina: Producto) -> str:
+    """Código de los caballetes/flanches que salen de una lámina lisa, como
+    los del inventario: el del rollo con "C" (caballete) o "FC" + desarrollo
+    (flanche) en vez de la "L": LA50170,25 -> CA50170,25 / FC24A50170,25.
+    De segunda llevan un "2" adelante (como las tejas de segunda)."""
+    origen = (lamina.codigo_rollo_origen or "").strip().upper()
+    resto = origen[1:] if origen.startswith("L") else origen
+    prefijo = "C" if tipo == "caballete" else f"FC{_desarrollo_flanche(lamina.ancho_rollo)}"
+    return ("2" if (lamina.calidad or "") == "segunda" else "") + prefijo + resto
+
+
+def descripcion_de_conversion(db: Session, tipo: str, lamina: Producto) -> str:
+    """Como los del inventario: "CABALLETE AZUL 5017 0,25" /
+    "FLANCHE DESARROLLO 24 AZUL 5017 0,25"."""
+    origen = (lamina.codigo_rollo_origen or "").strip().upper()
+    color = (lamina.color or "").upper() or (db.query(Rollo.color_material).filter(Rollo.codigo_interno == origen)
+                                             .filter(Rollo.color_material != "").limit(1).scalar() or "").upper()
+    partes = ["CABALLETE" if tipo == "caballete" else f"FLANCHE DESARROLLO {_desarrollo_flanche(lamina.ancho_rollo)}"]
+    coincide = _CODIGO_LAMINA.match(origen)
+    if color:
+        partes.append(color)
+    partes += [coincide.group(2), coincide.group(3)] if coincide else ([lamina.calibre] if lamina.calibre else [])
+    return " ".join(partes) + (" (Segunda)" if (lamina.calidad or "") == "segunda" else "")
