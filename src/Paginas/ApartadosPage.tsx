@@ -761,8 +761,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         readOnly={Boolean(item.id && item.metrosConsumidos)}
                         title={item.id && item.metrosConsumidos ? "Esta línea ya tiene salida: el código no se puede cambiar." : undefined}
                         value={item.codigoInterno}
-                        onChange={(e) => a.actualizarItemApartado(indice, "codigoInterno", e.target.value)}
-                        onBlur={(e) => a.consultarDisponibilidadItem(indice, e.target.value)}
+                        onChange={(e) => a.actualizarItemApartado(indice, "codigoInterno", e.target.value.toUpperCase())}
+                        onBlur={(e) => a.consultarDisponibilidadItem(indice, e.target.value.toUpperCase())}
                       />
                       {disponibilidadItems[indice]?.sinBodega && (
                         <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>

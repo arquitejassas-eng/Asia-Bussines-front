@@ -60,6 +60,9 @@ class ApartadoItemCrear(BaseModel):
                 raise ValueError("\"Material de las dos empresas\" solo se puede en una línea de lámina por producir.")
         elif self.empresa and self.empresa not in EMPRESAS_CONOCIDAS:
             raise ValueError("La empresa del material de cada línea debe ser Arquitejas o Asia Business.")
+        # Los códigos de clasificación van en mayúsculas ("la50170,38" -> "LA50170,38").
+        if self.codigo_interno:
+            self.codigo_interno = self.codigo_interno.strip().upper()
         self.tipo_producto = (self.tipo_producto or "").strip().lower()
         if self.tipo_producto == "teja" or self.modalidad != ModalidadApartado.POR_ROLLO:
             self.tipo_producto = ""
