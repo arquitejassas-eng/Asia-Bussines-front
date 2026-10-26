@@ -4,7 +4,7 @@ import { FAMILIA_PORCELANATO, FAMILIA_TEJA, normalizarFamilia } from "../Hooks/u
 import PanelAdminUnidadesFamilia from "./PanelAdminUnidadesFamilia";
 import ModalConfirmacion from "./ModalConfirmacion";
 import { anchoPorSeccion } from "../Utils/produccion";
-import { esSegundaPorCodigo, longitudDesdeCodigo, calibrePantalla } from "../Utils/teja";
+import { esSegundaPorCodigo, longitudDesdeCodigo, calibrePantalla, MODELOS_TEJA } from "../Utils/teja";
 import { EMPRESAS, NOMBRE_CORTO_EMPRESA, siglasEnOrden, sumarPorEmpresa } from "../Utils/empresas";
 import { TotalesEmpresaTarjeta } from "./CantidadesPorEmpresa";
 
@@ -124,14 +124,30 @@ function PanelProductosInventario({
                 {Object.entries(EMPRESAS).map(([sigla, nombre]) => <option key={sigla} value={sigla}>{nombre}</option>)}
               </select>
             </div>
-            <div>
-              <label>Referencia</label>
-              <input
-                placeholder="Otro código de identificación (opcional)"
-                value={formularioProducto.referencia}
-                onChange={(e) => actualizarCampoProducto("referencia", e.target.value)}
-              />
-            </div>
+            {normalizarFamilia(formularioProducto.familia) === FAMILIA_TEJA ? (
+              <div>
+                {/* En una teja la referencia es su modelo: de ahí sale su tarjeta. */}
+                <label>Modelo</label>
+                <input
+                  list="inventario-datalist-modelos-teja"
+                  placeholder="Ej. ARQUITECTONICA"
+                  value={formularioProducto.referencia}
+                  onChange={(e) => actualizarCampoProducto("referencia", e.target.value)}
+                />
+                <datalist id="inventario-datalist-modelos-teja">
+                  {Object.keys(MODELOS_TEJA).map((m) => <option key={m} value={m} />)}
+                </datalist>
+              </div>
+            ) : (
+              <div>
+                <label>Referencia</label>
+                <input
+                  placeholder="Otro código de identificación (opcional)"
+                  value={formularioProducto.referencia}
+                  onChange={(e) => actualizarCampoProducto("referencia", e.target.value)}
+                />
+              </div>
+            )}
             <div>
               <label>Descripción</label>
               <input

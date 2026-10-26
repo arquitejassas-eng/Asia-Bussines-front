@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { EMPRESAS } from "../Utils/empresas";
-import { FAMILIA_PORCELANATO, normalizarFamilia } from "../Hooks/useProductosInventario";
+import { FAMILIA_PORCELANATO, FAMILIA_TEJA, normalizarFamilia } from "../Hooks/useProductosInventario";
+import { MODELOS_TEJA } from "../Utils/teja";
 import { confirmarFamilia, useFamiliasProductos } from "../Hooks/useFamiliasProductos";
 
 // Admin Inventario crea los productos de stock (códigos nuevos) de cada
@@ -134,11 +135,23 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
           <input type="number" min="0" step="any" placeholder="0" value={formulario.cantidad}
             onChange={(e) => cambiar("cantidad", e.target.value)} />
         </div>
-        <div>
-          <label>Referencia</label>
-          <input placeholder="Otro código de identificación (opcional)" value={formulario.referencia}
-            onChange={(e) => cambiar("referencia", e.target.value)} />
-        </div>
+        {normalizarFamilia(formulario.familia) === FAMILIA_TEJA ? (
+          <div>
+            {/* En una teja la referencia es su modelo: de ahí sale su tarjeta en Inventario. */}
+            <label>Modelo *</label>
+            <input list="admin-datalist-modelos-teja" placeholder="Ej. ARQUITECTONICA" value={formulario.referencia}
+              onChange={(e) => cambiar("referencia", e.target.value)} />
+            <datalist id="admin-datalist-modelos-teja">
+              {Object.keys(MODELOS_TEJA).map((m) => <option key={m} value={m} />)}
+            </datalist>
+          </div>
+        ) : (
+          <div>
+            <label>Referencia</label>
+            <input placeholder="Otro código de identificación (opcional)" value={formulario.referencia}
+              onChange={(e) => cambiar("referencia", e.target.value)} />
+          </div>
+        )}
         <div>
           <label>Stock mínimo (opcional)</label>
           <input type="number" min="0" step="any" placeholder="Sin alerta" value={formulario.stockMinimo}

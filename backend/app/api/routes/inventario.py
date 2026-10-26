@@ -20,6 +20,7 @@ from app.schemas.inventario import (
     SeleccionarHojaCargaProductosRequest,
 )
 from app.schemas.unidad_familia import UnidadFamiliaInput, UnidadFamiliaResponse
+from app.services.modelos_teja import modelo_en_descripcion, normalizar_modelo_teja
 from app.services import carga_productos as srv_carga
 from app.services import archivos_carga_productos
 from app.services import clasificacion as srv_excel
@@ -105,6 +106,7 @@ def crear_producto(datos: ProductoCrear, db: Session = Depends(get_db), usuario:
     if any(p.bodega_id == bodega.id for p in mismos):
         raise HTTPException(status_code=409, detail=f"El producto '{codigo}' de esa empresa ya existe en {bodega.nombre}: búscalo y úsalo.")
     datos.familia = srv_productos.familia_existente(db, datos.familia)
+    datos.referencia = _modelo_si_es_teja(datos.familia, datos.referencia, datos.descripcion, obligatorio=not mismos)
     cantidad = float(datos.stock or 0)
     validar_cantidad_entera_si_aplica(db, datos.familia, cantidad)
     if mismos:
@@ -138,6 +140,19 @@ def crear_producto(datos: ProductoCrear, db: Session = Depends(get_db), usuario:
     return producto
 
 
+def _modelo_si_es_teja(familia: str | None, referencia: str | None, descripcion: str | None, *, obligatorio: bool) -> str:
+    """En una TEJA la referencia es su modelo (de ahí sale su tarjeta en
+    Inventario): "arqui" -> ARQUITECTONICA. Sin escribirlo, se toma de la
+    descripción si lo nombra; un producto nuevo sin modelo no se crea."""
+    referencia = (referencia or "").strip()
+    if " ".join((familia or "").upper().split()) != "TEJA":
+        return referencia
+    modelo = normalizar_modelo_teja(referencia) or modelo_en_descripcion(descripcion)
+    if not modelo and obligatorio:
+        raise HTTPException(status_code=400, detail="Escribe el modelo de la teja (ej. ARQUITECTONICA, SUPERMIL o MASTERMIL).")
+    return modelo
+
+
 @router.put("/productos/{producto_id}", response_model=ProductoResponse,
             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
 def actualizar_producto(producto_id: int, datos: ProductoActualizar, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Producto:
@@ -151,6 +166,7 @@ def actualizar_producto(producto_id: int, datos: ProductoActualizar, db: Session
     ):
         raise HTTPException(status_code=403, detail="El código y la empresa de un producto solo los cambia Admin Inventario.")
     datos.familia = srv_productos.familia_existente(db, datos.familia)
+    datos.referencia = _modelo_si_es_teja(datos.familia, datos.referencia, datos.descripcion, obligatorio=False)
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.entrada)
     validar_cantidad_entera_si_aplica(db, datos.familia, datos.stock)
     campos_de_stock = {"stock", "entrada", "stock_anterior", "entrada_anterior", "bodega_id"}
@@ -168,7 +184,7 @@ def actualizar_producto(producto_id: int, datos: ProductoActualizar, db: Session
     # a ser. No toca tipo_producto si el producto viene de Producción
     # (nunca se edita por esta ruta con metros_por_unidad relevante para
     # caballetes/flanches, que ya traen su propio tipo_producto correcto).
-    if producto.produccion_id is None:
+    if producto.produccion_id is None and (producto.tipo_producto or "") in ("", "conversion"):
         producto.tipo_producto = "conversion" if (producto.metros_por_unidad or 0) > 0 else ""
     db.commit(); db.refresh(producto)
     return producto
