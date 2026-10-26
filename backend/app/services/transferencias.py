@@ -5,7 +5,6 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.bodega import Bodega
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.rollo import Rollo
@@ -63,7 +62,6 @@ def crear_solicitud_transferencia(
             Solicitud.rollo_id == rollo.id, Solicitud.estado == EstadoSolicitud.PENDIENTE
         ).first() is not None:
             raise HTTPException(status_code=409, detail="Este rollo ya tiene una solicitud pendiente de otra bodega.")
-        _exigir_bodega_que_traslada(db, rollo.bodega_id)
         return Solicitud(
             fecha=datetime.now(timezone.utc), estado=EstadoSolicitud.PENDIENTE,
             tipo_operacion=datos.tipo_operacion, cantidad=rollo.metros_disponibles,
@@ -86,7 +84,6 @@ def crear_solicitud_transferencia(
     if _decimal(datos.cantidad) > producto.stock:
         raise HTTPException(status_code=400, detail="La cantidad supera la disponibilidad de esa bodega.")
     validar_reserva_producto(db, producto=producto, cantidad=_decimal(datos.cantidad))
-    _exigir_bodega_que_traslada(db, producto.bodega_id)
     return Solicitud(
         fecha=datetime.now(timezone.utc), estado=EstadoSolicitud.PENDIENTE,
         tipo_operacion=datos.tipo_operacion, cantidad=datos.cantidad,
@@ -95,12 +92,6 @@ def crear_solicitud_transferencia(
         bodega_propietaria_id=producto.bodega_id, solicitado_por=usuario.correo,
         observaciones=datos.observaciones, numero_cotizacion=datos.numero_cotizacion.strip(),
     )
-
-
-def _exigir_bodega_que_traslada(db: Session, bodega_id: int | None) -> None:
-    bodega = db.get(Bodega, bodega_id) if bodega_id is not None else None
-    if bodega is not None and bodega.sin_traslado:
-        raise HTTPException(status_code=400, detail=f"Desde {bodega.nombre} no se hacen traslados a otras bodegas.")
 
 
 def rechazar_solicitud_transferencia(

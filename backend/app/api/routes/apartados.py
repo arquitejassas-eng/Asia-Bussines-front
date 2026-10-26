@@ -165,9 +165,10 @@ def buscar_productos_para_apartar(
         .all()
     )
     # Lo que no está en esta bodega pero sí en otra (se trae con un traslado;
-    # San Gil no traslada): una fila por código y empresa, la de más stock.
+    # lo de San Gil no cuenta, queda muy lejos): una fila por código y empresa,
+    # la de más stock.
     ya = {(p.codigo, p.empresa) for p in propios}
-    sin_traslado = {b.id for b in db.query(Bodega).all() if b.sin_traslado}
+    lejana = {b.id for b in db.query(Bodega).all() if b.lejana}
     otros: dict[tuple, Producto] = {}
     for p in (
         db.query(Producto)
@@ -177,7 +178,7 @@ def buscar_productos_para_apartar(
         .limit(40)
     ):
         clave = (p.codigo, p.empresa)
-        if clave not in ya and clave not in otros and p.bodega_id not in sin_traslado:
+        if clave not in ya and clave not in otros and p.bodega_id not in lejana:
             otros[clave] = p
     def empieza_con(p: Producto) -> bool:
         return any((v or "").lower().startswith(texto.lower()) for v in (p.codigo, p.descripcion))

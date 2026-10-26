@@ -11,8 +11,6 @@ class BodegaResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     nombre: str
-    # Desde esta bodega no se trasladan materiales (ver Bodega.sin_traslado).
-    sin_traslado: bool = False
 
 
 class BodegaCrear(BaseModel):

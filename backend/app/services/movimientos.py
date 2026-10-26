@@ -92,9 +92,8 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
 
     if datos.tipo == TipoMovimiento.TRASLADO:
         # El traslado directo empujaba stock a otra bodega al instante, sin que
-        # la otra lo confirmara ni quedara "en camino" (y saltándose la regla
-        # de las bodegas que no trasladan). Entre sedes se usa el traslado en
-        # 4 pasos de Bodegas; Admin Inventario reparte con Envíos.
+        # la otra lo confirmara ni quedara "en camino". Entre sedes se usa el
+        # traslado en 4 pasos de Bodegas; Admin Inventario reparte con Envíos.
         raise HTTPException(
             status_code=400,
             detail="Los traslados entre bodegas se hacen desde Bodegas (pedir, aceptar, despachar y recibir). "

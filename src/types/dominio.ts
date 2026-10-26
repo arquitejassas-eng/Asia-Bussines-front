@@ -1,6 +1,5 @@
 export type Sesion = { correo: string; bodegaId: number | null; bodegaNombre: string; rol: string };
-// sinTraslado: desde esa bodega no se trasladan materiales (ej. San Gil).
-export type Bodega = { id: number; nombre: string; sin_traslado?: boolean };
+export type Bodega = { id: number; nombre: string };
 export type SolicitudApi = {
   id: number; estado: string; tipo_operacion: string; cantidad: number; producto_codigo: string;
   producto_descripcion: string; rollo_id: number | null; bodega_solicitante_id: number; bodega_propietaria_id: number;

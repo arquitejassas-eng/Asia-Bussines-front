@@ -200,11 +200,6 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                   </button>
                 </div>
 
-                {b.bodegaSeleccionada.sin_traslado && (
-                  <p className="bodegas-error">
-                    Desde {b.bodegaSeleccionada.nombre} no se hacen traslados a otras bodegas: puedes ver su inventario, pero no pedirlo.
-                  </p>
-                )}
                 <input
                   type="text"
                   className="bodegas-input-producto"
@@ -246,7 +241,7 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                           <td>
                             <button
                               className="bodegas-boton-solicitar"
-                              disabled={p.stock <= 0 || Boolean(b.bodegaSeleccionada?.sin_traslado)}
+                              disabled={p.stock <= 0}
                               onClick={() => b.abrirFormularioSolicitud(p)}
                             >
                               {p.rolloId ? "Solicitar este rollo" : "Solicitar / Intercambio"}

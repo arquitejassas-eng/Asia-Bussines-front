@@ -384,7 +384,7 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
             empresa = "" if empresa == AMBAS_EMPRESAS else empresa
             donde = sorted(
                 ((bodegas[b].nombre, round(libre, 2)) for b, libre in libres.get((codigo, empresa), {}).items()
-                 if b != bodega_despacho and libre > 0.005 and b in bodegas and not bodegas[b].sin_traslado),
+                 if b != bodega_despacho and libre > 0.005 and b in bodegas and not bodegas[b].lejana),
                 key=lambda d: -d[1],
             )
             lista = resultado[apartado_id]
@@ -684,9 +684,9 @@ def _bodegas_por_id(db: Session) -> dict[int, Bodega]:
 
 def _libre_que_cuenta(libre: float, bodega: Bodega | None, bodega_despacho: int) -> float:
     """Lo libre de una bodega que cuenta para la empresa: lo de una bodega
-    desde la que no se traslada (San Gil) solo sirve para despachar allá
+    lejana (San Gil, ver Bodega.lejana) solo sirve para despachar allá
     mismo; lo que le falta (negativo) sí resta, porque ya está prometido."""
-    if bodega is not None and bodega.sin_traslado and bodega.id != bodega_despacho:
+    if bodega is not None and bodega.lejana and bodega.id != bodega_despacho:
         return min(libre, 0)
     return libre
 
@@ -750,7 +750,7 @@ def disponible_empresa_codigos(
             libre = float(fis.get(bodega_id) or 0) - float(res.get(bodega_id) or 0)
             total += _libre_que_cuenta(libre, bodegas.get(bodega_id), bodega_despacho)
             bodega = bodegas.get(bodega_id)
-            if bodega_id != bodega_despacho and libre > 0.005 and bodega is not None and not bodega.sin_traslado:
+            if bodega_id != bodega_despacho and libre > 0.005 and bodega is not None and not bodega.lejana:
                 donde.append((bodega.nombre, round(libre, 2)))
         total += round(float(en_camino.get(codigo) or 0), 2) + round(float(por_repartir.get(codigo) or 0), 2)
         resultado[codigo] = (round(total, 2), sorted(donde, key=lambda d: -d[1]))
@@ -805,7 +805,7 @@ def disponible_empresa_productos(db: Session, productos: list[Producto], *, bode
             libre = float(p.stock) - round(float(reservado.get(p.id) or 0), 2)
             total += _libre_que_cuenta(libre, bodegas.get(p.bodega_id), bodega_despacho)
             bodega = bodegas.get(p.bodega_id)
-            if p.bodega_id != bodega_despacho and libre > 0.005 and (bodega is None or not bodega.sin_traslado):
+            if p.bodega_id != bodega_despacho and libre > 0.005 and (bodega is None or not bodega.lejana):
                 donde.append((bodega.nombre if bodega else "Admin Inventario", round(libre, 2)))
         total += en_camino.get((producto.codigo, producto.empresa or ""), 0.0)
         resultado[producto.id] = (round(total, 2), sorted(donde, key=lambda d: -d[1]))
@@ -897,7 +897,7 @@ def _validar_que_quepa(
 ) -> None:
     """Lo que se va a apartar (o lo que se aumenta al editar) tiene que caber
     en lo libre sumando Arquitejas y Asia: todas las bodegas (desde donde se
-    trae con un traslado; San Gil no traslada) y lo que viene en camino o
+    trae con un traslado; lo de San Gil no cuenta) y lo que viene en camino o
     está por repartir. Nunca se promete más de lo que hay entre las dos. Si
     la empresa del material o la bodega de despacho no alcanzan, la
     cotización queda "esperando material" (la pantalla avisa dónde hay y de
