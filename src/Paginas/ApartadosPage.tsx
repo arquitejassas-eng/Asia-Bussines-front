@@ -116,6 +116,26 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     return datos.cantidadRollos === 0
       || metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto).metros > (datos.metrosDisponibles ?? 0);
   });
+  // Las líneas del mismo código se suman (como al guardar): la línea con la
+  // que la cotización pasa de lo libre en toda la compañía (Arquitejas + Asia,
+  // todas las bodegas y lo que viene en camino) queda marcada de una vez, sin
+  // esperar a guardar. Al editar no: lo que ya estaba apartado es de ella y lo
+  // revisa el backend al guardar.
+  const excesoPorLinea: Record<number, { codigo: string; pedido: number; hay: number }> = {};
+  if (!a.editandoId) {
+    const pedidoPorCodigo: Record<string, number> = {};
+    a.formulario.items.forEach((item, indice) => {
+      const codigo = String(item.codigoInterno || "").trim().toUpperCase();
+      if (item.modalidad !== "por_rollo" || !codigo || !(Number(item.cantidad) > 0) || !(Number(item.medida) > 0)) return;
+      pedidoPorCodigo[codigo] = (pedidoPorCodigo[codigo] ?? 0) + metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto).metros;
+      const datos = disponibilidadItems[indice]?.datos;
+      if (!datos || datos.disponibleEmpresa == null) return;
+      const hay = Math.max(datos.disponibleEmpresa, 0) + (datos.otrasEmpresas ?? []).reduce((suma, o) => suma + Math.max(o.total, 0), 0);
+      const pedido = Math.round(pedidoPorCodigo[codigo] * 100) / 100;
+      if (pedido > hay + 0.005) excesoPorLinea[indice] = { codigo, pedido, hay: Math.round(hay * 100) / 100 };
+    });
+  }
+  const lineasQueSePasan = Object.keys(excesoPorLinea).map((i) => Number(i) + 1);
   const ofrecerMaterialEnCamino = lineaSinMaterial || a.formulario.materialEnCamino
     || a.errorFormularioApartado.includes("viene en camino");
 
@@ -279,6 +299,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
   function guardarFormulario(evento: { preventDefault: () => void }) {
     evento.preventDefault();
+    if (lineasQueSePasan.length) return;
     if (!quitaEstaParte) {
       a.crearApartado(evento);
       return;
@@ -790,6 +811,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           </p>
                         )
                       )}
+                      {excesoPorLinea[indice] && (
+                        <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
+                          Con esta línea la cotización pide <strong>{excesoPorLinea[indice].pedido} m</strong> de {excesoPorLinea[indice].codigo} y
+                          solo hay {excesoPorLinea[indice].hay} m libres (sumando Arquitejas y Asia, todas las bodegas y lo que viene en
+                          camino). Faltan {Math.round((excesoPorLinea[indice].pedido - excesoPorLinea[indice].hay) * 100) / 100} m.
+                        </p>
+                      )}
                       {avisoOtraBodega(item, indice)}
                     </div>
                   ) : item.modalidad === "rollo_completo" ? (
@@ -1067,9 +1095,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               )}
 
               {a.errorFormularioApartado && <p className="inventario-error">{a.errorFormularioApartado}</p>}
+              {lineasQueSePasan.length > 0 && (
+                <p className="inventario-error">
+                  No alcanza el material: revisa la línea {lineasQueSePasan.join(", ")} (baja la cantidad o quítala) para poder guardar.
+                </p>
+              )}
 
               <div className="inventario-form-botones">
-                <button type="submit" className="inventario-boton" disabled={a.guardandoApartado}>
+                <button type="submit" className="inventario-boton" disabled={a.guardandoApartado || lineasQueSePasan.length > 0}>
                   {a.guardandoApartado ? "Guardando..." : quitaEstaParte ? `Quitar de ${a.parteEditada.bodega}` : a.editandoId ? "Guardar cambios" : a.formulario.ordenInterna ? "Crear orden" : "Crear apartado"}
                 </button>
                 <button type="button" className="inventario-boton-cancelar" onClick={a.cerrarFormularioApartado}>
