@@ -11,7 +11,7 @@ type Props = { sesion: Sesion; onCerrarSesion: () => void; notificaciones?: numb
 // debería ver el enlace en la barra lateral.
 const MODULOS = [
   { clave: "inventario", etiqueta: "Inventario", ruta: "/inventario", disponible: true, roles: ["administrativo"] },
-  { clave: "apartados", etiqueta: "Apartados", ruta: "/apartados", disponible: true, roles: ["administrativo", "jefe_planta", "admin_inventario"] },
+  { clave: "apartados", etiqueta: "Apartados", ruta: "/apartados", disponible: true, roles: ["administrativo", "jefe_planta", "admin_inventario", "vendedor"] },
   { clave: "recepcion", etiqueta: "Recepción y Verificación", ruta: "/recepcion", disponible: true, roles: ["admin_inventario"] },
   { clave: "bodegas", etiqueta: "Bodegas", ruta: "/bodegas", disponible: true, notificable: true, roles: ["administrativo"] },
   { clave: "rollos", etiqueta: "Rollos almacenados", ruta: "/rollos", disponible: true, roles: ["administrativo", "admin_inventario"] },

@@ -3,6 +3,16 @@
 // backend/app/services/empresas.py).
 export const EMPRESAS: Record<string, string> = { AR: "Arquitejas", ABG: "Asia Business" };
 
+// Línea de cotización con "Material de las dos empresas" (solo lámina):
+// Planta usa rollos de cualquiera y lo de la otra empresa queda como préstamo.
+export const AMBAS_EMPRESAS = "AMBAS";
+
+/** "Arquitejas", "Asia Business" o "las dos empresas" (para "Material de ..."). */
+export function nombreMaterial(sigla: string | null | undefined) {
+  if (sigla === AMBAS_EMPRESAS) return "las dos empresas";
+  return EMPRESAS[sigla || ""] || sigla || "";
+}
+
 // Valor especial del filtro para ver los rollos cuya referencia no traía
 // empresa (los que hay que corregir a mano).
 export const FILTRO_SIN_EMPRESA = "sin_empresa";

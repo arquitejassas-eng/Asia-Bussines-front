@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato API pendiente de centralizar en src/types.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AMBAS_EMPRESAS } from "../Utils/empresas";
 import { useSearchParams } from "react-router-dom";
 import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, produccionDesdeApi, rolloDesdeApi } from "./Mapeo";
@@ -362,7 +363,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     // El sobrante de la línea anterior no es de esta (se vuelve a sembrar solo).
     setStockAdicional([]);
     setCodigoBusqueda(solicitud.codigoInterno); // llena la tabla de "rollos disponibles" con este código.
-    setEmpresaFiltro(solicitud.empresa || ""); // y solo los rollos de la empresa de la cotización.
+    // y solo los rollos de la empresa del material (con "las dos empresas", todos).
+    setEmpresaFiltro(solicitud.empresa === AMBAS_EMPRESAS ? "" : solicitud.empresa || "");
 
     // El rollo físico lo elige Planta a mano en la tabla de abajo (checkbox +
     // metros por fila) -- ya no se preselecciona por antigüedad (FIFO): en la

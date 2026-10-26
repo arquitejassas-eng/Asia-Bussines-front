@@ -46,6 +46,8 @@ def consultar_disponibilidad(
     `empresa` (la de la cotización), solo lo de esa empresa."""
     bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
     empresa = empresa.strip().upper()
+    if empresa == srv.AMBAS_EMPRESAS:
+        empresa = ""  # "Material de las dos empresas": lo de las dos sumado
     resultado = srv.disponibilidad_por_codigo(db, bodega_id=bodega, codigo_interno=codigo_interno, empresa=empresa)
     total_empresa, donde = srv.disponible_empresa_codigo(db, codigo_interno=codigo_interno, bodega_despacho=bodega, empresa=empresa)
     # La otra empresa: lo libre en ESTA bodega y en todas.
@@ -68,7 +70,7 @@ def _con_id_de_bodega(db: Session, donde: list[tuple[str, float]]) -> list[dict]
 
 
 @router.get("/siguiente-numero", response_model=SiguienteNumeroResponse,
-            dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+            dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR))])
 def consultar_siguiente_numero(empresa: str = Query(..., min_length=1), db: Session = Depends(get_db)) -> dict:
     """El número que sigue en las cotizaciones de esa empresa (cada una lleva
     su consecutivo). Se puede cambiar a mano en el formulario."""
@@ -251,10 +253,11 @@ def registrar_salida_con_hoja_de_vida(
     return _con_faltantes(db, [apartado])[0]
 
 
-# Los apartados los crea Admin Inventario (cotización aprobada) eligiendo la
-# bodega; la bodega solo decide cuándo enviarlo a producción.
+# Los apartados los crea el vendedor (cotización aprobada) eligiendo la
+# bodega; la bodega solo decide cuándo enviarlo a producción y Admin
+# Inventario es quien los anula.
 @router.post("", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR))])
 def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
     """Cada línea dice de qué bodega y de qué empresa sale su material. La
     cotización es UNA, de la empresa elegida: una línea con material de la
@@ -315,8 +318,9 @@ def listar_apartados(
                  joinedload(Apartado.bodega))
     )
     # Admin Inventario ve los de todas las bodegas (puede filtrar por una);
-    # los demás roles, solo los de la suya.
-    if usuario.rol == RolUsuario.ADMIN_INVENTARIO:
+    # el vendedor, solo los que creó; los demás roles, solo los de su bodega.
+    if usuario.rol in (RolUsuario.ADMIN_INVENTARIO, RolUsuario.VENDEDOR):
+        if usuario.rol == RolUsuario.VENDEDOR: consulta = consulta.filter(Apartado.creado_por == usuario.correo)
         if bodega_id is not None: consulta = consulta.filter(Apartado.bodega_id == bodega_id)
     else:
         consulta = consulta.filter(Apartado.bodega_id == usuario.bodega_id)
@@ -339,11 +343,11 @@ def eliminar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: 
 
 
 @router.put("/{apartado_id}", response_model=ApartadoResponse,
-            dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+            dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO))])
 def editar_apartado(
     apartado_id: int, datos: ApartadoEditar, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> Apartado:
-    """Admin Inventario corrige una cotización activa (ver srv.editar_apartado).
+    """El vendedor (las suyas) o Admin Inventario (cualquiera) corrige una cotización activa (ver srv.editar_apartado).
     Las líneas que salen de OTRA bodega se pasan a la misma cotización en esa
     bodega: se le suman si ya existe ahí, o se crea. Todo junto o nada."""
     if datos.items:
@@ -384,7 +388,7 @@ def editar_apartado(
 
 
 def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEditar, usuario: Usuario) -> Apartado:
-    """Admin Inventario edita la cotización completa (todas sus partes a la
+    """El vendedor o Admin Inventario edita la cotización completa (todas sus partes a la
     vez): cada línea dice de qué bodega y de qué empresa sale y aquí se
     reparte, una parte por bodega (la empresa del material queda en cada
     línea). La parte que se queda sin líneas se borra, la nueva se crea y

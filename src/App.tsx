@@ -115,7 +115,7 @@ export default function App() {
       />
       <Route
         path="/apartados"
-        element={paginaProtegida(["administrativo", "jefe_planta", "admin_inventario"], ApartadosPage)}
+        element={paginaProtegida(["administrativo", "jefe_planta", "admin_inventario", "vendedor"], ApartadosPage)}
       />
       <Route
         path="/recepcion"

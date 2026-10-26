@@ -12,7 +12,8 @@ from app.models.rollo import EstadoRollo, Rollo
 from app.models.usuario import RolUsuario
 from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComparativoResponse
 from app.schemas.rollos import RolloResponse
-from app.services.apartados import EMPRESA_DE_LINEA, ESTADOS_RESERVA_ACTIVA
+from app.services.apartados import EMPRESA_DE_LINEA, ESTADOS_RESERVA_ACTIVA, de_la_empresa
+from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.services.clasificacion import formatear_calibre
 from app.services.merma_rollo import asignar_merma_y_sobrante, rollos_con_merma_o_sobrante
 
@@ -65,7 +66,7 @@ def _reservas_rollos(db: Session, empresa: str = "") -> dict[tuple[str, int], fl
     que se apartó de esa empresa (la de la que sale el material de cada línea)."""
     consulta = _consulta_reservas_rollos(db, ApartadoItem.codigo_interno, Apartado.bodega_id)
     if empresa:
-        consulta = consulta.filter(EMPRESA_DE_LINEA == filtro_empresa(empresa))
+        consulta = consulta.filter(de_la_empresa(filtro_empresa(empresa)))
     return {(codigo, bodega_id): max(float(total or 0), 0) for codigo, bodega_id, total in consulta.all()}
 
 
@@ -84,8 +85,11 @@ def _agregar_por_empresa(db: Session, filas: list[FilaComparativoResponse]) -> d
         datos = por_codigo.setdefault(codigo, {}).setdefault(sigla or "", {"fisico": 0.0, "reservado": 0.0})
         datos["fisico"] += float(metros or 0)
     for codigo, sigla, metros in reservado:
-        datos = por_codigo.setdefault(codigo, {}).setdefault(sigla or "", {"fisico": 0.0, "reservado": 0.0})
-        datos["reservado"] += max(float(metros or 0), 0)
+        # Lo de "las dos empresas" cuenta como apartado en las dos (no se sabe
+        # todavía de cuál sale).
+        for una in (EMPRESAS_CONOCIDAS if sigla == AMBAS_EMPRESAS else (sigla or "",)):
+            datos = por_codigo.setdefault(codigo, {}).setdefault(una, {"fisico": 0.0, "reservado": 0.0})
+            datos["reservado"] += max(float(metros or 0), 0)
     totales: dict[str, dict[str, float]] = {}
     for fila in filas:
         for sigla, datos in por_codigo.get(fila.codigo, {}).items():

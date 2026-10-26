@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ErrorApi } from "../Componentes/Api";
 import { useActualizacionAutomatica } from "./useActualizacionAutomatica";
 import { apartadoDesdeApi, disponibilidadCodigoDesdeApi, disponibilidadProductoDesdeApi, productoDesdeApi } from "../Componentes/Mapeo";
+import { AMBAS_EMPRESAS } from "../Utils/empresas";
 
 // Cada línea del formulario declara su propia modalidad -- un mismo apartado
 // puede mezclar líneas POR_ROLLO y POR_STOCK (ver backend/app/models/apartado.py::ModalidadApartado).
@@ -39,6 +40,8 @@ type ItemFormulario = {
   // Empresa de la que sale su material ("" = la de la cotización).
   empresa?: string;
   hayFisico?: boolean;
+  // La línea ya era "sí está en la bodega" al abrirla para editar (solo esas la conservan).
+  hayFisicoOriginal?: boolean;
   // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
   id?: number; metrosConsumidos?: number; stockDescontado?: boolean;
 };
@@ -87,9 +90,11 @@ function quitarPosicion<T>(porPosicion: Record<number, T>, indice: number): Reco
  * Cada línea del formulario elige su modalidad (POR_ROLLO/POR_STOCK) de forma
  * independiente -- ver ITEM_VACIO arriba. */
 export function useApartados(sesion: { rol?: string } | null | undefined, alCambiarApartados?: () => void) {
-  // Admin Inventario crea (cotización aprobada, eligiendo la bodega) y
-  // cancela; la bodega (administrativo) decide cuándo enviarlo a producción.
-  const puedeCrearApartados = sesion?.rol === "admin_inventario";
+  // El vendedor crea y corrige sus cotizaciones (aprobadas, eligiendo la
+  // bodega); Admin Inventario las corrige y anula; la bodega (administrativo)
+  // decide cuándo enviarlas a producción.
+  const puedeCrearApartados = sesion?.rol === "vendedor";
+  const puedeEditarApartados = sesion?.rol === "vendedor" || sesion?.rol === "admin_inventario";
   const puedeCancelarApartados = sesion?.rol === "admin_inventario";
   const puedeEnviarAProduccion = sesion?.rol === "administrativo";
   const puedeMarcarTerminado = sesion?.rol === "jefe_planta";
@@ -194,7 +199,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         metrosConsumidos: it.metrosConsumidos, stockDescontado: it.stockDescontado,
         bodegaId: String(parte.bodegaId),
         empresa: empresaMaterial && empresaMaterial !== empresaCotizacion ? empresaMaterial : "",
-        hayFisico: it.hayFisico,
+        hayFisico: it.hayFisico, hayFisicoOriginal: it.hayFisico,
         };
       })),
     });
@@ -353,6 +358,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       ...actual,
       items: actual.items.map((item, i) => (i === indice ? {
         ...item, modalidad,
+        // "Material de las dos empresas" es solo para lámina por producir.
+        empresa: modalidad !== "por_rollo" && item.empresa === AMBAS_EMPRESAS ? "" : item.empresa,
         codigoInterno: "", medida: "",
         productoId: null, productoCodigo: "", productoDescripcion: "", busquedaProducto: "",
         rolloId: null, rolloResumen: "", busquedaRollo: "",
@@ -672,7 +679,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   }
 
   return {
-    puedeCrearApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
+    puedeCrearApartados, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
     apartados, cargandoApartados, errorApartados, cargarApartados,
     filtroEstado, setFiltroEstado,
 

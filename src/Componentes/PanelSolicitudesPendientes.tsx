@@ -1,6 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { Fragment, useState } from "react";
-import { EMPRESAS } from "../Utils/empresas";
+import { AMBAS_EMPRESAS, EMPRESAS } from "../Utils/empresas";
 import CompletarConStock from "./CompletarConStock";
 import ModalConfirmacion from "./ModalConfirmacion";
 
@@ -8,6 +8,13 @@ import ModalConfirmacion from "./ModalConfirmacion";
 // Planta tiene que sacar de los rollos o del stock de ESA empresa.
 function MaterialDeOtraEmpresa({ linea, que }) {
   if (!linea.empresa || linea.empresa === linea.empresaCotizacion) return null;
+  if (linea.empresa === AMBAS_EMPRESAS) {
+    return (
+      <span className="etiqueta-otra-empresa" style={{ display: "block" }}>
+        {que} de las dos empresas (lo de la otra queda como préstamo)
+      </span>
+    );
+  }
   return (
     <span className="etiqueta-otra-empresa" style={{ display: "block" }}>
       {que} de {EMPRESAS[linea.empresa] || linea.empresa} (préstamo)

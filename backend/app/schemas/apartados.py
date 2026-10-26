@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 
 from app.services.seccionados import TIPOS_LINEA_ROLLO
 from app.models.apartado import EstadoApartado, ModalidadApartado
-from app.services.empresas import EMPRESAS_CONOCIDAS
+from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.schemas.fechas import ModeloConFechasUtc
 
 
@@ -48,7 +48,12 @@ class ApartadoItemCrear(BaseModel):
         self.empresa = (self.empresa or "").strip().upper()
         if self.modalidad != ModalidadApartado.POR_STOCK:
             self.hay_fisico = False
-        if self.empresa and self.empresa not in EMPRESAS_CONOCIDAS:
+        if self.empresa == AMBAS_EMPRESAS:
+            # "Material de las dos empresas": solo lámina por producir (un
+            # producto o un rollo completo es de una sola empresa).
+            if self.modalidad != ModalidadApartado.POR_ROLLO or self.rollo_id:
+                raise ValueError("\"Material de las dos empresas\" solo se puede en una línea de lámina por producir.")
+        elif self.empresa and self.empresa not in EMPRESAS_CONOCIDAS:
             raise ValueError("La empresa del material de cada línea debe ser Arquitejas o Asia Business.")
         self.tipo_producto = (self.tipo_producto or "").strip().lower()
         if self.tipo_producto == "teja" or self.modalidad != ModalidadApartado.POR_ROLLO:

@@ -19,6 +19,11 @@ import unicodedata
 # el código de clasificación del rollo (ver `sigla_empresa_desde_referencia`).
 EMPRESAS_CONOCIDAS = {"AR": "Arquitejas", "ABG": "Asia Business"}
 
+# Una línea de cotización con "Material de las dos empresas": Planta puede
+# usar rollos de cualquiera; lo que salga de la otra empresa queda como
+# préstamo (ver services/prestamos.py).
+AMBAS_EMPRESAS = "AMBAS"
+
 
 def sigla_empresa_desde_nombre(texto: str | None) -> str:
     """Sigla a partir del nombre escrito en el Excel (columna EMPRESA

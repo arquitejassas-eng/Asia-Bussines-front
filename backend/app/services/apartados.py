@@ -39,7 +39,7 @@ from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.services.material_en_camino import metros_en_camino_codigo, metros_por_repartir_codigo
 from app.services.prestamos import PRODUCTO, registrar_prestamo
-from app.services.empresas import EMPRESAS_CONOCIDAS
+from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.services.productos import nuevo_producto_en_bodega
 from app.services.seccionados import metros_de_linea
 from app.schemas.apartados import SepararApartadoRequest, ApartadoCrear, ApartadoEditar
@@ -56,10 +56,18 @@ ESTADOS_RESERVA_ACTIVA = (
 EMPRESA_DE_LINEA = func.coalesce(func.nullif(ApartadoItem.empresa_material, ""), Apartado.empresa)
 
 
+def de_la_empresa(empresa: str):
+    """Filtro: líneas cuyo material puede salir de `empresa` (las suyas y las
+    de "Material de las dos empresas", que cuentan como apartadas para las dos
+    hasta que se produzcan)."""
+    return EMPRESA_DE_LINEA.in_((empresa, AMBAS_EMPRESAS))
+
+
 def empresa_material_de(empresa_linea: str, empresa_cotizacion: str) -> str:
     """Lo que se guarda en ApartadoItem.empresa_material: vacío si es la misma
     empresa de la cotización."""
     empresa_linea = (empresa_linea or "").strip().upper()
+    # "AMBAS" se guarda tal cual: no es la empresa de la cotización.
     return "" if not empresa_linea or empresa_linea == (empresa_cotizacion or "").strip().upper() else empresa_linea
 
 
@@ -179,7 +187,7 @@ def metros_reservados_codigo(db: Session, *, bodega_id: int, codigo_interno: str
         )
     )
     if empresa:
-        consulta = consulta.filter(EMPRESA_DE_LINEA == empresa)
+        consulta = consulta.filter(de_la_empresa(empresa))
     total = consulta.scalar()
     return round(float(total or 0), 2)
 
@@ -307,6 +315,7 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
             fisicos[(b, c, e or "")] = float(total or 0)
             fisicos_codigo[(b, c)] = fisicos_codigo.get((b, c), 0.0) + float(total or 0)
         en_orden: dict[tuple, list[ApartadoItem]] = {}
+        todas_en_orden: dict[tuple, list[ApartadoItem]] = {}
         for item, bodega_id, empresa in (
             db.query(ApartadoItem, Apartado.bodega_id, EMPRESA_DE_LINEA)
             .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
@@ -314,13 +323,23 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
                     ApartadoItem.codigo_interno.in_(codigos))
             .order_by(Apartado.fecha_creacion, Apartado.id, ApartadoItem.id)
         ):
-            en_orden.setdefault((bodega_id, item.codigo_interno, empresa or ""), []).append(item)
+            empresa = empresa or ""
+            en_orden.setdefault((bodega_id, item.codigo_interno, empresa), []).append(item)
+            todas_en_orden.setdefault((bodega_id, item.codigo_interno), []).append(item)
+            if empresa == AMBAS_EMPRESAS:
+                # Las de las dos empresas también compiten por el material de cada una.
+                for sigla in EMPRESAS_CONOCIDAS:
+                    en_orden.setdefault((bodega_id, item.codigo_interno, sigla), []).append(item)
         for clave in claves:
             b, c, e = clave
-            coberturas[clave] = _repartir_en_orden(
-                en_orden.get(clave, []), lambda it: (it.metros_requeridos or 0) - (it.metros_consumidos or 0),
+            if e == AMBAS_EMPRESAS:
+                # Material de las dos empresas: todo lo del código, contra todas sus líneas.
+                lineas, fisico = todas_en_orden.get((b, c), []), fisicos_codigo.get((b, c), 0.0)
+            else:
                 # Cotización sin empresa (antigua): cuenta todo lo del código.
-                fisicos.get(clave, 0.0) if e else fisicos_codigo.get((b, c), 0.0),
+                lineas, fisico = en_orden.get(clave, []), (fisicos.get(clave, 0.0) if e else fisicos_codigo.get((b, c), 0.0))
+            coberturas[clave] = _repartir_en_orden(
+                lineas, lambda it: (it.metros_requeridos or 0) - (it.metros_consumidos or 0), fisico,
             )
     # Los productos de todas las líneas de stock, de una sola consulta.
     ids_producto = {it.producto_id for a in activos for it in a.items
@@ -359,9 +378,10 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
                     resultado[apartado.id].append("")
                     pendientes.append((apartado.id, item.codigo_interno, falta, item.empresa_de_linea or "", apartado.bodega_id))
     if pendientes:
-        libres = _libre_por_bodega_codigos(db, {(c, e) for _, c, _, e, _ in pendientes})
+        libres = _libre_por_bodega_codigos(db, {(c, "" if e == AMBAS_EMPRESAS else e) for _, c, _, e, _ in pendientes})
         bodegas = _bodegas_por_id(db)
         for apartado_id, codigo, falta, empresa, bodega_despacho in pendientes:
+            empresa = "" if empresa == AMBAS_EMPRESAS else empresa
             donde = sorted(
                 ((bodegas[b].nombre, round(libre, 2)) for b, libre in libres.get((codigo, empresa), {}).items()
                  if b != bodega_despacho and libre > 0.005 and b in bodegas and not bodegas[b].sin_traslado),
@@ -394,7 +414,7 @@ def _libre_por_bodega_codigos(db: Session, claves: set[tuple[str, str]]) -> dict
         por_bodega = libres.setdefault((codigo, empresa), {})
         for filas, signo in ((fisico, 1), (reservado, -1)):
             for c, e, b, total in filas:
-                if c == codigo and (not empresa or (e or "") == empresa):
+                if c == codigo and (not empresa or (e or "") in (empresa, AMBAS_EMPRESAS)):
                     por_bodega[b] = por_bodega.get(b, 0.0) + signo * float(total or 0)
     return libres
 
@@ -423,7 +443,7 @@ def validar_reserva_rollos(
     filtro = ApartadoItem.codigo_interno == codigo_interno
     if empresa:
         rollos_codigo = [r for r in rollos_codigo if (r.empresa or "") in (empresa, "")]
-        filtro = filtro & func.coalesce(EMPRESA_DE_LINEA, "").in_((empresa, ""))
+        filtro = filtro & func.coalesce(EMPRESA_DE_LINEA, "").in_((empresa, "", AMBAS_EMPRESAS))
     # Un rollo que ya se va en un traslado no cuenta: si no, se podía aceptar
     # otro traslado (o consumir otro rollo) con los metros de ese.
     en_traslado = rollos_en_traslado(db, [r.id for r in rollos_codigo])
@@ -487,7 +507,7 @@ def metros_esperando_codigo(db: Session, *, codigo_interno: str, empresa: str = 
         db.query(Apartado.bodega_id, func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
         .join(ApartadoItem, ApartadoItem.apartado_id == Apartado.id)
         .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.codigo_interno == codigo_interno,
-                *((EMPRESA_DE_LINEA == empresa,) if empresa else ()))
+                *((de_la_empresa(empresa),) if empresa else ()))
         .group_by(Apartado.bodega_id)
         .all()
     )
@@ -633,10 +653,11 @@ def disponibles_productos_bodega(db: Session, productos: list[Producto], *, bode
 
 
 def bodega_de_consulta(db: Session, usuario: Usuario, bodega_id: int | None) -> int:
-    """Bodega sobre la que se consulta o se aparta material. Admin Inventario
-    crea los apartados de todas las bodegas, así que elige cuál (bodega_id);
-    los demás roles siempre trabajan sobre la suya, aunque manden otra."""
-    if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+    """Bodega sobre la que se consulta o se aparta material. El vendedor crea
+    las cotizaciones de todas las bodegas y Admin Inventario las revisa, así
+    que eligen cuál (bodega_id); los demás roles siempre trabajan sobre la
+    suya, aunque manden otra."""
+    if usuario.rol not in (RolUsuario.ADMIN_INVENTARIO, RolUsuario.VENDEDOR):
         return usuario.bodega_id
     if bodega_id is None or db.get(Bodega, bodega_id) is None:
         raise HTTPException(status_code=400, detail="Elige la bodega de donde sale el material.")
@@ -644,9 +665,14 @@ def bodega_de_consulta(db: Session, usuario: Usuario, bodega_id: int | None) -> 
 
 
 def apartado_de_mi_bodega(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
-    """Admin Inventario puede abrir apartados de cualquier bodega (los crea y
-    es quien los cancela); los demás roles, solo los de su bodega."""
+    """Admin Inventario puede abrir apartados de cualquier bodega (es quien
+    los anula); el vendedor, solo las cotizaciones que él creó; los demás
+    roles, solo los de su bodega."""
     apartado = db.get(Apartado, apartado_id)
+    if apartado is not None and usuario.rol == RolUsuario.VENDEDOR:
+        if apartado.creado_por != usuario.correo:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Apartado no encontrado.")
+        return apartado
     if apartado is None or (usuario.rol != RolUsuario.ADMIN_INVENTARIO and apartado.bodega_id != usuario.bodega_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Apartado no encontrado.")
     return apartado
@@ -699,7 +725,7 @@ def disponible_empresa_codigos(
         db.query(ApartadoItem.codigo_interno, Apartado.bodega_id, func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos))
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
         .filter(Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), ApartadoItem.codigo_interno.in_(codigos),
-                *((EMPRESA_DE_LINEA == empresa,) if empresa else ()))
+                *((de_la_empresa(empresa),) if empresa else ()))
         .group_by(ApartadoItem.codigo_interno, Apartado.bodega_id)
     ):
         reservado.setdefault(codigo, {})[bodega_id] = total
@@ -795,6 +821,8 @@ def exigir_producto_de_la_empresa(db: Session, producto_id: int | None, empresa:
     material de esa línea (la de la cotización, o la otra si se marcó así):
     el mismo código existe en las dos empresas."""
     producto = db.get(Producto, producto_id) if producto_id is not None else None
+    if empresa == AMBAS_EMPRESAS:
+        return
     if producto is not None and producto.empresa and empresa and producto.empresa != empresa:
         del_producto, de_la_linea = (EMPRESAS_CONOCIDAS.get(e, e) for e in (producto.empresa, empresa))
         raise HTTPException(
@@ -809,6 +837,8 @@ def exigir_rollo_de_la_empresa_de_linea(item: ApartadoItem, rollo: Rollo) -> Non
     Asia, y una de Arquitejas con los de Arquitejas: el préstamo lo decide
     Admin Inventario al marcar la línea en la cotización, no Planta."""
     empresa = item.empresa_de_linea
+    if empresa == AMBAS_EMPRESAS:
+        return  # "Material de las dos empresas": sirve cualquier rollo (el de la otra queda como préstamo)
     if empresa and rollo.empresa and rollo.empresa != empresa:
         del_rollo, de_la_linea = (EMPRESAS_CONOCIDAS.get(e, e) for e in (rollo.empresa, empresa))
         raise HTTPException(
@@ -951,6 +981,11 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     rollos_pedidos = [item.rollo_id for item in datos.items if item.rollo_id]
     if len(rollos_pedidos) != len(set(rollos_pedidos)):
         raise HTTPException(status_code=400, detail="El mismo rollo está dos veces en la cotización.")
+    # Una cotización solo aparta lo que el sistema tiene. (Planta sí puede
+    # sacar lo que está en la bodega aunque el sistema no lo tenga: ver
+    # completar_con_stock.)
+    if any(item.hay_fisico for item in datos.items):
+        raise HTTPException(status_code=400, detail="Ya no se puede apartar un producto que el sistema no tiene (en 0 o en negativo): dale entrada al inventario primero o apártalo de otra bodega.")
     # Los productos de las líneas de stock en una sola consulta; la lista los
     # mantiene en la sesión para que las revisiones de cada línea no los
     # vuelvan a pedir uno por uno.
@@ -1068,6 +1103,10 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
         raise HTTPException(status_code=400, detail=f"Ya existe un apartado con la cotización {datos.numero_cotizacion} en esa bodega.")
 
     ids_nuevos = {item.id for item in datos.items if item.id}
+    # Solo las líneas que ya eran "sí está en la bodega" (de antes) lo conservan.
+    if any(linea.hay_fisico and not (linea.id and actuales.get(linea.id) is not None and actuales[linea.id].hay_fisico)
+           for linea in datos.items):
+        raise HTTPException(status_code=400, detail="Ya no se puede apartar un producto que el sistema no tiene (en 0 o en negativo): dale entrada al inventario primero o apártalo de otra bodega.")
     if any(i not in actuales for i in ids_nuevos):
         raise HTTPException(status_code=400, detail="Alguna línea no pertenece a esta cotización. Recarga e intenta de nuevo.")
     for linea in datos.items:
@@ -1334,7 +1373,7 @@ def stock_para_completar(db: Session, item_id: int, usuario: Usuario, busqueda: 
     empresa = item.empresa_de_linea
     consulta = db.query(Producto).filter(
         Producto.bodega_id == apartado.bodega_id, Producto.familia != "Rollos de acero",
-        *((Producto.empresa == empresa,) if empresa else ()),
+        *((Producto.empresa == empresa,) if empresa and empresa != AMBAS_EMPRESAS else ()),
     )
     texto = busqueda.strip()
     if texto:

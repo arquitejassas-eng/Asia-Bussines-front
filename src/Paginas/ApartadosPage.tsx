@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ElegirRolloCompleto from "../Componentes/ElegirRolloCompleto";
-import CrearProductoEnLinea from "../Componentes/CrearProductoEnLinea";
 import { descripcionRolloCompleto } from "../Utils/rolloCompleto";
 import { useNavigate } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
 import { formatearFechaColombia } from "../Utils/fechas";
-import { EMPRESAS } from "../Utils/empresas";
+import { EMPRESAS, AMBAS_EMPRESAS, nombreMaterial } from "../Utils/empresas";
 import PanelImportarCotizaciones from "../Componentes/PanelImportarCotizaciones";
 import PanelRegistrarSalida from "../Componentes/PanelRegistrarSalida";
 import PanelSepararCotizacion from "../Componentes/PanelSepararCotizacion";
@@ -93,6 +92,9 @@ type ItemDisponibilidad = { cargando?: boolean; error?: boolean; sinBodega?: boo
 function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const a = useApartados(sesion, almacen.refrescarApartadosPorEnviar);
   const esAdminInventario = sesion.rol === "admin_inventario";
+  // Admin Inventario y el vendedor no tienen bodega fija: ven las cotizaciones
+  // de todas las bodegas (el vendedor, solo las suyas).
+  const veTodasLasBodegas = esAdminInventario || sesion.rol === "vendedor";
 
   function confirmarEnvioAProduccion(ap: { id: number; numeroCotizacion: string }) {
     setConfirmacion({
@@ -183,7 +185,6 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   }
 
   // Línea de stock en la que se está creando un producto que no existía.
-  const [creandoProductoEn, setCreandoProductoEn] = useState<number | null>(null);
 
   const navigate = useNavigate();
 
@@ -241,11 +242,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   function limpiarFiltros() {
     setFiltroTexto(""); setFiltroBodega(""); setFiltroEmpresa(""); setSoloPendientesSalida(false); a.setFiltroEstado("");
   }
-  // Admin Inventario ve cada cotización en UNA fila aunque salga de varias
+  // Admin Inventario y el vendedor ven cada cotización en UNA fila aunque salga de varias
   // bodegas (en el backend es una parte por bodega, con el mismo número).
   // Las bodegas siguen viendo solo su parte.
   const gruposFiltrados = useMemo(() => {
-    if (!esAdminInventario) return apartadosFiltrados.map((ap) => [ap]);
+    if (!veTodasLasBodegas) return apartadosFiltrados.map((ap) => [ap]);
     const porNumero = new Map<string, ApartadoDeLista[]>();
     for (const ap of apartadosFiltrados) {
       const clave = numeroSinEmpresa(ap.numeroCotizacion);
@@ -254,7 +255,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     }
     // La parte principal (la que se creó primero) va arriba.
     return [...porNumero.values()].map((grupo) => [...grupo].sort((x, y) => x.id - y.id));
-  }, [apartadosFiltrados, esAdminInventario]);
+  }, [apartadosFiltrados, veTodasLasBodegas]);
   const totalPaginas = Math.max(1, Math.ceil(gruposFiltrados.length / APARTADOS_POR_PAGINA));
   const paginaSegura = Math.min(paginaApartados, totalPaginas);
   const gruposPagina = gruposFiltrados.slice((paginaSegura - 1) * APARTADOS_POR_PAGINA, paginaSegura * APARTADOS_POR_PAGINA);
@@ -331,8 +332,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   </span>
                 )}
                 {it.empresaMaterial && it.empresaMaterial !== (parte ?? ap).empresa && (
-                  <span className="etiqueta-otra-empresa" title="El material sale de la otra empresa: queda como préstamo">
-                    Material de {EMPRESAS[it.empresaMaterial] || it.empresaMaterial}
+                  <span className="etiqueta-otra-empresa" title={it.empresaMaterial === AMBAS_EMPRESAS
+                    ? "Planta usa rollos de las dos empresas; lo de la otra empresa queda como préstamo"
+                    : "El material sale de la otra empresa: queda como préstamo"}>
+                    Material de {nombreMaterial(it.empresaMaterial)}
                   </span>
                 )}
                 {it.modalidad === "por_stock" && it.hayFisico && !it.stockDescontado && (
@@ -437,7 +440,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           || (a.puedeMarcarEntregado && ap.estado === "produccion_terminada")) && (
         <button onClick={() => { setSalidaAbierta(null); setSepararAbierta(ap.id); }}>Separar</button>
       )}
-      {tieneProduccionPendiente && !esAdminInventario && (
+      {tieneProduccionPendiente && !veTodasLasBodegas && (
         <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>
           {itemsRollo.some((it) => (it.metrosPendientes ?? 0) > 0) ? "Iniciar Producción" : "Alistar pedido"}
         </button>
@@ -549,25 +552,31 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         <div className="inventario-page">
           <div className="inventario-header">
             <h1 className="inventario-titulo">Apartados</h1>
-            {a.puedeCrearApartados && !a.mostrarFormularioApartado && !mostrarImportar && (
+            {(a.puedeCrearApartados || esAdminInventario) && !a.mostrarFormularioApartado && !mostrarImportar && (
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                <button className="inventario-boton-cancelar" onClick={() => setMostrarImportar(true)}>
-                  📥 Cargar desde Excel
-                </button>
-                <button className="inventario-boton" onClick={a.abrirFormularioApartado}>
-                  + Nuevo apartado
-                </button>
+                {esAdminInventario && (
+                  <button className="inventario-boton-cancelar" onClick={() => setMostrarImportar(true)}>
+                    📥 Cargar desde Excel
+                  </button>
+                )}
+                {a.puedeCrearApartados && (
+                  <button className="inventario-boton" onClick={a.abrirFormularioApartado}>
+                    + Nuevo apartado
+                  </button>
+                )}
               </div>
             )}
           </div>
           <p className="inventario-carga-ayuda">
-            {esAdminInventario
+            {a.puedeCrearApartados
               ? <>Cuando se aprueba una cotización, créala aquí y elige de qué bodega sale el material.
                 Cada línea puede ser material por rollo (código de clasificación, color y calibre) o un
                 producto de stock (Tornillos, Amarres, etc.). El material queda reservado en esa bodega y a
-                su encargada lo envía a producción desde la lista cuando quiera.</>
+                su encargada lo envía a producción desde la lista cuando quiera. Aquí ves solo las cotizaciones que tú creaste.</>
+              : esAdminInventario
+                ? <>Las cotizaciones las crean los vendedores. Aquí las ves todas y puedes editarlas, anularlas, registrar salidas y separarlas.</>
               : a.puedeEnviarAProduccion
-                ? <>Aquí llegan las cotizaciones aprobadas por Admin Inventario con el material ya reservado en tu
+                ? <>Aquí llegan las cotizaciones aprobadas por los vendedores con el material ya reservado en tu
                   bodega. Envíalas a producción desde la lista con el botón "Enviar a producción".</>
                 : <>Cotizaciones aprobadas con su material reservado.</>}
           </p>
@@ -643,8 +652,16 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         {Object.entries(EMPRESAS).map(([sigla, nombre]) => (
                           <option key={sigla} value={sigla}>Material de {nombre}</option>
                         ))}
+                        {/* Solo lámina por producir: un producto o un rollo completo es de una sola empresa. */}
+                        {item.modalidad === "por_rollo" && (
+                          <option value={AMBAS_EMPRESAS}>Material de las dos empresas</option>
+                        )}
                       </select>
-                      {item.empresa && item.empresa !== a.formulario.empresa && (
+                      {item.empresa === AMBAS_EMPRESAS ? (
+                        <span className="etiqueta-otra-empresa" title="Planta puede usar rollos de las dos empresas; lo que salga de rollos de la otra empresa queda como préstamo">
+                          Material de las dos empresas
+                        </span>
+                      ) : item.empresa && item.empresa !== a.formulario.empresa && (
                         <span className="etiqueta-otra-empresa" title="Sigue siendo la misma cotización: lo que salga de esta línea queda como préstamo">
                           Préstamo de {EMPRESAS[item.empresa] || item.empresa}
                         </span>
@@ -782,36 +799,22 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             onChange={(e) => a.buscarProductoParaItem(indice, e.target.value)}
                           />
                           {(() => {
-                            // El producto no existe: Admin Inventario lo crea aquí mismo.
+                            // El producto no existe: se crea primero en Inventario (no desde la cotización).
                             const texto = item.busquedaProducto.trim();
                             const resultados = a.resultadosBusquedaProducto[indice] as Record<string, unknown>[] | undefined;
                             const yaExiste = resultados?.some((p) => String(p.codigo ?? "").toUpperCase() === texto.toUpperCase());
-                            if (!esAdminInventario || texto.length < 2 || !resultados || yaExiste || !item.bodegaId) return null;
-                            if (creandoProductoEn === indice) {
-                              return (
-                                <CrearProductoEnLinea
-                                  codigoInicial={texto}
-                                  bodegaId={item.bodegaId}
-                                  bodegaNombre={almacen.bodegas.find((b) => String(b.id) === String(item.bodegaId))?.nombre || ""}
-                                  empresa={item.empresa || a.formulario.empresa}
-                                  familias={(almacen?.unidadesFamilia || []).map((u) => u.familia)}
-                                  alCrear={(producto) => { setCreandoProductoEn(null); a.seleccionarProductoParaItem(indice, producto); }}
-                                  alCancelar={() => setCreandoProductoEn(null)}
-                                />
-                              );
-                            }
+                            if (texto.length < 2 || !resultados || resultados.length > 0 || yaExiste) return null;
                             return (
-                              <button type="button" className="inventario-boton-cancelar" style={{ marginTop: "0.35rem" }}
-                                onClick={() => setCreandoProductoEn(indice)}>
-                                + Crear producto "{texto.toUpperCase()}"
-                              </button>
+                              <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
+                                Ese producto no está en el inventario. Créalo primero en Inventario y luego vuelve a la cotización.
+                              </p>
                             );
                           })()}
                           {a.resultadosBusquedaProducto[indice]?.length > 0 && (
                             <div className="inventario-tabla-contenedor" style={{ maxHeight: "180px", overflowY: "auto" }}>
                               {a.resultadosBusquedaProducto[indice].map((p: Record<string, any>) => {
                                 // Sin stock en el sistema: solo se puede escoger el de ESTA bodega
-                                // (si de verdad está ahí, se aparta marcando "Sí están en la bodega").
+                                // (no se deja guardar: hay que darle entrada primero).
                                 const sinStock = (p.disponible_empresa ?? 1) <= 0;
                                 const deEstaBodega = p.bodega_id === Number(item.bodegaId || a.formulario.bodegaId);
                                 return (
@@ -821,7 +824,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                   className="inventario-resultado-busqueda"
                                   style={{ display: "block", width: "100%", textAlign: "left", padding: "0.4rem", opacity: !sinStock ? 1 : deEstaBodega ? 0.85 : 0.55 }}
                                   disabled={sinStock && !deEstaBodega}
-                                  title={sinStock ? (deEstaBodega ? "El sistema no lo tiene: si está en la bodega, puedes apartarlo igual" : "No hay de este producto sin prometer en toda la empresa") : undefined}
+                                  title={sinStock ? (deEstaBodega ? "Sin stock en el sistema: dale entrada primero" : "No hay de este producto sin prometer en toda la empresa") : undefined}
                                   onClick={() => a.seleccionarProductoParaItem(indice, p)}
                                 >
                                   <strong>{p.codigo}</strong> — {p.descripcion} · {EMPRESAS[p.empresa] || p.empresa || "sin empresa"} (stock: {p.stock})
@@ -830,7 +833,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                       {p.disponible_empresa > 0
                                         ? `Disponible en toda la empresa: ${p.disponible_empresa}`
                                         : deEstaBodega
-                                          ? "El sistema no lo tiene: si está en la bodega, escógelo y marca \"Sí están en la bodega\""
+                                          ? "Sin stock en el sistema: dale entrada primero"
                                           : "Sin stock disponible en la empresa: no se puede apartar"}
                                     </em>
                                   )}
@@ -870,18 +873,25 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           )}
                         </p>
                       )}
-                      {item.modalidad === "por_stock" && item.productoId && !item.stockDescontado
-                        && (item.hayFisico
-                          || (disponibilidadItems[indice]?.datos?.cantidadDisponible ?? Infinity) + 0.005 < (Number(item.cantidad) || 1)) && (
+                      {/* Ya no se aparta lo que el sistema no tiene: la casilla solo queda
+                          en líneas viejas que la tenían (se puede quitar, no poner). */}
+                      {item.modalidad === "por_stock" && item.productoId && !item.stockDescontado && item.id && item.hayFisicoOriginal && (
                         <label className="apartado-aviso-otra-bodega" style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", cursor: "pointer" }}>
                           <input type="checkbox" checked={Boolean(item.hayFisico)}
                             onChange={(e) => a.actualizarItemApartado(indice, "hayFisico", e.target.checked)} />
                           <span>
-                            <strong>Sí están en la bodega.</strong> El sistema no los tiene, pero se apartan igual: al terminar la
-                            producción entran y salen de una vez (el número del sistema no cambia) y quedan en "Sacado sin
-                            existencia" para corregir el inventario.
+                            <strong>Sí están en la bodega.</strong> Esta línea se apartó antes sin que el sistema tuviera el
+                            producto. Si la desmarcas, ya no se puede volver a marcar.
                           </span>
                         </label>
+                      )}
+                      {item.modalidad === "por_stock" && item.productoId && !item.stockDescontado && !item.hayFisico
+                        && (disponibilidadItems[indice]?.datos?.cantidadDisponible ?? Infinity) + 0.005 < (Number(item.cantidad) || 1) && (
+                        <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
+                          No hay suficiente stock libre de este producto en esta bodega
+                          ({Math.max(disponibilidadItems[indice]?.datos?.cantidadDisponible ?? 0, 0)} libres): no se puede apartar
+                          lo que el sistema no tiene. Dale entrada primero o escoge otra bodega.
+                        </p>
                       )}
                       {item.modalidad === "por_stock" && !item.hayFisico && avisoOtraBodega(item, indice)}
                     </div>
@@ -1047,7 +1057,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     ))}
                   </select>
                 )}
-                {esAdminInventario && (
+                {veTodasLasBodegas && (
                   <select
                     className={`apartados-select ${filtroBodega ? "apartados-select-activo" : ""}`}
                     value={filtroBodega} onChange={(e) => setFiltroBodega(e.target.value)} aria-label="Bodega"
@@ -1093,7 +1103,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   <table className="inventario-tabla apartados-tabla">
                     <thead>
                       <tr>
-                        {esAdminInventario && <th>Bodega</th>}
+                        {veTodasLasBodegas && <th>Bodega</th>}
                         <th>Cotización</th>
                         <th>Empresa</th>
                         <th>Cliente</th>
@@ -1106,7 +1116,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     <tbody>
                       {apartadosFiltrados.length === 0 ? (
                         <tr>
-                          <td colSpan={esAdminInventario ? 8 : 7} className="inventario-vacio">
+                          <td colSpan={veTodasLasBodegas ? 8 : 7} className="inventario-vacio">
                             {pestana !== "cotizaciones" && !hayFiltros
                               ? `Todavía no hay cotizaciones ${pestana}.`
                               : a.apartados.length === 0 ? "No hay apartados registrados." : "Ninguna cotización coincide con los filtros."}
@@ -1135,7 +1145,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             .sort((x, y) => x.id - y.id);
                           return (
                           <tr key={ap.id} className={variasBodegas ? "apartado-fila-varias" : undefined}>
-                            {esAdminInventario && (
+                            {veTodasLasBodegas && (
                               <td className="ap-col-bodega" data-etiqueta={variasBodegas ? "Bodegas" : "Bodega"}>
                                 {grupo.map((parte) => parte.bodegaNombre || "—").join(" + ")}
                               </td>
@@ -1168,7 +1178,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             </td>
                             <td className="ap-col-fecha" data-etiqueta="Creado" style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
                             <td className="inventario-acciones ap-col-acciones">
-                              {esAdminInventario && partesActivas.length > 0 && (variasBodegas || ESTADOS_CANCELABLES.includes(ap.estado)) && (
+                              {a.puedeEditarApartados && partesActivas.length > 0 && (variasBodegas || ESTADOS_CANCELABLES.includes(ap.estado)) && (
                                 <button onClick={() => abrirEdicion(partesActivas)}>Editar</button>
                               )}
                               {variasBodegas ? accionesDeCotizacion(grupo) : accionesDeParte(ap)}
