@@ -25,8 +25,10 @@ const ITEM_VACIO = {
   empresa: "",
   // Solo stock: el sistema no lo tiene (0 o negativo) pero sí está en la bodega.
   hayFisico: false,
+  // Orden interna, lámina lisa: en qué se convierte y qué bodega la convierte ("" = la misma).
+  convertirEn: "caballete", bodegaConversionId: "",
 };
-const FORMULARIO_VACIO = { bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", items: [{ ...ITEM_VACIO }] };
+const FORMULARIO_VACIO = { bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", ordenInterna: false, items: [{ ...ITEM_VACIO }] };
 
 type ItemFormulario = {
   modalidad: string;
@@ -42,11 +44,15 @@ type ItemFormulario = {
   hayFisico?: boolean;
   // La línea ya era "sí está en la bodega" al abrirla para editar (solo esas la conservan).
   hayFisicoOriginal?: boolean;
+  convertirEn?: string; bodegaConversionId?: string; laminasConvertidas?: number;
   // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
   id?: number; metrosConsumidos?: number; stockDescontado?: boolean;
 };
 type FormularioApartado = {
-  bodegaId: string; empresa: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string; items: ItemFormulario[];
+  bodegaId: string; empresa: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string;
+  // Orden de producción interna (Admin Inventario): solo lámina por producir, todo va al stock.
+  ordenInterna: boolean;
+  items: ItemFormulario[];
 };
 type ApartadoItem = {
   id: number; modalidad: string; codigoInterno: string | null; descripcion: string; cantidad: number;
@@ -56,13 +62,15 @@ type ApartadoItem = {
   rolloId: number | null; rolloReferencia: string; tipoProducto: string;
   empresaMaterial: string; // "" = la de la cotización
   hayFisico: boolean;
+  convertirEn: string; bodegaConversionId: number | null; laminasConvertidas: number;
 };
 export type RolloParaApartar = {
   id: number; identificadorRollo: string; codigoInterno: string; descripcion: string;
   colorMaterial: string; empresa: string; pesoNeto: number | null; metrosDisponibles: number;
 };
 type Apartado = {
-  id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; salidaPendiente: boolean; cliente: string; creadoPor: string;
+  id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; salidaPendiente: boolean; ordenInterna: boolean;
+  cliente: string; creadoPor: string;
   fechaCreacion: string; estado: string; enviadoAProduccionPor: string; fechaEnviadoAProduccion: string | null;
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;
@@ -91,9 +99,11 @@ function quitarPosicion<T>(porPosicion: Record<number, T>, indice: number): Reco
  * independiente -- ver ITEM_VACIO arriba. */
 export function useApartados(sesion: { rol?: string } | null | undefined, alCambiarApartados?: () => void) {
   // El vendedor crea y corrige sus cotizaciones (aprobadas, eligiendo la
-  // bodega); Admin Inventario las corrige y anula; la bodega (administrativo)
-  // decide cuándo enviarlas a producción.
-  const puedeCrearApartados = sesion?.rol === "vendedor";
+  // bodega); Admin Inventario también las crea, las corrige y las anula; la
+  // bodega (administrativo) decide cuándo enviarlas a producción.
+  const puedeCrearApartados = sesion?.rol === "vendedor" || sesion?.rol === "admin_inventario";
+  // Las órdenes de producción interna (para stock) solo las crea Admin Inventario.
+  const puedeCrearOrdenInterna = sesion?.rol === "admin_inventario";
   const puedeEditarApartados = sesion?.rol === "vendedor" || sesion?.rol === "admin_inventario";
   const puedeCancelarApartados = sesion?.rol === "admin_inventario";
   const puedeEnviarAProduccion = sesion?.rol === "administrativo";
@@ -157,12 +167,13 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   // _editar_cotizacion_completa). Vacío = se edita solo esta parte.
   const [otrasPartesIds, setOtrasPartesIds] = useState<number[]>([]);
 
-  function abrirFormularioApartado() {
+  function abrirFormularioApartado(ordenInterna = false) {
     numeroAutomatico.current = "";
+    esOrdenInterna.current = ordenInterna;
     setEditandoId(null);
     setOtrasPartesIds([]);
     setParteEditada({ bodega: "", otrasPartes: [] });
-    setFormulario(FORMULARIO_VACIO);
+    setFormulario({ ...FORMULARIO_VACIO, ordenInterna });
     setErrorFormularioApartado("");
     setDisponibilidadItems({});
     setResultadosBusquedaProducto({});
@@ -184,7 +195,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     });
     // La empresa de la cotización es la de la parte sin "-AR"/"-ABG" (si la hay).
     const empresaCotizacion = (partes.find((p) => p.numeroCotizacion === numeroSinEmpresa(p.numeroCotizacion)) ?? ap).empresa;
+    esOrdenInterna.current = ap.ordenInterna;
     setFormulario({
+      ordenInterna: ap.ordenInterna,
       bodegaId: String(ap.bodegaId), empresa: empresaCotizacion, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
       numeroCotizacion: numeroSinEmpresa(ap.numeroCotizacion), cliente: ap.cliente, observaciones: ap.observaciones,
       items: partes.flatMap((parte) => parte.items.map((it) => {
@@ -200,6 +213,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         bodegaId: String(parte.bodegaId),
         empresa: empresaMaterial && empresaMaterial !== empresaCotizacion ? empresaMaterial : "",
         hayFisico: it.hayFisico, hayFisicoOriginal: it.hayFisico,
+        convertirEn: it.convertirEn || "caballete", bodegaConversionId: it.bodegaConversionId ? String(it.bodegaConversionId) : "",
+        laminasConvertidas: it.laminasConvertidas,
         };
       })),
     });
@@ -225,10 +240,14 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   // El número que la pantalla puso sola: si no lo cambiaron a mano, al
   // cambiar la empresa se reemplaza por el consecutivo de la otra.
   const numeroAutomatico = useRef("");
+  // Una orden interna lleva su propio consecutivo ("OI-0001").
+  const esOrdenInterna = useRef(false);
   async function ponerSiguienteNumero(empresa: string) {
     if (!empresa) return;
     try {
-      const numero = (await api.get<{ numero: string }>(`/apartados/siguiente-numero?empresa=${encodeURIComponent(empresa)}`))?.numero ?? "";
+      const numero = (await api.get<{ numero: string }>(
+        `/apartados/siguiente-numero?empresa=${encodeURIComponent(empresa)}${esOrdenInterna.current ? "&orden_interna=true" : ""}`,
+      ))?.numero ?? "";
       if (!numero) return;
       setFormulario((actual) => {
         if (actual.numeroCotizacion.trim() && actual.numeroCotizacion !== numeroAutomatico.current) return actual;
@@ -578,6 +597,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         empresa: formulario.empresa,
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
+        orden_interna: formulario.ordenInterna,
         ...(editandoId && otrasPartesIds.length ? { otras_partes_ids: otrasPartesIds } : {}),
         items: formulario.items.map((i) => {
           // Cada línea dice de qué bodega y de qué empresa sale: el backend
@@ -594,7 +614,11 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
                 hay_fisico: Boolean(i.hayFisico),
                 medida: Number(String(i.medida).replace(",", ".")) > 0 ? Number(String(i.medida).replace(",", ".")) : undefined }
             : { id: i.id, bodega_id, empresa, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida),
-                tipo_producto: i.tipoProducto || "" };
+                tipo_producto: i.tipoProducto || "",
+                ...(i.tipoProducto === "lamina_lisa" ? {
+                  convertir_en: i.convertirEn || "caballete",
+                  bodega_conversion_id: i.bodegaConversionId ? Number(i.bodegaConversionId) : null,
+                } : {}) };
         }),
       });
       await cargarApartados();
@@ -679,7 +703,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   }
 
   return {
-    puedeCrearApartados, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
+    puedeCrearApartados, puedeCrearOrdenInterna, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
     apartados, cargandoApartados, errorApartados, cargarApartados,
     filtroEstado, setFiltroEstado,
 

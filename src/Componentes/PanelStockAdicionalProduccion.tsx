@@ -92,7 +92,7 @@ function PanelStockAdicionalProduccion({
           )}
           {/* Una teja de Segunda puede ser lámina lisa (sin el perfil de la teja):
               se usa para caballetes o flanches y entra como esos pedazos. */}
-          {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && linea.calidad === "segunda" && (
+          {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && tipoProducto !== "lamina_lisa" && linea.calidad === "segunda" && (
             <div>
               <label className="produccion-label">¿Qué es?</label>
               <select
@@ -105,7 +105,7 @@ function PanelStockAdicionalProduccion({
               </select>
             </div>
           )}
-          {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && linea.calidad === "segunda" && linea.lisaPara && (
+          {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && tipoProducto !== "lamina_lisa" && linea.calidad === "segunda" && linea.lisaPara && (
             <>
               <div>
                 <label className="produccion-label">¿Para qué se va a usar?</label>

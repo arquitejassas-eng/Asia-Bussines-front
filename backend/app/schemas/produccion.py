@@ -59,7 +59,10 @@ class ProduccionCrear(BaseModel):
     # cuántos cortes hacen falta y cuánto sobra — ver
     # app/services/produccion.py::SECCIONES_POR_TIPO_PRODUCTO y
     # registrar_produccion.
-    tipo_producto: Literal["teja", "caballete", "flanche"] = "teja"
+    # "lamina_lisa": láminas lisas para stock, solo para una línea de lámina
+    # lisa de una orden interna (ej. Ricaurte las corta y Santander saca de
+    # ahí los caballetes con ConvertirLaminaLisa).
+    tipo_producto: Literal["teja", "caballete", "flanche", "lamina_lisa"] = "teja"
     producto_fabricado: str = ""
     modelo: str
     medida_producto: str
@@ -98,6 +101,48 @@ class ProduccionCrear(BaseModel):
         if any(not (item.metros_por_unidad or self.metros_por_unidad) for item in self.stock_adicional):
             raise ValueError("Indica los metros por unidad de cada línea de stock adicional.")
         return self
+
+
+class ConvertirLaminaLisa(BaseModel):
+    """Planta convierte láminas lisas de su stock en caballetes o flanches,
+    según la línea de una orden interna: cada lámina da 3 caballetes o 5
+    flanches del mismo largo."""
+    apartado_item_id: int
+    producto_id: int
+    laminas: int = Field(gt=0)
+    responsable: str = Field(min_length=1)
+    observaciones: str = ""
+
+
+class LaminaParaConvertir(BaseModel):
+    id: int
+    codigo: str
+    descripcion: str
+    empresa: str
+    calidad: str
+    disponibles: float
+
+
+class ConversionPendienteResponse(BaseModel):
+    item_id: int
+    numero_orden: str
+    bodega_orden: str
+    descripcion: str
+    codigo_interno: str | None
+    medida: float | None
+    convertir_en: str
+    laminas_pedidas: float
+    laminas_convertidas: float
+    laminas_por_convertir: float
+    laminas: list[LaminaParaConvertir]
+
+
+class ConversionLaminaResponse(BaseModel):
+    lamina_codigo: str
+    laminas: int
+    producto_codigo: str
+    producto_descripcion: str
+    piezas: int
 
 
 class RolloUtilizadoResponse(BaseModel):

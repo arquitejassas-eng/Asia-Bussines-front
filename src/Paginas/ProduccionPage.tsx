@@ -12,6 +12,7 @@ import PanelBusquedaRollosProduccion from "../Componentes/PanelBusquedaRollosPro
 import PanelResumenProduccion from "../Componentes/PanelResumenProduccion";
 import PanelSolicitudesPendientes from "../Componentes/PanelSolicitudesPendientes";
 import PanelHistorialProduccion from "../Componentes/PanelHistorialProduccion";
+import PanelConvertirLaminaLisa from "../Componentes/PanelConvertirLaminaLisa";
 import "../Style/Produccion.css";
 import "../Style/Rollos.css";
 
@@ -169,6 +170,7 @@ function ProduccionPage({ sesion, onCerrarSesion, almacen }) {
             </>
           )}
 
+          {p.puedeRegistrarProduccion && <PanelConvertirLaminaLisa />}
           {sesion?.rol === "jefe_planta" && (
             <p className="produccion-vacio">
               ¿Se acabó un rollo o rindió de más? Dale salida a la merma o suma el sobrante en <Link to="/merma-planta">Merma</Link>.

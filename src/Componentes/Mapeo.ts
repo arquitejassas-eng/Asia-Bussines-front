@@ -126,7 +126,10 @@ export function apartadoItemDesdeApi(i: RegistroApi) {
     // Empresa del material de la línea cuando no es la de la cotización ("" = la misma).
     empresaMaterial: texto(i.empresa_material),
     // Stock que el sistema no tenía pero sí estaba en la bodega (se apartó igual).
-    hayFisico: Boolean(i.hay_fisico) };
+    hayFisico: Boolean(i.hay_fisico),
+    // Orden interna, lámina lisa: en qué se convierte, en qué bodega y cuántas van.
+    convertirEn: texto(i.convertir_en), bodegaConversionId: i.bodega_conversion_id == null ? null : numero(i.bodega_conversion_id),
+    laminasConvertidas: numero(i.laminas_convertidas || 0) };
 }
 
 export function apartadoDesdeApi(a: RegistroApi) {
@@ -134,6 +137,8 @@ export function apartadoDesdeApi(a: RegistroApi) {
   return { id: numero(a.id), bodegaId: numero(a.bodega_id), bodegaNombre: texto(a.bodega_nombre), numeroCotizacion: texto(a.numero_cotizacion), empresa: texto(a.empresa),
     // Ya salió pero falta saber de qué rollo (REFERENCIA "SI" en el Excel).
     salidaPendiente: Boolean(a.salida_pendiente),
+    // Orden de producción interna de Admin Inventario (para stock, sin cliente).
+    ordenInterna: Boolean(a.orden_interna),
     cliente: texto(a.cliente), creadoPor: texto(a.creado_por), fechaCreacion: texto(a.fecha_creacion),
     estado: texto(a.estado), enviadoAProduccionPor: texto(a.enviado_a_produccion_por),
     fechaEnviadoAProduccion: a.fecha_enviado_a_produccion == null ? null : texto(a.fecha_enviado_a_produccion),

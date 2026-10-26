@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from app.services.seccionados import TIPOS_LINEA_ROLLO
+from app.services.seccionados import LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO, TIPOS_LINEA_ROLLO
 from app.models.apartado import EstadoApartado, ModalidadApartado
 from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.schemas.fechas import ModeloConFechasUtc
@@ -20,7 +20,12 @@ class ApartadoItemCrear(BaseModel):
     codigo_interno: str | None = None
     medida: float | None = Field(default=None, gt=0)
     # Solo POR_ROLLO: "" / "teja", "caballete" o "flanche" (ver seccionados).
+    # "lamina_lisa" solo en una orden de producción interna.
     tipo_producto: str = ""
+    # Orden interna, lámina lisa: en qué se convierte y qué bodega la convierte
+    # (None = la misma de la línea).
+    convertir_en: str = ""
+    bodega_conversion_id: int | None = None
 
     # Solo para POR_STOCK.
     producto_id: int | None = None
@@ -58,8 +63,14 @@ class ApartadoItemCrear(BaseModel):
         self.tipo_producto = (self.tipo_producto or "").strip().lower()
         if self.tipo_producto == "teja" or self.modalidad != ModalidadApartado.POR_ROLLO:
             self.tipo_producto = ""
-        if self.tipo_producto not in TIPOS_LINEA_ROLLO:
-            raise ValueError("El tipo de la línea debe ser teja, caballete o flanche.")
+        if self.tipo_producto not in (*TIPOS_LINEA_ROLLO, LAMINA_LISA):
+            raise ValueError("El tipo de la línea debe ser teja, caballete, flanche o lámina lisa.")
+        self.convertir_en = (self.convertir_en or "").strip().lower()
+        if self.tipo_producto == LAMINA_LISA:
+            if self.convertir_en not in SECCIONES_POR_TIPO_PRODUCTO:
+                raise ValueError("Di en qué se convierte la lámina lisa: caballetes o flanches.")
+        else:
+            self.convertir_en, self.bodega_conversion_id = "", None
         if self.modalidad == ModalidadApartado.POR_ROLLO and self.rollo_id:
             return self
         if self.modalidad == ModalidadApartado.POR_ROLLO:
@@ -86,6 +97,9 @@ class ApartadoCrear(BaseModel):
     empresa: str
     cliente: str = ""
     observaciones: str = ""
+    # Orden de producción interna (Admin Inventario): solo líneas de lámina
+    # por producir; lo producido entra al stock.
+    orden_interna: bool = False
     items: list[ApartadoItemCrear]
 
     @model_validator(mode="after")
@@ -93,6 +107,11 @@ class ApartadoCrear(BaseModel):
         self.empresa = (self.empresa or "").strip().upper()
         if self.empresa not in EMPRESAS_CONOCIDAS:
             raise ValueError("Elige de qué empresa sale el material: Arquitejas o Asia Business.")
+        if self.orden_interna:
+            if any(i.modalidad != ModalidadApartado.POR_ROLLO or i.rollo_id for i in self.items):
+                raise ValueError("Una orden de producción interna solo lleva lámina por producir (material por rollo).")
+        elif any(i.tipo_producto == LAMINA_LISA for i in self.items):
+            raise ValueError("La lámina lisa solo se pide en una orden de producción interna.")
         return self
 
 
@@ -181,6 +200,9 @@ class ApartadoItemResponse(BaseModel):
     # "" = material de la empresa de la cotización.
     empresa_material: str = ""
     hay_fisico: bool = False
+    convertir_en: str = ""
+    bodega_conversion_id: int | None = None
+    laminas_convertidas: float = 0
 
 
 class RolloParaApartarResponse(BaseModel):
@@ -268,6 +290,7 @@ class ApartadoResponse(ModeloConFechasUtc):
     model_config = ConfigDict(from_attributes=True)
     id: int
     salida_pendiente: bool = False
+    orden_interna: bool = False
     bodega_id: int
     bodega_nombre: str = ""
     numero_cotizacion: str

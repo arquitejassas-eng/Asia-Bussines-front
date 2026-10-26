@@ -38,8 +38,12 @@ function calibreQueNoCuadra(codigo: string, descripcion: string): string | null 
     + `(0,${final[1]}). Corrige uno de los dos: si no, Planta mezclaría espesores al producir.`;
 }
 
-function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null; tipoProducto?: string }) {
+function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null; tipoProducto?: string; convertirEn?: string }) {
   if (it.modalidad === "por_stock") return `${it.cantidad} und`;
+  if (it.tipoProducto === "lamina_lisa") {
+    return `${it.cantidad} lámina${it.cantidad === 1 ? "" : "s"} lisa${it.cantidad === 1 ? "" : "s"} de ${it.medida} m = ${it.metrosRequeridos} m`
+      + ` → ${it.cantidad * (it.convertirEn === "flanche" ? 5 : 3)} ${it.convertirEn || "caballete"}s`;
+  }
   if (it.tipoProducto && it.medida) return `${it.cantidad} ${it.tipoProducto}${it.cantidad === 1 ? "" : "s"} de ${it.medida} m = ${it.metrosRequeridos} m de lámina`;
   if (it.medida && it.medida !== 1) return `${it.cantidad} × ${it.medida} m = ${it.metrosRequeridos} m`;
   return `${it.metrosRequeridos ?? it.cantidad} m`;
@@ -391,7 +395,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   function estadoDeParte(ap: ApartadoDeLista) {
     return (
       <>
-      {porDarSalida(ap) && !CERRADAS.includes(ap.estado)
+      {ap.ordenInterna && ap.estado === "produccion_terminada"
+        ? <span className="apartados-estado estado-produccion_terminada">Por convertir la lámina lisa</span>
+        : porDarSalida(ap) && !CERRADAS.includes(ap.estado)
         ? <span className="apartados-estado estado-por_dar_salida">Por dar salida</span>
         : <span className={`apartados-estado estado-${ap.estado}`}>{ETIQUETAS_ESTADO[ap.estado] || ap.estado}</span>}
       </>
@@ -432,12 +438,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           ejecutar: () => a.eliminarApartado(ap.id),
         })}>Eliminar</button>
       )}
-      {esAdminInventario && ESTADOS_CANCELABLES.includes(ap.estado) && (
+      {esAdminInventario && ESTADOS_CANCELABLES.includes(ap.estado) && !ap.ordenInterna && (
         <button onClick={() => { setSepararAbierta(null); setSalidaAbierta(ap.id); }}>Registrar salida</button>
       )}
-      {(ap.items.length > 1 || (ap.items[0]?.cantidad ?? 0) > 1)
+      {!ap.ordenInterna && (ap.items.length > 1 || (ap.items[0]?.cantidad ?? 0) > 1)
         && ((esAdminInventario && (ESTADOS_CANCELABLES.includes(ap.estado) || ap.estado === "produccion_terminada"))
-          || (a.puedeMarcarEntregado && ap.estado === "produccion_terminada")) && (
+          || (a.puedeMarcarEntregado && ap.estado === "produccion_terminada" && !ap.ordenInterna)) && (
         <button onClick={() => { setSalidaAbierta(null); setSepararAbierta(ap.id); }}>Separar</button>
       )}
       {tieneProduccionPendiente && !veTodasLasBodegas && (
@@ -453,7 +459,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           ejecutar: () => a.marcarApartadoProduccionTerminada(ap.id),
         })}>Marcar producción terminada</button>
       )}
-      {a.puedeMarcarEntregado && ap.estado === "produccion_terminada" && (
+      {a.puedeMarcarEntregado && ap.estado === "produccion_terminada" && !ap.ordenInterna && (
         <button onClick={() => setConfirmacion({
           titulo: `¿Dar salida a la cotización ${ap.numeroCotizacion}?`,
           mensaje: `Confirma que el pedido ya salió de la bodega y se entregó a ${ap.cliente || "el cliente"}. Queda como Entregado y no se puede deshacer.`,
@@ -474,7 +480,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const activas = grupo.filter((parte) => ESTADOS_CANCELABLES.includes(parte.estado));
     const porEnviar = grupo.filter((parte) => parte.estado === "apartado");
     const esperando = porEnviar.some((parte) => parte.faltantes.length > 0);
-    const separables = grupo.filter((parte) => (parte.items.length > 1 || (parte.items[0]?.cantidad ?? 0) > 1)
+    const conSalida = activas.filter((parte) => !parte.ordenInterna);
+    const separables = grupo.filter((parte) => !parte.ordenInterna && (parte.items.length > 1 || (parte.items[0]?.cantidad ?? 0) > 1)
       && (ESTADOS_CANCELABLES.includes(parte.estado) || parte.estado === "produccion_terminada"));
     const eliminables = grupo.filter((parte) => parte.estado === "cancelado" && !parte.items.some((it) => it.tieneProduccionRegistrada));
     const elegir = (accion: "salida" | "separar", partes: ApartadoDeLista[]) => {
@@ -520,8 +527,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           ejecutar: () => a.eliminarVarios(eliminables.map((p) => p.id)),
         })}>Eliminar</button>
       )}
-      {esAdminInventario && activas.length > 0 && (
-        <button onClick={() => elegir("salida", activas)}>Registrar salida</button>
+      {esAdminInventario && conSalida.length > 0 && (
+        <button onClick={() => elegir("salida", conSalida)}>Registrar salida</button>
       )}
       {esAdminInventario && separables.length > 0 && (
         <button onClick={() => elegir("separar", separables)}>Separar</button>
@@ -552,7 +559,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         <div className="inventario-page">
           <div className="inventario-header">
             <h1 className="inventario-titulo">Apartados</h1>
-            {(a.puedeCrearApartados || esAdminInventario) && !a.mostrarFormularioApartado && !mostrarImportar && (
+            {(a.puedeCrearApartados || a.puedeCrearOrdenInterna) && !a.mostrarFormularioApartado && !mostrarImportar && (
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                 {esAdminInventario && (
                   <button className="inventario-boton-cancelar" onClick={() => setMostrarImportar(true)}>
@@ -560,8 +567,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   </button>
                 )}
                 {a.puedeCrearApartados && (
-                  <button className="inventario-boton" onClick={a.abrirFormularioApartado}>
+                  <button className="inventario-boton" onClick={() => a.abrirFormularioApartado()}>
                     + Nuevo apartado
+                  </button>
+                )}
+                {a.puedeCrearOrdenInterna && (
+                  <button className="inventario-boton" onClick={() => a.abrirFormularioApartado(true)}>
+                    + Orden de producción interna
                   </button>
                 )}
               </div>
@@ -572,11 +584,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               ? <>Cuando se aprueba una cotización, créala aquí y elige de qué bodega sale el material.
                 Cada línea puede ser material por rollo (código de clasificación, color y calibre) o un
                 producto de stock (Tornillos, Amarres, etc.). El material queda reservado en esa bodega y a
-                su encargada lo envía a producción desde la lista cuando quiera. Aquí ves solo las cotizaciones que tú creaste.</>
-              : esAdminInventario
-                ? <>Las cotizaciones las crean los vendedores. Aquí las ves todas y puedes editarlas, anularlas, registrar salidas y separarlas.</>
+                su encargada lo envía a producción desde la lista cuando quiera.
+                {esAdminInventario
+                  ? <> Aquí ves todas las cotizaciones (también las de los vendedores). Para producir stock (tejas, caballetes,
+                    flanches o lámina lisa) crea una orden de producción interna.</>
+                  : <> Aquí ves solo las cotizaciones que tú creaste.</>}</>
               : a.puedeEnviarAProduccion
-                ? <>Aquí llegan las cotizaciones aprobadas por los vendedores con el material ya reservado en tu
+                ? <>Aquí llegan las cotizaciones aprobadas (de los vendedores o de Admin Inventario) con el material ya reservado en tu
                   bodega. Envíalas a producción desde la lista con el botón "Enviar a producción".</>
                 : <>Cotizaciones aprobadas con su material reservado.</>}
           </p>
@@ -586,8 +600,17 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           {a.mostrarFormularioApartado && (
             <form className="inventario-form" onSubmit={guardarFormulario} noValidate>
               <h2 className="inventario-form-subtitulo">
-                {a.editandoId ? `Editar cotización ${a.formulario.numeroCotizacion}` : "Nuevo apartado"}
+                {a.formulario.ordenInterna
+                  ? (a.editandoId ? `Editar orden ${a.formulario.numeroCotizacion}` : "Nueva orden de producción interna")
+                  : a.editandoId ? `Editar cotización ${a.formulario.numeroCotizacion}` : "Nuevo apartado"}
               </h2>
+              {a.formulario.ordenInterna && (
+                <p className="inventario-carga-ayuda">
+                  Orden para producir stock: el material queda apartado, la encargada de la bodega la envía a producción y lo que
+                  Planta produzca entra al inventario. Una línea de lámina lisa dice en qué se convierte y qué bodega la convierte
+                  (ej. Ricaurte corta y Santander saca los caballetes).
+                </p>
+              )}
               {a.editandoId && (
                 <p className="inventario-carga-ayuda">
                   Puedes cambiar los datos y las líneas. Las líneas que ya tuvieron salida no se pueden quitar ni bajar de
@@ -619,13 +642,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     onChange={(e) => a.actualizarCampoApartado("numeroCotizacion", e.target.value)}
                   />
                 </div>
-                <div>
-                  <label>Cliente</label>
-                  <input
-                    value={a.formulario.cliente}
-                    onChange={(e) => a.actualizarCampoApartado("cliente", e.target.value)}
-                  />
-                </div>
+                {!a.formulario.ordenInterna && (
+                  <div>
+                    <label>Cliente</label>
+                    <input
+                      value={a.formulario.cliente}
+                      onChange={(e) => a.actualizarCampoApartado("cliente", e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
 
               <h3 className="inventario-form-subtitulo">Productos solicitados</h3>
@@ -680,7 +705,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       </select>
                     </div>
                   )}
-                  <div style={{ gridColumn: "1 / -1", display: item.id ? "none" : undefined }}>
+                  <div style={{ gridColumn: "1 / -1", display: item.id || a.formulario.ordenInterna ? "none" : undefined }}>
                     <label>Tipo de material</label>
                     <div style={{ display: "flex", gap: "0.5rem" }}>
                       <button
@@ -945,10 +970,45 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         <option value="">Teja / lámina</option>
                         <option value="caballete">Caballete (3 por corte)</option>
                         <option value="flanche">Flanche (5 por corte)</option>
+                        {a.formulario.ordenInterna && <option value="lamina_lisa">Lámina lisa (para convertir)</option>}
                       </select>
                     </div>
                   )}
-                  {item.modalidad === "por_rollo" && item.tipoProducto && Number(item.cantidad) > 0 && Number(item.medida) > 0 && (() => {
+                  {item.modalidad === "por_rollo" && item.tipoProducto === "lamina_lisa" && (
+                    <>
+                      <div>
+                        <label>Se convierte en</label>
+                        <select
+                          aria-label="En qué se convierte la lámina lisa"
+                          value={item.convertirEn || "caballete"}
+                          disabled={Boolean(item.id && item.laminasConvertidas)}
+                          onChange={(e) => a.actualizarItemApartado(indice, "convertirEn", e.target.value)}
+                        >
+                          <option value="caballete">Caballetes (3 por lámina)</option>
+                          <option value="flanche">Flanches (5 por lámina)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label>Bodega que la convierte</label>
+                        <select
+                          aria-label="Bodega que convierte la lámina lisa"
+                          value={item.bodegaConversionId || ""}
+                          onChange={(e) => a.actualizarItemApartado(indice, "bodegaConversionId", e.target.value)}
+                        >
+                          <option value="">La misma que la produce</option>
+                          {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                        </select>
+                      </div>
+                      {Number(item.cantidad) > 0 && Number(item.medida) > 0 && (
+                        <p className="inventario-carga-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                          Se apartan <strong>{metrosDeLinea(Number(item.cantidad), Number(item.medida)).metros} m de lámina</strong>: {item.cantidad} láminas
+                          de {item.medida} m = {Number(item.cantidad) * ((item.convertirEn || "caballete") === "flanche" ? 5 : 3)}{" "}
+                          {(item.convertirEn || "caballete") === "flanche" ? "flanches" : "caballetes"}.
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {item.modalidad === "por_rollo" && item.tipoProducto && item.tipoProducto !== "lamina_lisa" && Number(item.cantidad) > 0 && Number(item.medida) > 0 && (() => {
                     const { metros, cortes, sobrantes } = metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto);
                     return (
                       <p className="inventario-carga-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
@@ -1010,7 +1070,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
               <div className="inventario-form-botones">
                 <button type="submit" className="inventario-boton" disabled={a.guardandoApartado}>
-                  {a.guardandoApartado ? "Guardando..." : quitaEstaParte ? `Quitar de ${a.parteEditada.bodega}` : a.editandoId ? "Guardar cambios" : "Crear apartado"}
+                  {a.guardandoApartado ? "Guardando..." : quitaEstaParte ? `Quitar de ${a.parteEditada.bodega}` : a.editandoId ? "Guardar cambios" : a.formulario.ordenInterna ? "Crear orden" : "Crear apartado"}
                 </button>
                 <button type="button" className="inventario-boton-cancelar" onClick={a.cerrarFormularioApartado}>
                   Cancelar
@@ -1152,6 +1212,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             )}
                             <td className="ap-col-cotizacion">
                               {ap.numeroCotizacion}
+                              {ap.ordenInterna && (
+                                <span style={{ display: "block", fontSize: "0.75rem", fontWeight: 600 }}>Orden interna</span>
+                              )}
                               {variasBodegas && (
                                 <span style={{ display: "block", fontSize: "0.75rem", opacity: 0.75 }}>Sale de {grupo.length} bodegas</span>
                               )}

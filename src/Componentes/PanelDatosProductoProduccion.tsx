@@ -60,7 +60,19 @@ function PanelDatosProductoProduccion({
         >
           Flanche
         </button>
+        {tipoProducto === "lamina_lisa" && (
+          <button type="button" className="produccion-tipo-boton produccion-tipo-activo">
+            Lámina lisa
+          </button>
+        )}
       </div>
+
+      {tipoProducto === "lamina_lisa" && (
+        <p className="produccion-texto-ayuda" style={{ marginBottom: "1rem" }}>
+          Láminas lisas de una orden interna: entran al stock de tu bodega y después se convierten en caballetes o
+          flanches en la bodega que diga la orden (si es otra, se le mandan con un traslado).
+        </p>
+      )}
 
       {SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && (
         <p className="produccion-texto-ayuda" style={{ marginBottom: "1rem" }}>
@@ -110,7 +122,7 @@ function PanelDatosProductoProduccion({
             onChange={(e) => setProductoFabricado(e.target.value)}
           />
         </div>
-        <div>
+        {tipoProducto !== "lamina_lisa" && <div>
           <label className="produccion-label" htmlFor="prod-modelo">Modelo</label>
           <input
             id="prod-modelo"
@@ -130,7 +142,7 @@ function PanelDatosProductoProduccion({
           {tipoProducto === "teja" && modelo.trim() && normalizarModeloTeja(modelo) !== modelo.trim() && (
             <p className="produccion-texto-ayuda">Se guarda como <strong>{normalizarModeloTeja(modelo)}</strong></p>
           )}
-        </div>
+        </div>}
         {!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && lineasProduccion.length < 2 && (
           <div>
             <label className="produccion-label" htmlFor="prod-medida">Medida del producto</label>
@@ -232,7 +244,7 @@ function PanelDatosProductoProduccion({
           <strong>{infoCorte.cortes}</strong> corte{infoCorte.cortes === 1 ? "" : "s"} ×{" "}
           {infoCorte.secciones} = <strong>{infoCorte.producidoFisico}</strong>{" "}
           {NOMBRE_POR_TIPO_PRODUCTO[tipoProducto]}s producidos —{" "}
-          <strong>{cantidadProductos}</strong> van para la necesidad
+          <strong>{infoCorte.producidoFisico - infoCorte.sobrante}</strong> van para la cotización
           {infoCorte.sobrante > 0 ? (
             <>
               {" "}y <strong>{infoCorte.sobrante}</strong> quedan como stock adicional (sección 2).

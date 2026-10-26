@@ -989,6 +989,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     # Los productos de las líneas de stock en una sola consulta; la lista los
     # mantiene en la sesión para que las revisiones de cada línea no los
     # vuelvan a pedir uno por uno.
+    _exigir_bodegas_de_conversion(db, datos.items)
     ids_producto = {item.producto_id for item in datos.items if item.producto_id}
     productos_de_lineas = db.query(Producto).filter(Producto.id.in_(ids_producto)).all() if ids_producto else []  # noqa: F841
     for item in datos.items:
@@ -1020,7 +1021,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         bodega_id=bodega_id,
         numero_cotizacion=datos.numero_cotizacion,
         empresa=datos.empresa,
-        cliente=datos.cliente,
+        cliente=datos.cliente or ("Orden interna (stock)" if datos.orden_interna else ""),
+        orden_interna=datos.orden_interna,
         creado_por=usuario.correo,
         fecha_creacion=ahora,
         estado=EstadoApartado.APARTADO,
@@ -1047,9 +1049,16 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 tipo_producto=item.tipo_producto,
                 rollo_id=item.rollo_id,
                 empresa_material=_empresa_material_linea(db, item, datos.empresa),
+                convertir_en=item.convertir_en, bodega_conversion_id=item.bodega_conversion_id,
             ))
 
     return apartado
+
+
+def _exigir_bodegas_de_conversion(db: Session, lineas) -> None:
+    for linea in lineas:
+        if linea.bodega_conversion_id and db.get(Bodega, linea.bodega_conversion_id) is None:
+            raise HTTPException(status_code=400, detail="La bodega que convierte la lámina lisa no existe.")
 
 
 def _empresa_material_linea(db: Session, linea, empresa_cotizacion: str) -> str:
@@ -1121,6 +1130,11 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     rollos_pedidos = [linea.rollo_id for linea in datos.items if linea.rollo_id]
     if len(rollos_pedidos) != len(set(rollos_pedidos)):
         raise HTTPException(status_code=400, detail="El mismo rollo está dos veces en la cotización.")
+    _exigir_bodegas_de_conversion(db, datos.items)
+    for linea in datos.items:
+        if linea.id and (actuales[linea.id].laminas_convertidas or 0) > 0 and (
+                linea.convertir_en != actuales[linea.id].convertir_en or linea.cantidad + 0.005 < actuales[linea.id].laminas_convertidas):
+            raise HTTPException(status_code=400, detail="Esa lámina lisa ya se empezó a convertir: no se puede cambiar en qué se convierte ni bajar de lo ya convertido.")
     for linea in datos.items:
         if linea.id and (linea.rollo_id or None) != (actuales[linea.id].rollo_id or None):
             raise HTTPException(status_code=400, detail="No se puede cambiar el rollo de una línea de rollo completo: quítala y agrega otra.")
@@ -1206,6 +1220,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
                 item.codigo_interno, item.cantidad, item.medida = linea.codigo_interno, linea.cantidad, linea.medida
                 item.tipo_producto = linea.tipo_producto
                 item.metros_requeridos = metros_de_linea(linea.cantidad, linea.medida, linea.tipo_producto)
+                item.convertir_en, item.bodega_conversion_id = linea.convertir_en, linea.bodega_conversion_id
         elif linea.modalidad == ModalidadApartado.POR_STOCK:
             apartado.items.append(ApartadoItem(
                 modalidad=ModalidadApartado.POR_STOCK, producto_id=linea.producto_id,
@@ -1219,6 +1234,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
                 tipo_producto=linea.tipo_producto,
                 rollo_id=linea.rollo_id,
                 empresa_material=empresa_material,
+                convertir_en=linea.convertir_en, bodega_conversion_id=linea.bodega_conversion_id,
             ))
     if apartado.estado == EstadoApartado.APARTADO:
         apartado.salida_pendiente = False
@@ -1259,6 +1275,16 @@ def siguiente_numero(db: Session, empresa: str) -> str:
         if de_quien == empresa and inicio:
             mayor = max(mayor, int(inicio.group()))
     return str(mayor + 1) if mayor else ""
+
+
+def siguiente_numero_orden_interna(db: Session) -> str:
+    """Consecutivo de las órdenes de producción interna: "OI-0001", "OI-0002"..."""
+    mayor = 0
+    for (numero,) in db.query(Apartado.numero_cotizacion).filter(Apartado.numero_cotizacion.like("OI-%")):
+        coincide = re.match(r"OI-(\d+)", numero or "")
+        if coincide:
+            mayor = max(mayor, int(coincide.group(1)))
+    return f"OI-{mayor + 1:04d}"
 
 
 def numero_base(numero_cotizacion: str) -> str:
@@ -1800,7 +1826,18 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
     # este apartado dejan de contar en `metros_reservados_codigo`/
     # `cantidad_reservada_producto` y vuelven a disponibles automáticamente.
     apartado.estado = EstadoApartado.PRODUCCION_TERMINADA
+    cerrar_orden_interna_si_terminó(apartado)
     return apartado
+
+
+def cerrar_orden_interna_si_terminó(apartado: Apartado) -> None:
+    """Una orden interna no tiene "Salida" (lo producido ya está en el
+    stock): con la producción terminada y la lámina lisa ya convertida, se
+    cierra sola."""
+    if (apartado.orden_interna and apartado.estado == EstadoApartado.PRODUCCION_TERMINADA
+            and not any(item.laminas_por_convertir > 0.005 for item in apartado.items)):
+        apartado.estado = EstadoApartado.ENTREGADO
+        apartado.fecha_entregado = datetime.now(timezone.utc)
 
 
 def confirmar_separacion_stock(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
@@ -1826,6 +1863,8 @@ def marcar_entregado(db: Session, apartado_id: int, usuario: Usuario) -> Apartad
     apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
     if apartado.estado != EstadoApartado.PRODUCCION_TERMINADA:
         raise HTTPException(status_code=400, detail="Este apartado todavía no tiene la producción terminada.")
+    if apartado.orden_interna:
+        raise HTTPException(status_code=400, detail="Una orden interna no tiene salida: se cierra sola cuando se conviertan sus láminas lisas.")
     apartado.estado = EstadoApartado.ENTREGADO
     apartado.fecha_entregado = datetime.now(timezone.utc)
     return apartado

@@ -355,9 +355,10 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       setMetrosPorUnidad(String(solicitud.medida));
       setCantidadProductos(String(Math.max(1, Math.round(solicitud.metrosPendientes / porUnidad))));
     } else {
-      // Línea de teja: si antes se eligió una de caballete, el formulario se
-      // quedaba en caballete y registraba la teja como caballete.
-      setTipoProducto("teja");
+      // Línea de teja (o lámina lisa de una orden interna): si antes se eligió
+      // una de caballete, el formulario se quedaba en caballete y registraba
+      // la teja como caballete.
+      setTipoProducto(solicitud.tipoProducto === "lamina_lisa" ? "lamina_lisa" : "teja");
       setMetrosPorUnidad("");
     }
     // El sobrante de la línea anterior no es de esta (se vuelve a sembrar solo).
@@ -594,12 +595,20 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   // unidades pedidas -> corte de 6 -> 1 de sobrante), pero solo si el
   // usuario todavía no tocó nada — nunca pisa una clasificación ya hecha
   // (por ejemplo, si ya la partió en Primera + Segunda con su motivo).
+  // Si la línea sembrada sigue igual (nadie la tocó) y cambia la cantidad
+  // (ej. se escribe 216 dígito por dígito), se actualiza con el nuevo sobrante.
+  const sobranteSembrado = useRef("");
   useEffect(() => {
     if (!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto]) return;
-    if (!infoCorte || infoCorte.sobrante <= 0) return;
-    if (stockAdicional.length > 0) return;
-    setStockAdicional([{ calidad: "primera", cantidad: String(infoCorte.sobrante), motivoSegunda: "" }]);
-  }, [tipoProducto, infoCorte, stockAdicional.length]);
+    const nuevo = infoCorte && infoCorte.sobrante > 0 ? String(infoCorte.sobrante) : "";
+    const linea = stockAdicional[0];
+    const sembradaSinTocar = stockAdicional.length === 1 && linea.calidad === "primera" && !linea.motivoSegunda
+      && !linea.lisaPara && linea.cantidad === sobranteSembrado.current;
+    if (stockAdicional.length > 0 && !sembradaSinTocar) return;
+    if (stockAdicional.length === 0 ? !nuevo : linea.cantidad === nuevo) return;
+    sobranteSembrado.current = nuevo;
+    setStockAdicional(nuevo ? [{ calidad: "primera", cantidad: nuevo, motivoSegunda: "" }] : []);
+  }, [tipoProducto, infoCorte, stockAdicional]);
 
   const [errorValidacion, setErrorValidacion] = useState("");
   // Apartado pendiente de que se confirme la separación de stock antes de
@@ -615,6 +624,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   const [produccionConfirmada, setProduccionConfirmada] = useState(null);
 
   function validar() {
+    // Para stock solo se produce con una orden interna de Admin Inventario.
+    if (!apartadoItemId) return "Elige la cotización o la orden de producción interna que vas a producir (desde Apartados, \"Iniciar Producción\").";
     if (!codigoBusqueda.trim()) return "Busca un código de clasificación o de rollo.";
     if (rollosDisponibles.length === 0) return "No hay rollos registrados con ese código en tu bodega.";
     if (rollosSeleccionados.length === 0) return "Selecciona al menos un rollo y sus metros a consumir.";
@@ -630,7 +641,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         return `El rollo ${rollo.identificadorRollo} solo tiene ${rollo.metrosDisponibles} m disponibles.`;
       }
     }
-    if (!modelo.trim()) return "Indica el modelo del producto fabricado.";
+    if (tipoProducto !== "lamina_lisa" && !modelo.trim()) return "Indica el modelo del producto fabricado.";
     if (tipoProducto === "teja" && !calibreLote.trim()) {
       return "Indica el calibre — es obligatorio para identificar y consolidar correctamente el stock de TEJA.";
     }
@@ -677,7 +688,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         stockDeclarado += Number(linea.cantidad);
       }
       if (stockDeclarado !== infoCorte.sobrante) {
-        return `Este corte produce físicamente ${infoCorte.producidoFisico} ${nombre}s; ${cantidadProductos} van para la necesidad y ${infoCorte.sobrante} deben quedar declarados como stock adicional (ahora declaraste ${stockDeclarado}). Ningún ${nombre} cortado se pierde.`;
+        return `Este corte produce físicamente ${infoCorte.producidoFisico} ${nombre}s; ${infoCorte.producidoFisico - infoCorte.sobrante} van para la cotización y ${infoCorte.sobrante} deben quedar declarados como stock adicional (ahora declaraste ${stockDeclarado}). Ningún ${nombre} cortado se pierde.`;
       }
       return "";
     }
@@ -791,7 +802,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       const cuerpo = {
         tipo_producto: tipoProducto,
         producto_fabricado: productoFabricado.trim(),
-        modelo: modelo.trim(),
+        modelo: tipoProducto === "lamina_lisa" ? "LAMINA LISA" : modelo.trim(),
         medida_producto: medidaProducto.trim() || (esSoloStock() ? medidasDelStock() : ""),
         cantidad_productos: Number(cantidadProductos) || (esSoloStock() ? unidadesDelStock() : 0),
         responsable: responsable.trim(),
@@ -817,7 +828,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
           metros_por_unidad: SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] ? null : Number(linea.metros) || null,
           rollo_id: rollosSeleccionados.length === 1 ? rollosSeleccionados[0].rollo.id : Number(linea.rolloId) || null,
           // Segunda que es lámina lisa: entra como caballetes o flanches.
-          ...(!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && linea.calidad === "segunda" && linea.lisaPara ? {
+          ...(!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && tipoProducto !== "lamina_lisa" && linea.calidad === "segunda" && linea.lisaPara ? {
             lamina_lisa_para: linea.lisaPara,
             piezas: Number(linea.piezas),
             metros_pieza: Number(String(linea.metrosPieza).replace(",", ".")),

@@ -56,6 +56,10 @@ class Apartado(Base):
     # nadie lo vende) hasta que se registre la salida con la hoja de vida;
     # no va a Planta. Al completar la salida queda Entregado.
     salida_pendiente: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Orden de producción interna de Admin Inventario (sin cliente): lo que
+    # Planta produce para ella entra al stock y la orden se cierra sola (no
+    # hay "Salida"). Número "OI-0001".
+    orden_interna: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     creado_por: Mapped[str] = mapped_column(String(150), default="")
     fecha_creacion: Mapped[DateTime] = mapped_column(DateTime(timezone=True))
@@ -153,6 +157,26 @@ class ApartadoItem(Base):
     # requeridos y consumidos funcionan igual que siempre. No va a Planta:
     # se le da salida al rollo entero desde Apartados.
     rollo_id: Mapped[int | None] = mapped_column(ForeignKey("rollos.id"), nullable=True, index=True)
+
+    # Orden interna, línea de lámina lisa: en qué se convierte ("caballete" o
+    # "flanche"), qué bodega la convierte (NULL = la misma de la orden) y
+    # cuántas láminas se han convertido (ver produccion.convertir_lamina_lisa).
+    convertir_en: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    bodega_conversion_id: Mapped[int | None] = mapped_column(ForeignKey("bodegas.id"), nullable=True)
+    laminas_convertidas: Mapped[float] = mapped_column(Float, default=0, server_default="0")
+
+    @property
+    def bodega_conversion(self) -> int | None:
+        """Bodega donde se convierten las láminas (la de la orden si no se dijo otra)."""
+        if not self.convertir_en:
+            return None
+        return self.bodega_conversion_id or (self.apartado.bodega_id if self.apartado is not None else None)
+
+    @property
+    def laminas_por_convertir(self) -> float:
+        if not self.convertir_en:
+            return 0.0
+        return max(round((self.cantidad or 0) - (self.laminas_convertidas or 0), 2), 0.0)
 
     @property
     def empresa_de_linea(self) -> str:

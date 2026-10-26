@@ -4,7 +4,11 @@ from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
 from app.models.apartado import ApartadoItem
 from app.models.produccion import Produccion
 from app.models.usuario import RolUsuario, Usuario
-from app.schemas.produccion import ProduccionCrear, ProduccionResponse
+from app.schemas.produccion import (
+    ConversionLaminaResponse, ConversionPendienteResponse, ConvertirLaminaLisa, ProduccionCrear, ProduccionResponse,
+)
+from app.services.produccion import conversiones_pendientes
+from app.services.produccion import convertir_lamina_lisa as aplicar_conversion
 from app.services.produccion import registrar_produccion as aplicar_produccion
 
 router = APIRouter(prefix="/produccion", tags=["Producción"])
@@ -14,6 +18,19 @@ def registrar_produccion(datos: ProduccionCrear, db: Session = Depends(get_db), 
     produccion = aplicar_produccion(db, datos, usuario)
     db.commit(); db.refresh(produccion)
     return produccion
+
+@router.get("/conversiones-pendientes", response_model=list[ConversionPendienteResponse],
+            dependencies=[Depends(requiere_rol(RolUsuario.JEFE_PLANTA))])
+def listar_conversiones_pendientes(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> list[dict]:
+    """Lámina lisa de órdenes internas que le toca convertir a mi bodega."""
+    return conversiones_pendientes(db, usuario)
+
+@router.post("/convertir-lamina-lisa", response_model=ConversionLaminaResponse, dependencies=[Depends(requiere_rol(RolUsuario.JEFE_PLANTA))])
+def convertir_lamina_lisa(datos: ConvertirLaminaLisa, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> dict:
+    """Planta convierte láminas lisas de su stock en caballetes o flanches (orden interna)."""
+    resultado = aplicar_conversion(db, datos, usuario)
+    db.commit()
+    return resultado
 
 @router.get("", response_model=list[ProduccionResponse])
 def listar_producciones(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> list[Produccion]:

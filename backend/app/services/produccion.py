@@ -7,19 +7,20 @@ from secrets import token_hex
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.models.apartado import ApartadoItem, EstadoApartado, ModalidadApartado
+from app.models.apartado import Apartado, ApartadoItem, EstadoApartado, ModalidadApartado
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.produccion import Produccion, RolloUtilizadoProduccion
 from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
-from app.schemas.produccion import ProduccionCrear, StockAdicionalItemCrear
+from app.schemas.produccion import ConvertirLaminaLisa, ProduccionCrear, StockAdicionalItemCrear
 from app.services.apartados import (
-    bloquear_rollos_codigo, exigir_rollo_de_la_empresa_de_linea, exigir_rollo_libre, validar_reserva_rollos,
+    bloquear_rollos_codigo, cerrar_orden_interna_si_terminó, disponibles_productos_bodega,
+    exigir_rollo_de_la_empresa_de_linea, exigir_rollo_libre, validar_reserva_rollos,
 )
 from app.services.modelos_teja import modelo_en_descripcion, normalizar_modelo_teja
 from app.services.prestamos import LAMINA, registrar_prestamo
-from app.services.seccionados import SECCIONES_POR_TIPO_PRODUCTO
+from app.services.seccionados import LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO
 
 # Regla física de los productos "seccionados": el ancho del rollo se divide
 # siempre en N partes iguales según el tipo (3 para caballetes, 5 para
@@ -33,7 +34,9 @@ from app.services.seccionados import SECCIONES_POR_TIPO_PRODUCTO
 # mezclarse entre sí ni con tejas — el rollo de origen se conserva aparte en
 # `Producto.codigo_rollo_origen`.
 FAMILIA_POR_TIPO_PRODUCTO = {"caballete": "CABALLETES", "flanche": "FLANCHES"}
-NOMBRE_POR_TIPO_PRODUCTO = {"caballete": "caballete", "flanche": "flanche"}
+NOMBRE_POR_TIPO_PRODUCTO = {"caballete": "caballete", "flanche": "flanche", "lamina_lisa": "lámina lisa"}
+# Lámina lisa cortada para stock (después se convierte en caballetes/flanches).
+FAMILIA_LAMINA_LISA = "LAMINA LISA"
 
 
 def _apartado_item_para_produccion(db: Session, apartado_item_id: int, usuario: Usuario) -> ApartadoItem:
@@ -263,6 +266,12 @@ def _buscar_producto_existente(
 
 def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) -> Produccion:
     if not datos.rollos: raise HTTPException(status_code=400, detail="Selecciona al menos un rollo y sus metros a consumir.")
+    # Planta no produce para stock por su cuenta: siempre es para una
+    # cotización o para una orden de producción interna de Admin Inventario.
+    if not datos.apartado_item_id:
+        raise HTTPException(status_code=400, detail="Para producir para stock necesitas una orden de producción interna de Admin Inventario.")
+    if datos.tipo_producto == LAMINA_LISA:
+        datos.stock_adicional = [item.model_copy(update={"lamina_lisa_para": ""}) for item in datos.stock_adicional]
     if datos.tipo_producto == "teja":
         # "arqui" -> ARQUITECTONICA, "super" -> SUPERMIL... (ver modelos_teja).
         datos.modelo = normalizar_modelo_teja(datos.modelo)
@@ -301,7 +310,9 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
             raise HTTPException(status_code=400, detail="El rollo de donde salió el stock tiene que ser uno de los que usaste en esta producción.")
         rollo_de_linea[indice] = por_id.get(rollo_id) if rollo_id is not None else None
         if rollo_id is not None:
-            stock_por_rollo[rollo_id] = stock_por_rollo.get(rollo_id, 0) + item_stock.cantidad * (metros_de_linea_stock(datos, item_stock) or 0)
+            # Caballete/flanche: cada corte de esa longitud da N unidades.
+            metros_unidad = (metros_de_linea_stock(datos, item_stock) or 0) / SECCIONES_POR_TIPO_PRODUCTO.get(datos.tipo_producto, 1)
+            stock_por_rollo[rollo_id] = stock_por_rollo.get(rollo_id, 0) + item_stock.cantidad * metros_unidad
     for rollo_id, metros_stock in stock_por_rollo.items():
         if round(metros_stock, 2) > round(metros_de_rollo[rollo_id], 2) + 0.01:
             raise HTTPException(
@@ -335,6 +346,12 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         # Una línea de caballete/flanche se produce como lo que es. Al revés
         # sí se deja: las líneas viejas de teja a veces eran caballetes.
         tipo_linea = apartado_item.tipo_producto or ""
+        if (tipo_linea == LAMINA_LISA) != (datos.tipo_producto == LAMINA_LISA):
+            raise HTTPException(
+                status_code=400,
+                detail="Esa línea es de lámina lisa: regístrala como lámina lisa." if tipo_linea == LAMINA_LISA
+                else "La lámina lisa solo se registra para una línea de lámina lisa de una orden interna.",
+            )
         if tipo_linea in SECCIONES_POR_TIPO_PRODUCTO and datos.tipo_producto != tipo_linea:
             raise HTTPException(
                 status_code=400,
@@ -346,6 +363,10 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     # Varias líneas de la misma cotización y el mismo código (color +
     # espesor) en una sola producción: solo cambia la medida de las tejas.
     items_produccion: list[ApartadoItem] = [apartado_item] if apartado_item is not None else []
+    orden_interna = apartado_item is not None and apartado_item.apartado.orden_interna
+    if orden_interna:
+        # Todo lo de la línea entra al stock: una línea a la vez.
+        datos.apartado_items_extra, datos.metros_por_linea = [], {}
     if datos.apartado_items_extra:
         if apartado_item is None:
             raise HTTPException(status_code=400, detail="Elige primero la línea principal de la cotización.")
@@ -445,6 +466,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
             unidades_hacia_apartado = min(datos.cantidad_productos, max(0, pendiente_unidades))
             aplicado_al_apartado = min(round(unidades_hacia_apartado * por_unidad, 2), pendiente_metros)
             unidades_excedentes_apartado = datos.cantidad_productos - unidades_hacia_apartado
+            unidades_para_la_orden = unidades_hacia_apartado
         else:
             aplicado_al_apartado = 0.0
         # No hay "excedente de metros" para productos seccionados — lo
@@ -491,8 +513,8 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
                 status_code=400,
                 detail=(
                     f"Este corte produce físicamente {cortes * secciones} {nombre}s "
-                    f"({cortes} corte(s) × {secciones}); {datos.cantidad_productos - unidades_excedentes_apartado} "
-                    f"van para la necesidad y {sobrante_seccionado} deben quedar declarados como stock adicional "
+                    f"({cortes} corte(s) × {secciones}); {cortes * secciones - sobrante_seccionado} "
+                    f"van para la cotización y {sobrante_seccionado} deben quedar declarados como stock adicional "
                     f"(ahora declaraste {stock_declarado}). Ningún {nombre} cortado se pierde: ajusta las líneas "
                     "de stock adicional para que sumen exactamente ese sobrante."
                 ),
@@ -550,7 +572,9 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
     if apartado_item is not None:
         # Lo que va para la cotización sale de los rollos en el orden en que
         # Planta los escogió; lo de un rollo de la otra empresa es un préstamo.
-        por_prestar = aplicado_al_apartado
+        # (Una orden interna no tiene cliente: lo producido es stock de la
+        # empresa de cada rollo, nadie le presta a nadie.)
+        por_prestar = 0.0 if orden_interna else aplicado_al_apartado
         for item, rollo in zip(datos.rollos, bloqueados, strict=True):
             parte = round(min(item.metros, por_prestar), 2)
             por_prestar = round(por_prestar - parte, 2)
@@ -599,11 +623,30 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         # corrigió en Rollos), para que el stock quede clasificado con esa
         # trazabilidad. No participa en el cálculo de metros ni de cortes.
         ancho_rollo_stock = bloqueados[0].ancho_material
+    elif datos.tipo_producto == LAMINA_LISA:
+        familia_stock = FAMILIA_LAMINA_LISA
+        codigo_rollo_origen_stock = codigo
+        tipo_producto_stock = LAMINA_LISA
+        ancho_rollo_stock = bloqueados[0].ancho_material
     else:
         familia_stock = "TEJA"
         codigo_rollo_origen_stock = codigo
         tipo_producto_stock = ""
         ancho_rollo_stock = None
+
+    if orden_interna:
+        # Lo producido para la orden también entra al stock (además del
+        # sobrante que Planta haya declarado).
+        if datos.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO:
+            unidades, medida = unidades_para_la_orden, None
+        else:
+            unidades, medida = datos.cantidad_productos, apartado_item.medida
+        if unidades > 0:
+            rollo_de_linea[len(datos.stock_adicional)] = bloqueados[0] if len(bloqueados) == 1 else None
+            datos.stock_adicional = [*datos.stock_adicional, StockAdicionalItemCrear(
+                calidad="primera", cantidad=unidades, metros_por_unidad=medida,
+                rollo_id=bloqueados[0].id if len(bloqueados) == 1 else None,
+            )]
 
     for indice, item_stock in enumerate(datos.stock_adicional, start=1):
         # El stock es de la empresa del rollo de donde salió ("Salió del rollo",
@@ -683,3 +726,135 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         ))
 
     return produccion
+
+
+def _laminas_de_la_linea(db: Session, item: ApartadoItem, bodega_id: int) -> list[Producto]:
+    """Láminas lisas de la bodega que sirven para esa línea: mismo rollo de
+    origen (código) y misma medida."""
+    return [
+        p for p in db.query(Producto).filter(
+            Producto.bodega_id == bodega_id, Producto.tipo_producto == LAMINA_LISA,
+            Producto.codigo_rollo_origen == item.codigo_interno, Producto.stock > 0,
+        ).order_by(Producto.id)
+        if _misma_longitud(float(p.metros_por_unidad or 0), item.medida)
+    ]
+
+
+def conversiones_pendientes(db: Session, usuario: Usuario) -> list[dict]:
+    """Líneas de lámina lisa de órdenes internas que le toca convertir a la
+    bodega de Planta, con las láminas de su stock que sirven para cada una."""
+    lineas = (
+        db.query(ApartadoItem).join(ApartadoItem.apartado)
+        .filter(Apartado.orden_interna.is_(True), ApartadoItem.convertir_en != "",
+                Apartado.estado.in_((EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION, EstadoApartado.PRODUCCION_TERMINADA)),
+                func.coalesce(ApartadoItem.bodega_conversion_id, Apartado.bodega_id) == usuario.bodega_id)
+        .order_by(Apartado.fecha_creacion, ApartadoItem.id).all()
+    )
+    resultado = []
+    for item in lineas:
+        if item.laminas_por_convertir <= 0.005:
+            continue
+        laminas = _laminas_de_la_linea(db, item, usuario.bodega_id)
+        libres = disponibles_productos_bodega(db, laminas, bodega_id=usuario.bodega_id)
+        resultado.append({
+            "item_id": item.id, "numero_orden": item.apartado.numero_cotizacion,
+            "bodega_orden": item.apartado.bodega_nombre, "descripcion": item.descripcion,
+            "codigo_interno": item.codigo_interno, "medida": item.medida, "convertir_en": item.convertir_en,
+            "laminas_pedidas": item.cantidad, "laminas_convertidas": item.laminas_convertidas or 0,
+            "laminas_por_convertir": item.laminas_por_convertir,
+            "laminas": [{"id": p.id, "codigo": p.codigo, "descripcion": p.descripcion, "empresa": p.empresa or "",
+                         "calidad": p.calidad or "primera", "disponibles": max(float(libres.get(p.id, 0)), 0)}
+                        for p in laminas],
+        })
+    return resultado
+
+
+def convertir_lamina_lisa(db: Session, datos: ConvertirLaminaLisa, usuario: Usuario) -> dict:
+    """Láminas lisas del stock de la bodega -> caballetes (3 por lámina) o
+    flanches (5), del mismo largo, rollo de origen, empresa y calidad, según
+    la línea de la orden interna. Se suman al producto que ya tenga esa
+    misma identidad (igual que el stock de una producción) o se crea uno
+    nuevo. Con todo convertido (y la producción terminada) la orden se cierra."""
+    item = (
+        db.query(ApartadoItem).join(ApartadoItem.apartado)
+        .filter(ApartadoItem.id == datos.apartado_item_id).with_for_update().one_or_none()
+    )
+    if item is None or not item.apartado.orden_interna or not item.convertir_en or item.bodega_conversion != usuario.bodega_id:
+        raise HTTPException(status_code=404, detail="Esa orden no tiene lámina lisa para convertir en tu bodega.")
+    if item.apartado.estado not in (EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION, EstadoApartado.PRODUCCION_TERMINADA):
+        raise HTTPException(status_code=400, detail="Esa orden no está en producción.")
+    if datos.laminas > item.laminas_por_convertir + 0.005:
+        raise HTTPException(status_code=400, detail=f"La orden {item.apartado.numero_cotizacion} solo tiene {item.laminas_por_convertir:g} láminas por convertir.")
+    lamina = (
+        db.query(Producto)
+        .filter(Producto.id == datos.producto_id, Producto.bodega_id == usuario.bodega_id)
+        .with_for_update().one_or_none()
+    )
+    if lamina is None or lamina not in _laminas_de_la_linea(db, item, usuario.bodega_id):
+        raise HTTPException(status_code=400, detail="Esa lámina lisa no es la de esta orden (otro código o medida) o no está en tu bodega.")
+    libre = disponibles_productos_bodega(db, [lamina], bodega_id=usuario.bodega_id).get(lamina.id, 0)
+    if datos.laminas > libre + 0.005:
+        raise HTTPException(status_code=400, detail=f"Solo hay {max(libre, 0):g} láminas libres de {lamina.descripcion}.")
+
+    ahora = datetime.now(timezone.utc)
+    tipo = item.convertir_en
+    piezas = datos.laminas * SECCIONES_POR_TIPO_PRODUCTO[tipo]
+    familia = FAMILIA_POR_TIPO_PRODUCTO[tipo]
+    calidad = lamina.calidad or "primera"
+    orden = item.apartado.numero_cotizacion
+    nota = (f"Orden {orden}: {datos.laminas} lámina(s) lisa(s) {lamina.codigo} convertidas en {piezas} {tipo}(s). "
+            f"Responsable: {datos.responsable}." + (f" {datos.observaciones}" if datos.observaciones else ""))
+
+    lamina.stock = round(lamina.stock - datos.laminas, 2)
+    db.add(Movimiento(
+        fecha=ahora, tipo=TipoMovimiento.SALIDA, motivo="conversion_lamina_lisa",
+        producto_codigo=lamina.codigo, producto_descripcion=lamina.descripcion[:255],
+        bodega_origen_id=usuario.bodega_id, bodega_destino_id=None,
+        cantidad=datos.laminas, usuario=usuario.correo, observaciones=nota, cotizacion=orden,
+    ))
+
+    destino = (
+        db.query(Producto)
+        .filter(
+            Producto.bodega_id == usuario.bodega_id,
+            Producto.familia == familia,
+            func.coalesce(Producto.empresa, "") == (lamina.empresa or ""),
+            func.coalesce(Producto.codigo_rollo_origen, "") == (lamina.codigo_rollo_origen or ""),
+            Producto.ancho_rollo == lamina.ancho_rollo,
+            Producto.metros_por_unidad == lamina.metros_por_unidad,
+            Producto.calidad == calidad,
+        )
+        .with_for_update().first()
+    )
+    if destino is not None:
+        destino.stock = round(destino.stock + piezas, 2)
+        destino.entrada = round(destino.entrada + piezas, 2)
+    else:
+        partes = [tipo.upper(), f"{_numero(float(lamina.metros_por_unidad))} m"]
+        if lamina.calibre: partes.append(f"CAL {lamina.calibre}")
+        if lamina.color: partes.append(lamina.color.upper())
+        if lamina.ral: partes.append(f"(RAL {lamina.ral})")
+        descripcion = " ".join(partes) + (f" - rollo {lamina.codigo_rollo_origen}" if lamina.codigo_rollo_origen else "") + (
+            " (de lámina lisa)") + (" (Segunda)" if calidad == "segunda" else "")
+        destino = Producto(
+            bodega_id=usuario.bodega_id, empresa=lamina.empresa or "",
+            codigo=f"CONV-{ahora.strftime('%Y%m%d%H%M%S')}-{token_hex(3).upper()}",
+            descripcion=descripcion[:255], familia=familia, codigo_rollo_origen=lamina.codigo_rollo_origen,
+            ancho_rollo=lamina.ancho_rollo, tipo_producto=tipo, calibre=lamina.calibre or "",
+            color=lamina.color or "", ral=lamina.ral or "", calidad=calidad,
+            motivo_segunda=(lamina.motivo_segunda or "") if calidad == "segunda" else "",
+            metros_por_unidad=lamina.metros_por_unidad, fecha_produccion=ahora,
+            entrada=piezas, stock=piezas,
+        )
+        db.add(destino)
+        db.flush()
+    db.add(Movimiento(
+        fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo="conversion_lamina_lisa",
+        producto_codigo=destino.codigo, producto_descripcion=destino.descripcion[:255],
+        bodega_origen_id=None, bodega_destino_id=usuario.bodega_id,
+        cantidad=piezas, usuario=usuario.correo, observaciones=nota, cotizacion=orden,
+    ))
+    item.laminas_convertidas = round((item.laminas_convertidas or 0) + datos.laminas, 2)
+    cerrar_orden_interna_si_terminó(item.apartado)
+    return {"lamina_codigo": lamina.codigo, "laminas": datos.laminas, "producto_codigo": destino.codigo,
+            "producto_descripcion": destino.descripcion, "piezas": piezas}

@@ -70,8 +70,12 @@ def _con_id_de_bodega(db: Session, donde: list[tuple[str, float]]) -> list[dict]
 
 
 @router.get("/siguiente-numero", response_model=SiguienteNumeroResponse,
-            dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR))])
-def consultar_siguiente_numero(empresa: str = Query(..., min_length=1), db: Session = Depends(get_db)) -> dict:
+            dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO))])
+def consultar_siguiente_numero(
+    empresa: str = Query(..., min_length=1), orden_interna: bool = False, db: Session = Depends(get_db),
+) -> dict:
+    if orden_interna:
+        return {"numero": srv.siguiente_numero_orden_interna(db)}
     """El número que sigue en las cotizaciones de esa empresa (cada una lleva
     su consecutivo). Se puede cambiar a mano en el formulario."""
     return {"numero": srv.siguiente_numero(db, empresa.strip().upper())}
@@ -253,12 +257,16 @@ def registrar_salida_con_hoja_de_vida(
     return _con_faltantes(db, [apartado])[0]
 
 
-# Los apartados los crea el vendedor (cotización aprobada) eligiendo la
-# bodega; la bodega solo decide cuándo enviarlo a producción y Admin
-# Inventario es quien los anula.
+# Los apartados los crean el vendedor o Admin Inventario (cotización
+# aprobada) eligiendo la bodega; la bodega solo decide cuándo enviarlo a
+# producción y Admin Inventario es quien los anula.
 @router.post("", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR))])
+             dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO))])
 def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    # Las cotizaciones las crean el vendedor y Admin Inventario; las órdenes de
+    # producción interna (para stock), solo Admin Inventario.
+    if usuario.rol == RolUsuario.VENDEDOR and datos.orden_interna:
+        raise HTTPException(status_code=403, detail="Las órdenes de producción interna las crea Admin Inventario.")
     """Cada línea dice de qué bodega y de qué empresa sale su material. La
     cotización es UNA, de la empresa elegida: una línea con material de la
     otra empresa se queda en ella (marcada; al salir queda como préstamo).
@@ -347,9 +355,11 @@ def eliminar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: 
 def editar_apartado(
     apartado_id: int, datos: ApartadoEditar, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> Apartado:
-    """El vendedor (las suyas) o Admin Inventario (cualquiera) corrige una cotización activa (ver srv.editar_apartado).
+    """El vendedor (las suyas) o Admin Inventario (cualquiera, y sus órdenes internas) corrige una cotización activa (ver srv.editar_apartado).
     Las líneas que salen de OTRA bodega se pasan a la misma cotización en esa
     bodega: se le suman si ya existe ahí, o se crea. Todo junto o nada."""
+    # Una cotización no se vuelve orden interna ni al revés.
+    datos = datos.model_copy(update={"orden_interna": srv.apartado_de_mi_bodega(db, apartado_id, usuario).orden_interna})
     if datos.items:
         apartado = _editar_cotizacion_completa(db, apartado_id, datos, usuario)
         db.commit(); db.refresh(apartado)
@@ -515,12 +525,12 @@ def _pasar_a_otras_bodegas(
                 srv.editar_apartado(db, hermana.id, ApartadoEditar(
                     bodega_id=otra, material_en_camino=datos.material_en_camino, numero_cotizacion=hermana.numero_cotizacion,
                     empresa=hermana.empresa or datos.empresa, cliente=hermana.cliente, observaciones=hermana.observaciones,
-                    items=actuales + lineas,
+                    orden_interna=hermana.orden_interna, items=actuales + lineas,
                 ), usuario)
             else:
                 srv.crear_apartado(db, ApartadoCrear(
                     bodega_id=otra, material_en_camino=datos.material_en_camino, numero_cotizacion=numero,
-                    empresa=datos.empresa, cliente=datos.cliente,
+                    empresa=datos.empresa, cliente=datos.cliente, orden_interna=datos.orden_interna,
                     observaciones=f"Parte de la cotización {numero} de {bodega_nombre} "
                     f"con material de {nombre}.",
                     items=lineas,
