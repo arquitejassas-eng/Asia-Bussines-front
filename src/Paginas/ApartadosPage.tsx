@@ -52,7 +52,7 @@ function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number
 // "SI" en el Excel; se cierran con Registrar salida).
 type Pestana = "cotizaciones" | "pendientes_salida" | "entregadas" | "canceladas";
 const PESTANAS: Record<Pestana, string> = {
-  cotizaciones: "Cotizaciones", pendientes_salida: "Pendientes por dar salida", entregadas: "Entregadas", canceladas: "Canceladas",
+  cotizaciones: "Cotizaciones", pendientes_salida: "Pendientes por dar salida", entregadas: "Entregadas", canceladas: "Anuladas",
 };
 const ESTADO_DE_PESTANA: Partial<Record<Pestana, string>> = { entregadas: "entregado", canceladas: "cancelado" };
 const CERRADAS = Object.values(ESTADO_DE_PESTANA);
@@ -76,7 +76,7 @@ const ETIQUETAS_ESTADO: Record<string, string> = {
   en_produccion: "En producción",
   produccion_terminada: "Producción terminada",
   entregado: "Entregado",
-  cancelado: "Cancelado",
+  cancelado: "Anulado",
 };
 
 type DatosDisponibilidad = {
@@ -281,7 +281,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     setConfirmacion({
       titulo: `¿Quitar la cotización ${a.formulario.numeroCotizacion} de ${a.parteEditada.bodega}?`,
       mensaje: `La cotización ${a.formulario.numeroCotizacion} sigue activa en ${a.parteEditada.otrasPartes.join(", ")}. `
-        + `Solo se borra la parte de ${a.parteEditada.bodega}: no queda como cancelada y su material reservado queda libre.`,
+        + `Solo se borra la parte de ${a.parteEditada.bodega}: no queda como anulada y su material reservado queda libre.`,
       textoConfirmar: "Sí, quitar",
       ejecutar: () => a.crearApartado({ preventDefault: () => {} }),
     });
@@ -413,18 +413,18 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       )}
       {a.puedeCancelarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
-          titulo: `¿Cancelar el apartado ${ap.numeroCotizacion}?`,
+          titulo: `¿Anular el apartado ${ap.numeroCotizacion}?`,
           mensaje: ap.estado === "apartado"
             ? "El material que tenía reservado queda libre para otras ventas."
-            : "Ya fue enviado a producción. Al cancelarlo, el material que faltaba por producir queda libre para otras ventas y los productos de stock que ya se descontaron vuelven a la bodega. La lámina que ya se produjo NO vuelve al inventario.",
-          textoConfirmar: "Sí, cancelar apartado",
+            : "Ya fue enviado a producción. Al anularlo, el material que faltaba por producir queda libre para otras ventas y los productos de stock que ya se descontaron vuelven a la bodega. La lámina que ya se produjo NO vuelve al inventario.",
+          textoConfirmar: "Sí, anular apartado",
           ejecutar: () => a.cancelarApartado(ap.id),
-        })}>Cancelar</button>
+        })}>Anular</button>
       )}
       {a.puedeCancelarApartados && ap.estado === "cancelado" && !ap.items.some((it) => it.tieneProduccionRegistrada) && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
-          titulo: `¿Eliminar la cotización cancelada ${ap.numeroCotizacion}?`,
-          mensaje: "Se borra de la lista para siempre. No afecta el inventario: su material ya quedó libre al cancelarla.",
+          titulo: `¿Eliminar la cotización anulada ${ap.numeroCotizacion}?`,
+          mensaje: "Se borra de la lista para siempre. No afecta el inventario: su material ya quedó libre al anularla.",
           textoConfirmar: "Sí, eliminar",
           ejecutar: () => a.eliminarApartado(ap.id),
         })}>Eliminar</button>
@@ -502,17 +502,17 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       )}
       {a.puedeCancelarApartados && activas.length > 0 && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
-          titulo: `¿Cancelar la cotización ${numero}?`,
-          mensaje: `Se cancela completa (${activas.map((p) => p.bodegaNombre).join(" y ")}). El material que tenía reservado queda libre para otras ventas. `
+          titulo: `¿Anular la cotización ${numero}?`,
+          mensaje: `Se anula completa (${activas.map((p) => p.bodegaNombre).join(" y ")}). El material que tenía reservado queda libre para otras ventas. `
             + "Los productos de stock que ya se descontaron vuelven a la bodega; la lámina que ya se produjo NO vuelve al inventario.",
-          textoConfirmar: "Sí, cancelar cotización",
+          textoConfirmar: "Sí, anular cotización",
           ejecutar: () => a.cancelarVarios(activas.map((p) => p.id)),
-        })}>Cancelar</button>
+        })}>Anular</button>
       )}
       {a.puedeCancelarApartados && eliminables.length === grupo.length && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
-          titulo: `¿Eliminar la cotización cancelada ${numero}?`,
-          mensaje: "Se borra de la lista para siempre. No afecta el inventario: su material ya quedó libre al cancelarla.",
+          titulo: `¿Eliminar la cotización anulada ${numero}?`,
+          mensaje: "Se borra de la lista para siempre. No afecta el inventario: su material ya quedó libre al anularla.",
           textoConfirmar: "Sí, eliminar",
           ejecutar: () => a.eliminarVarios(eliminables.map((p) => p.id)),
         })}>Eliminar</button>
@@ -1080,7 +1080,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     : pestana === "entregadas"
                     ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización entregada" : "cotizaciones entregadas"} al cliente.`
                     : pestana === "canceladas"
-                    ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización cancelada" : "cotizaciones canceladas"}.`
+                    ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización anulada" : "cotizaciones anuladas"}.`
                     : `Mostrando ${apartadosFiltrados.length} cotizaciones sin entregar`
                       + `${a.filtroEstado ? ` en estado "${ETIQUETAS_ESTADO[a.filtroEstado] || a.filtroEstado}"` : ""}.`}
                 </p>

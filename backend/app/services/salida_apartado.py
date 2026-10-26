@@ -55,7 +55,7 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
     if apartado is None:
         raise HTTPException(status_code=404, detail="Apartado no encontrado.")
     if apartado.estado not in ESTADOS_RESERVA_ACTIVA:
-        raise HTTPException(status_code=400, detail="Esta cotización ya terminó, fue entregada o está cancelada.")
+        raise HTTPException(status_code=400, detail="Esta cotización ya terminó, fue entregada o está anulada.")
     if not datos.rollos and not datos.items_stock:
         raise HTTPException(status_code=400, detail="Indica al menos un rollo usado o un producto a descontar.")
     items = {item.id: item for item in apartado.items}

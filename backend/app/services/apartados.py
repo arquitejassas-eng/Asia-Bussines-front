@@ -1043,7 +1043,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     apartado_de_mi_bodega(db, apartado_id, usuario)
     apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
     if apartado.estado not in ESTADOS_RESERVA_ACTIVA:
-        raise HTTPException(status_code=400, detail="Solo se pueden editar cotizaciones activas (no terminadas, entregadas ni canceladas).")
+        raise HTTPException(status_code=400, detail="Solo se pueden editar cotizaciones activas (no terminadas, entregadas ni anuladas).")
     if not datos.items:
         raise HTTPException(status_code=400, detail="El apartado debe tener al menos un producto solicitado.")
     bodega_id = bodega_de_consulta(db, usuario, datos.bodega_id)
@@ -1265,7 +1265,7 @@ def quitar_parte(db: Session, apartado_id: int, usuario: Usuario, *, pasa_a_otra
     apartado_de_mi_bodega(db, apartado_id, usuario)
     apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
     if apartado.estado not in ESTADOS_RESERVA_ACTIVA:
-        raise HTTPException(status_code=400, detail="Solo se pueden editar cotizaciones activas (no terminadas, entregadas ni canceladas).")
+        raise HTTPException(status_code=400, detail="Solo se pueden editar cotizaciones activas (no terminadas, entregadas ni anuladas).")
     if not pasa_a_otra_bodega and not otras_partes(db, [apartado])[apartado.id]:
         raise HTTPException(
             status_code=400,
@@ -1482,7 +1482,7 @@ def separar_apartado(db: Session, apartado_id: int, datos: SepararApartadoReques
     apartado_de_mi_bodega(db, apartado_id, usuario)
     original = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
     if original.estado not in ESTADOS_SEPARABLES:
-        raise HTTPException(status_code=400, detail="Esta cotización ya fue entregada o cancelada: no se puede separar.")
+        raise HTTPException(status_code=400, detail="Esta cotización ya fue entregada o anulada: no se puede separar.")
     producida = original.estado == EstadoApartado.PRODUCCION_TERMINADA
     if usuario.rol != RolUsuario.ADMIN_INVENTARIO and not producida:
         raise HTTPException(status_code=403, detail="Solo Admin Inventario puede separar una cotización que no ha terminado su producción.")
@@ -1572,7 +1572,7 @@ def cancelar_apartado(db: Session, apartado_id: int, usuario: Usuario) -> Aparta
     apartado_de_mi_bodega(db, apartado_id, usuario)
     apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
     if apartado.estado not in ESTADOS_CANCELABLES:
-        raise HTTPException(status_code=400, detail="Este apartado ya terminó su producción, fue entregado o ya estaba cancelado: no se puede cancelar.")
+        raise HTTPException(status_code=400, detail="Este apartado ya terminó su producción, fue entregado o ya estaba anulado: no se puede anular.")
     _devolver_stock_descontado(db, apartado, usuario)
     apartado.estado = EstadoApartado.CANCELADO
     apartado.cancelado_por = usuario.correo
@@ -1624,7 +1624,7 @@ def eliminar_apartado_cancelado(db: Session, apartado_id: int, usuario: Usuario)
     apartado_de_mi_bodega(db, apartado_id, usuario)
     apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
     if apartado.estado != EstadoApartado.CANCELADO:
-        raise HTTPException(status_code=400, detail="Solo se pueden eliminar cotizaciones canceladas. Cancélala primero.")
+        raise HTTPException(status_code=400, detail="Solo se pueden eliminar cotizaciones anuladas. Anúlala primero.")
     if any(item.producciones for item in apartado.items):
         raise HTTPException(
             status_code=400,

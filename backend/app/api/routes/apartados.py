@@ -406,7 +406,7 @@ def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEd
             )
         partes.append(parte)
     if any(p.estado not in srv.ESTADOS_RESERVA_ACTIVA for p in partes):
-        raise HTTPException(status_code=400, detail="Solo se pueden editar cotizaciones activas (no terminadas, entregadas ni canceladas).")
+        raise HTTPException(status_code=400, detail="Solo se pueden editar cotizaciones activas (no terminadas, entregadas ni anuladas).")
     if not datos.items:
         raise HTTPException(status_code=400, detail="La cotización debe tener al menos un producto solicitado.")
 
