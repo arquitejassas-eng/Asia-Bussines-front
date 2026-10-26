@@ -51,7 +51,7 @@ function PanelBusquedaRollosProduccion({
         </select>
       </div>
 
-      {codigoBusqueda.trim() && (
+      {(codigoBusqueda.trim() || rollosDisponibles.length > 0) && (
         <>
           {rollosDisponibles.length === 0 ? (
             <p className="produccion-vacio">

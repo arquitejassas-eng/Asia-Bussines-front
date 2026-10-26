@@ -399,23 +399,29 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     }
   }
 
+  const [seleccion, setSeleccion] = useState({});
+
+  // Los rollos ya escogidos se quedan en la tabla (arriba) aunque se cambie
+  // o se borre la búsqueda: antes, al buscar otro, el escogido desaparecía y
+  // se perdía de la producción.
   const rollosDisponibles = useMemo(() => {
+    const escogidos = rollosDeMiBodega.filter((r) => seleccion[r.id]?.seleccionado);
     const termino = normalizarTexto(codigoBusqueda);
-    if (!termino) return [];
+    if (!termino) return escogidos;
     // También por los kilos de la etiqueta del rollo (peso neto): "4466",
     // "4.466" o "4466 kg" encuentran el rollo de 4466 kg (ver Utils/kilos).
     const kilos = kilosBuscados(termino);
-    return rollosDeMiBodega.filter(
+    const encontrados = rollosDeMiBodega.filter(
       (r) =>
+        !seleccion[r.id]?.seleccionado &&
         r.metrosDisponibles > 0 &&
         (!empresaFiltro || r.empresa === empresaFiltro) &&
         (normalizarTexto(r.codigoInterno).includes(termino) ||
           normalizarTexto(r.identificadorRollo).includes(termino) ||
           coincideKilos(r.pesoNeto, kilos))
     );
-  }, [rollosDeMiBodega, codigoBusqueda, empresaFiltro]);
-
-  const [seleccion, setSeleccion] = useState({});
+    return [...escogidos, ...encontrados];
+  }, [rollosDeMiBodega, codigoBusqueda, empresaFiltro, seleccion]);
 
   // Orden en que Planta escogió los rollos: la cotización sale del primero
   // (y si no le alcanza, del siguiente).
@@ -626,9 +632,11 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   function validar() {
     // Para stock solo se produce con una orden interna de Admin Inventario.
     if (!apartadoItemId) return "Elige la cotización o la orden de producción interna que vas a producir (desde Apartados, \"Iniciar Producción\").";
-    if (!codigoBusqueda.trim()) return "Busca un código de clasificación o de rollo.";
-    if (rollosDisponibles.length === 0) return "No hay rollos registrados con ese código en tu bodega.";
-    if (rollosSeleccionados.length === 0) return "Selecciona al menos un rollo y sus metros a consumir.";
+    if (rollosSeleccionados.length === 0) {
+      if (!codigoBusqueda.trim()) return "Busca un código de clasificación o de rollo.";
+      if (rollosDisponibles.length === 0) return "No hay rollos registrados con ese código en tu bodega.";
+      return "Selecciona al menos un rollo y sus metros a consumir.";
+    }
     for (const { rollo, metrosTexto } of rollosSeleccionados) {
       const metros = Number(metrosTexto);
       if (rollo.estado === "agotado") {
