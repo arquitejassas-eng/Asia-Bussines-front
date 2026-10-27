@@ -264,18 +264,22 @@ def registrar_salida_con_hoja_de_vida(
 @router.post("", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO))])
 def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
-    # Las cotizaciones las crean el vendedor y Admin Inventario; las órdenes de
-    # producción interna (para stock), solo Admin Inventario.
-    if usuario.rol == RolUsuario.VENDEDOR and datos.orden_interna:
-        raise HTTPException(status_code=403, detail="Las órdenes de producción interna las crea Admin Inventario.")
     """Cada línea dice de qué bodega y de qué empresa sale su material. La
     cotización es UNA, de la empresa elegida: una línea con material de la
     otra empresa se queda en ella (marcada; al salir queda como préstamo).
     Solo se parte por bodega de despacho: una parte por bodega, con el mismo
     número, todo junto o nada. Devuelve la parte de la primera línea."""
+    # Las cotizaciones las crean el vendedor y Admin Inventario; las órdenes de
+    # producción interna (para stock), solo Admin Inventario.
+    if usuario.rol == RolUsuario.VENDEDOR and datos.orden_interna:
+        raise HTTPException(status_code=403, detail="Las órdenes de producción interna las crea Admin Inventario.")
     por_parte: dict[int | None, list] = {}
-    for item in datos.items:
-        por_parte.setdefault(item.bodega_id or datos.bodega_id, []).append(item.model_copy(update={"bodega_id": None}))
+    # Dónde iba cada línea de cada parte en la cotización (ver _en_el_orden_escrito).
+    posiciones: dict[int | None, list[int]] = {}
+    for posicion, item in enumerate(datos.items):
+        bodega = item.bodega_id or datos.bodega_id
+        por_parte.setdefault(bodega, []).append(item.model_copy(update={"bodega_id": None}))
+        posiciones.setdefault(bodega, []).append(posicion)
     nombres = {b.id: b.nombre for b in db.query(Bodega).filter(Bodega.id.in_([b for b in por_parte if b]))}
     if len(por_parte) == 1:
         bodega, items = next(iter(por_parte.items()))
@@ -299,6 +303,8 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
                 nombre = db.get(Bodega, parte.bodega_id).nombre if parte.bodega_id else ""
                 raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
             raise
+    if len(creados) > 1:
+        _en_el_orden_escrito(db, creados, [posiciones[parte.bodega_id] for parte in partes])
     db.commit()
     # Recargadas con sus líneas y producciones de una vez (con refresh, la
     # respuesta pedía las producciones línea por línea).
@@ -308,6 +314,26 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
         selectinload(Apartado.items).selectinload(ApartadoItem.rollo),
     ).filter(Apartado.id.in_(ids)).populate_existing()}
     return _con_faltantes(db, [por_id[i] for i in ids])[0]
+
+
+def _en_el_orden_escrito(db: Session, creados: list[Apartado], posiciones: list[list[int]]) -> None:
+    """Las líneas se muestran en el orden de su id; al partir la cotización
+    por bodega, cada parte guardaba las suyas seguidas (líneas 1, 3 en una y
+    2, 4 en otra) y al juntarlas quedaban 1, 3, 2, 4. Recién creadas (nada
+    las usa todavía), se vuelven a guardar en el orden en que se escribieron."""
+    columnas = [c.key for c in ApartadoItem.__table__.columns if c.key != "id"]
+    lineas = []
+    db.flush()
+    for apartado, lugares in zip(creados, posiciones, strict=True):
+        db.refresh(apartado, ["items"])
+        for lugar, item in zip(lugares, sorted(apartado.items, key=lambda it: it.id), strict=True):
+            lineas.append((lugar, {c: getattr(item, c) for c in columnas}))
+        for item in list(apartado.items):
+            apartado.items.remove(item)
+    db.flush()
+    for _, campos in sorted(lineas, key=lambda par: par[0]):
+        db.add(ApartadoItem(**campos))
+        db.flush()  # una a la vez: el id sigue el orden escrito
 
 
 @router.get("", response_model=list[ApartadoResponse])

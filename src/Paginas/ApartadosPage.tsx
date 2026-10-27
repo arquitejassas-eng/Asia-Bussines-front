@@ -1343,7 +1343,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           const parteDeLinea = new Map(grupo.flatMap((parte) => parte.items.map((it) => [it.id, parte] as const)));
                           const unida: ApartadoDeLista = {
                             ...ap,
-                            items: grupo.flatMap((parte) => parte.items),
+                            // En el orden en que se escribieron (id), no parte por parte.
+                            items: grupo.flatMap((parte) => parte.items).sort((x, y) => x.id - y.id),
                             faltantes: grupo.flatMap((parte) => parte.faltantes.map((f) => `${parte.bodegaNombre}: ${f.replace(/^faltan /, "")}`)),
                             stockSeparadoConfirmado: grupo.every((parte) => parte.stockSeparadoConfirmado || !parte.items.some((it) => it.modalidad === "por_stock")),
                           };

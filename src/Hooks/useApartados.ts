@@ -200,7 +200,10 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       ordenInterna: ap.ordenInterna,
       bodegaId: String(ap.bodegaId), empresa: empresaCotizacion, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
       numeroCotizacion: numeroSinEmpresa(ap.numeroCotizacion), cliente: ap.cliente, observaciones: ap.observaciones,
-      items: partes.flatMap((parte) => parte.items.map((it) => {
+      // Todas las partes juntas, en el orden en que se escribieron las líneas (su id).
+      items: partes.flatMap((parte) => parte.items.map((it) => ({ parte, it })))
+        .sort((x, y) => x.it.id - y.it.id)
+        .map(({ parte, it }) => {
         // La de la línea; en una parte vieja "-AR"/"-ABG", la de esa parte.
         const empresaMaterial = it.empresaMaterial || parte.empresa;
         return {
@@ -216,7 +219,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         convertirEn: it.convertirEn || "caballete", bodegaConversionId: it.bodegaConversionId ? String(it.bodegaConversionId) : "",
         laminasConvertidas: it.laminasConvertidas,
         };
-      })),
+      }),
     });
     setErrorFormularioApartado("");
     setDisponibilidadItems({});
