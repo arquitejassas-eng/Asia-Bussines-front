@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import ElegirRolloCompleto from "../Componentes/ElegirRolloCompleto";
 import { descripcionRolloCompleto } from "../Utils/rolloCompleto";
 import { useNavigate } from "react-router-dom";
@@ -21,8 +21,9 @@ import type { AlmacenGlobal, Sesion } from "../types/dominio";
 const ESTADOS_CANCELABLES = ["apartado", "enviado_a_produccion", "en_produccion"];
 
 const APARTADOS_POR_PAGINA = 15;
-// Cotizaciones con muchas líneas (ej. 18 tejas distintas) muestran estas y un "+N más".
-const LINEAS_VISIBLES = 4;
+// En la fila se ven las primeras; con más, "Ver las N líneas" abre debajo de
+// la cotización el detalle completo, de lado a lado (ver detalleDeLineas).
+const LINEAS_VISIBLES = 3;
 
 type ApartadoDeLista = ReturnType<typeof useApartados>["apartados"][number];
 
@@ -38,15 +39,52 @@ function calibreQueNoCuadra(codigo: string, descripcion: string): string | null 
     + `(0,${final[1]}). Corrige uno de los dos: si no, Planta mezclaría espesores al producir.`;
 }
 
+// Con coma decimal, como se escriben en las cotizaciones: 5,3 m.
+const num = (n: number | null | undefined) => (n ?? 0).toLocaleString("es-CO", { maximumFractionDigits: 2 });
+
 function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null; tipoProducto?: string; convertirEn?: string }) {
-  if (it.modalidad === "por_stock") return `${it.cantidad} und`;
+  if (it.modalidad === "por_stock") return `${num(it.cantidad)} und`;
   if (it.tipoProducto === "lamina_lisa") {
-    return `${it.cantidad} lámina${it.cantidad === 1 ? "" : "s"} lisa${it.cantidad === 1 ? "" : "s"} de ${it.medida} m = ${it.metrosRequeridos} m`
-      + ` → ${it.cantidad * (it.convertirEn === "flanche" ? 5 : 3)} ${it.convertirEn || "caballete"}s`;
+    return `${num(it.cantidad)} lámina${it.cantidad === 1 ? "" : "s"} lisa${it.cantidad === 1 ? "" : "s"} de ${num(it.medida)} m = ${num(it.metrosRequeridos)} m`
+      + ` → ${num(it.cantidad * (it.convertirEn === "flanche" ? 5 : 3))} ${it.convertirEn || "caballete"}s`;
   }
-  if (it.tipoProducto && it.medida) return `${it.cantidad} ${it.tipoProducto}${it.cantidad === 1 ? "" : "s"} de ${it.medida} m = ${it.metrosRequeridos} m de lámina`;
-  if (it.medida && it.medida !== 1) return `${it.cantidad} × ${it.medida} m = ${it.metrosRequeridos} m`;
-  return `${it.metrosRequeridos ?? it.cantidad} m`;
+  if (it.tipoProducto && it.medida) return `${num(it.cantidad)} ${it.tipoProducto}${it.cantidad === 1 ? "" : "s"} de ${num(it.medida)} m = ${num(it.metrosRequeridos)} m de lámina`;
+  if (it.medida && it.medida !== 1) return `${num(it.cantidad)} × ${num(it.medida)} m = ${num(it.metrosRequeridos)} m`;
+  return `${num(it.metrosRequeridos ?? it.cantidad)} m`;
+}
+
+// Color del material por la letra del código (LR30010,29 -> R = rojo), para
+// la franja del código. El código sigue escrito completo: el color solo ayuda.
+const COLOR_POR_LETRA: Record<string, string> = {
+  A: "azul", B: "blanco", N: "negro", P: "plateado", R: "rojo", T: "terracota", V: "verde",
+};
+function colorDeCodigo(codigo: string) {
+  return COLOR_POR_LETRA[(codigo || "").trim().toUpperCase().charAt(1)] || "otro";
+}
+
+// "… CALIBRE 30 (0,27) AZUL 5017 …": esa parte va en el color del material,
+// como en el otro aplicativo, para compararla de un vistazo.
+const CALIBRE_Y_COLOR = /(CALIBRE|CAL\.?)\s*\d+\s*\(\s*\d+[.,]\d+\s*\)\s*[A-ZÁÉÍÓÚÑ]+(\s+\d{3,4})?/i;
+// Sin código de rollo (línea de stock): el color sale de lo que dice ("ROJO").
+const COLOR_POR_NOMBRE: Record<string, string> = {
+  AZUL: "azul", BLANCO: "blanco", NEGRO: "negro", PLATA: "plateado", PLATEADO: "plateado",
+  ROJO: "rojo", TERRACOTA: "terracota", VERDE: "verde",
+};
+function descripcionResaltada(texto: string, color: string) {
+  const encontrado = CALIBRE_Y_COLOR.exec(texto);
+  if (encontrado && color === "otro") {
+    const palabras = encontrado[0].toUpperCase().match(/[A-ZÁÉÍÓÚÑ]+/g) ?? [];
+    color = COLOR_POR_NOMBRE[palabras[palabras.length - 1]] || "otro";
+  }
+  if (!encontrado || color === "otro") return texto;
+  const inicio = encontrado.index, fin = inicio + encontrado[0].length;
+  return (
+    <>
+      {texto.slice(0, inicio)}
+      <span className={`apartado-linea-resaltado codigo-${color}`}>{texto.slice(inicio, fin)}</span>
+      {texto.slice(fin)}
+    </>
+  );
 }
 
 // Pestañas de la lista: las abiertas, y aparte las entregadas y las canceladas.
@@ -325,6 +363,89 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     }
   }
 
+  // Lo de una línea de la cotización: su descripción resaltada y sus avisos
+  // (bodega, material de la otra empresa, cortar, con salida, faltan...).
+  function datosDeLinea(it: ApartadoDeLista["items"][number], ap: ApartadoDeLista, parteDe?: Map<number, ApartadoDeLista>) {
+    const activa = ESTADOS_CANCELABLES.includes(ap.estado);
+    // Stock cargado del Excel: ya descontado, pero mientras la
+    // cotización siga activa todavía hay que alistarlo y despacharlo.
+    const parte = parteDe?.get(it.id);
+    const stockPorAlistar = it.modalidad === "por_stock" && it.stockDescontado && (parte ? ESTADOS_CANCELABLES.includes(parte.estado) : activa);
+    const lista = it.modalidad === "por_stock" ? it.stockDescontado && !stockPorAlistar : (it.metrosPendientes ?? 0) <= 0;
+    const codigo = it.modalidad === "por_stock" ? "" : it.codigoInterno;
+    // Solo la descripción (como en el otro aplicativo); sin ella, la cantidad y el código.
+    const texto = it.descripcion || (it.modalidad === "por_stock" ? `producto #${it.productoId}` : `${cantidadLinea(it)} ${codigo || ""}`);
+    return {
+      lista, codigo,
+      descripcion: descripcionResaltada(texto, codigo ? colorDeCodigo(codigo) : "otro"),
+      marcas: (
+        <>
+          {parte && (
+            <span className="apartado-linea-bodega" title="De dónde sale">
+              {parte.bodegaNombre}{parte.empresa !== ap.empresa ? ` · ${EMPRESAS[parte.empresa] || parte.empresa}` : ""}
+            </span>
+          )}
+          {it.empresaMaterial && it.empresaMaterial !== (parte ?? ap).empresa && (
+            <span className="etiqueta-otra-empresa" title={it.empresaMaterial === AMBAS_EMPRESAS
+              ? "Planta usa rollos de las dos empresas; lo de la otra empresa queda como préstamo"
+              : "El material sale de la otra empresa: queda como préstamo"}>
+              Material de {nombreMaterial(it.empresaMaterial)}
+            </span>
+          )}
+          {it.modalidad === "por_stock" && it.hayFisico && !it.stockDescontado && (
+            <span className="etiqueta-otra-empresa" title="El sistema no lo tenía; se confirmó que está en la bodega">
+              Sin existencia en el sistema
+            </span>
+          )}
+          {it.modalidad === "por_stock" && (it.medida || pideCorte(it.descripcion)) && (
+            <span className="apartado-linea-cortar">CORTAR{it.medida ? ` a ${it.medida} m` : ""}</span>
+          )}
+          {stockPorAlistar
+            ? <span className="apartado-linea-estado" title="El inventario ya lo descontó; falta alistarlo y despacharlo">stock ya descontado</span>
+            : lista
+            ? <span className="apartado-linea-estado" title="Ya tiene salida">✓ con salida</span>
+            : it.modalidad === "por_rollo" && (it.metrosConsumidos ?? 0) > 0
+              ? <span className="apartado-linea-estado">faltan {it.metrosPendientes} m</span>
+              : null}
+        </>
+      ),
+    };
+  }
+
+  // Todas las líneas de la cotización, de lado a lado debajo de su fila, en el
+  // orden en que se escribieron: número, descripción, código, cantidad y avisos.
+  function detalleDeLineas(ap: ApartadoDeLista, parteDe?: Map<number, ApartadoDeLista>) {
+    return (
+      <div className="apartado-detalle">
+        <div className="apartado-detalle-titulo">
+          <strong>Cotización {ap.numeroCotizacion} · {ap.items.length} líneas</strong>
+          <button type="button" className="apartado-ver-mas" onClick={() => alternarLineas(ap.id)}>Ocultar las líneas ▲</button>
+        </div>
+        <div className="apartado-detalle-contenedor">
+          <table className="apartado-detalle-tabla">
+            <thead>
+              <tr><th>#</th><th>Descripción</th><th>Código</th><th>Cantidad</th><th>Avisos</th></tr>
+            </thead>
+            <tbody>
+              {ap.items.map((it, posicion) => {
+                const linea = datosDeLinea(it, ap, parteDe);
+                return (
+                  <tr key={it.id} className={linea.lista ? "apartado-linea-lista" : undefined}>
+                    <td className="apartado-detalle-num">{posicion + 1}</td>
+                    <td className="apartado-detalle-desc">{linea.descripcion}</td>
+                    <td className="apartado-detalle-codigo">{linea.codigo || "Stock"}</td>
+                    <td className="apartado-detalle-cantidad">{cantidadLinea(it)}</td>
+                    <td><div className="apartado-linea-cabeza">{linea.marcas}</div></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   // Lo de UNA parte de la cotización (una bodega): sus líneas, su estado y sus
   // botones. Admin Inventario ve la cotización completa en una sola fila, con
   // un bloque así por bodega (ver gruposFiltrados).
@@ -334,59 +455,22 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const itemsRollo = ap.items.filter((it) => it.modalidad === "por_rollo");
     const itemsStock = ap.items.filter((it) => it.modalidad === "por_stock");
     const rolloPendientes = itemsRollo.filter((it) => (it.metrosPendientes ?? 0) > 0).length;
-    const activa = ESTADOS_CANCELABLES.includes(ap.estado);
     return (
       <>
       <ul className="apartado-lineas">
-        {(lineasExpandidas.has(ap.id) ? ap.items : ap.items.slice(0, LINEAS_VISIBLES)).map((it) => {
-          // Stock cargado del Excel: ya descontado, pero mientras la
-          // cotización siga activa todavía hay que alistarlo y despacharlo.
-          const parte = parteDe?.get(it.id);
-          const stockPorAlistar = it.modalidad === "por_stock" && it.stockDescontado && (parte ? ESTADOS_CANCELABLES.includes(parte.estado) : activa);
-          const lista = it.modalidad === "por_stock" ? it.stockDescontado && !stockPorAlistar : (it.metrosPendientes ?? 0) <= 0;
-          const codigo = it.modalidad === "por_stock" ? "" : it.codigoInterno;
-          const texto = it.descripcion || (it.modalidad === "por_stock" ? `producto #${it.productoId}` : "");
+        {ap.items.slice(0, LINEAS_VISIBLES).map((it) => {
+          const linea = datosDeLinea(it, ap, parteDe);
           return (
-            <li key={it.id} className={lista ? "apartado-linea-lista" : undefined}>
-              <div className="apartado-linea-cabeza">
-                <strong>{cantidadLinea(it)}</strong>
-                {codigo && <span className="apartado-linea-codigo">{codigo}</span>}
-                {parte && (
-                  <span className="apartado-linea-bodega" title="De dónde sale">
-                    {parte.bodegaNombre}{parte.empresa !== ap.empresa ? ` · ${EMPRESAS[parte.empresa] || parte.empresa}` : ""}
-                  </span>
-                )}
-                {it.empresaMaterial && it.empresaMaterial !== (parte ?? ap).empresa && (
-                  <span className="etiqueta-otra-empresa" title={it.empresaMaterial === AMBAS_EMPRESAS
-                    ? "Planta usa rollos de las dos empresas; lo de la otra empresa queda como préstamo"
-                    : "El material sale de la otra empresa: queda como préstamo"}>
-                    Material de {nombreMaterial(it.empresaMaterial)}
-                  </span>
-                )}
-                {it.modalidad === "por_stock" && it.hayFisico && !it.stockDescontado && (
-                  <span className="etiqueta-otra-empresa" title="El sistema no lo tenía; se confirmó que está en la bodega">
-                    Sin existencia en el sistema
-                  </span>
-                )}
-                {it.modalidad === "por_stock" && (it.medida || pideCorte(it.descripcion)) && (
-                  <span className="apartado-linea-cortar">CORTAR{it.medida ? ` a ${it.medida} m` : ""}</span>
-                )}
-                {stockPorAlistar
-                  ? <span className="apartado-linea-estado" title="El inventario ya lo descontó; falta alistarlo y despacharlo">stock ya descontado</span>
-                  : lista
-                  ? <span className="apartado-linea-estado" title="Ya tiene salida">✓ con salida</span>
-                  : it.modalidad === "por_rollo" && (it.metrosConsumidos ?? 0) > 0
-                    ? <span className="apartado-linea-estado">faltan {it.metrosPendientes} m</span>
-                    : null}
-              </div>
-              {texto && <div className="apartado-linea-texto">{texto}</div>}
+            <li key={it.id} className={linea.lista ? "apartado-linea-lista" : undefined}>
+              <div className="apartado-linea-texto">{linea.descripcion}</div>
+              <div className="apartado-linea-cabeza">{linea.marcas}</div>
             </li>
           );
         })}
       </ul>
       {ap.items.length > LINEAS_VISIBLES && (
         <button type="button" className="apartado-ver-mas" onClick={() => alternarLineas(ap.id)}>
-          {lineasExpandidas.has(ap.id) ? "Ver menos" : `+${ap.items.length - LINEAS_VISIBLES} más`}
+          {lineasExpandidas.has(ap.id) ? "Ocultar las líneas ▲" : `Ver las ${ap.items.length} líneas ▼`}
         </button>
       )}
       <div className="apartado-chips">
@@ -1196,14 +1280,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   <table className="inventario-tabla apartados-tabla">
                     <thead>
                       <tr>
-                        {veTodasLasBodegas && <th>Bodega</th>}
-                        <th>Cotización</th>
-                        <th>Empresa</th>
-                        <th>Cliente</th>
-                        <th>Productos</th>
-                        <th>Estado</th>
-                        <th>Creado</th>
-                        <th>Acciones</th>
+                        {veTodasLasBodegas && <th className="ap-col-bodega">Bodega</th>}
+                        <th className="ap-col-cotizacion">Cotización</th>
+                        <th className="ap-col-empresa">Empresa</th>
+                        <th className="ap-col-cliente">Cliente</th>
+                        <th className="ap-col-productos">Productos</th>
+                        <th className="ap-col-estado">Estado</th>
+                        <th className="ap-col-fecha">Creado</th>
+                        <th className="ap-col-acciones">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1237,7 +1321,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             .filter((otra) => numeroSinEmpresa(otra.numeroCotizacion) === numeroSinEmpresa(ap.numeroCotizacion) && ESTADOS_CANCELABLES.includes(otra.estado))
                             .sort((x, y) => x.id - y.id);
                           return (
-                          <tr key={ap.id} className={variasBodegas ? "apartado-fila-varias" : undefined}>
+                          <Fragment key={ap.id}>
+                          <tr className={variasBodegas ? "apartado-fila-varias" : undefined}>
                             {veTodasLasBodegas && (
                               <td className="ap-col-bodega" data-etiqueta={variasBodegas ? "Bodegas" : "Bodega"}>
                                 {grupo.map((parte) => parte.bodegaNombre || "—").join(" + ")}
@@ -1280,6 +1365,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               {variasBodegas ? accionesDeCotizacion(grupo) : accionesDeParte(ap)}
                             </td>
                           </tr>
+                          {lineasExpandidas.has(ap.id) && (variasBodegas ? unida : ap).items.length > LINEAS_VISIBLES && (
+                            <tr className="apartado-fila-detalle">
+                              <td colSpan={veTodasLasBodegas ? 8 : 7}>
+                                {variasBodegas ? detalleDeLineas(unida, parteDeLinea) : detalleDeLineas(ap)}
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                           );
                         })
                       )}

@@ -645,29 +645,49 @@
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.35rem;
+  gap: 0.15rem;
+}
+/* Cada línea es solo su descripción (como en el otro aplicativo), separada
+   de la siguiente por una raya suave. */
+.apartado-lineas > li {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(120, 90, 50, 0.12);
+}
+.apartado-lineas > li:last-child {
+  border-bottom: none;
+}
+.apartado-linea-cabeza:empty {
+  display: none;
 }
 .apartado-linea-cabeza {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 0.45rem;
   font-size: 0.85rem;
 }
-.apartado-linea-cabeza strong {
-  white-space: nowrap;
+/* El calibre y el color dentro de la descripción, en el color del material
+   (tono oscuro, para que se lea sobre fondo claro). */
+.codigo-azul { --color-texto: #1b62b0; }
+.codigo-blanco { --color-texto: #5f6b70; }
+.codigo-negro { --color-texto: #1b2020; }
+.codigo-plateado { --color-texto: #5c686b; }
+.codigo-rojo { --color-texto: #c0322a; }
+.codigo-terracota { --color-texto: #a2471f; }
+.codigo-verde { --color-texto: #2a7346; }
+.apartado-linea-resaltado {
+  color: var(--color-texto, inherit);
+  font-weight: 700;
 }
-.apartado-linea-codigo {
-  white-space: nowrap;
-  font-weight: 600;
-}
-/* Completa, sin cortar: es lo que hay que fabricar. */
+/* Completa, sin cortar: es lo que hay que fabricar (y lo que se compara con
+   el otro aplicativo), así que va primero y legible. */
 .apartado-linea-texto {
-  font-size: 0.78rem;
-  line-height: 1.3;
-  color: var(--at-text-muted, #6b5e50);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--at-text, #2a221b);
   white-space: normal;
-  overflow-wrap: anywhere;
+  /* Corta en los espacios (no a mitad de "----" o de un número). */
+  overflow-wrap: break-word;
 }
 .apartado-linea-estado {
   white-space: nowrap;
@@ -1333,4 +1353,86 @@
   resize: vertical;
   font: inherit;
   box-sizing: border-box;
+}
+
+/* Pantalla de computador: las demás columnas tienen su ancho y todo lo que
+   sobra es para los productos (en pantalla completa las descripciones caben
+   en un renglón, como en el otro aplicativo). */
+@media (min-width: 761px) {
+  .apartados-tabla th.ap-col-bodega { width: 6.5rem; }
+  .apartados-tabla th.ap-col-cotizacion { width: 6.5rem; }
+  .apartados-tabla th.ap-col-empresa { width: 6.5rem; }
+  .apartados-tabla th.ap-col-cliente { width: 10rem; }
+  .apartados-tabla th.ap-col-estado { width: 8.5rem; }
+  .apartados-tabla th.ap-col-fecha { width: 6.5rem; }
+  .apartados-tabla th.ap-col-acciones { width: 10rem; }
+  /* "Enviado a producción" puede ir en dos renglones: no ensancha la columna. */
+  .apartados-tabla td.ap-col-estado .apartados-estado { white-space: normal; }
+}
+
+/* Detalle de las líneas de una cotización, de lado a lado debajo de su fila
+   ("Ver las N líneas"): una línea por renglón, en el orden en que se escribieron. */
+.apartados-tabla tr.apartado-fila-detalle > td {
+  padding: 0 1.15rem 1rem;
+  background: var(--at-surface-2, #F7F0E4);
+}
+.apartado-detalle {
+  background: var(--at-surface, #FFFFFF);
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+}
+.apartado-detalle-titulo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+.apartado-detalle-titulo .apartado-ver-mas { margin-top: 0; }
+.apartado-detalle-contenedor { overflow-x: auto; }
+.apartado-detalle-tabla {
+  width: 100%;
+  border-collapse: collapse;
+}
+.apartado-detalle-tabla th {
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--at-muted, #7C6A56);
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--at-border, #E1D5C0);
+}
+.apartados-tabla .apartado-detalle-tabla td {
+  min-width: 0;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+  border-bottom: 1px solid var(--at-border-soft, #EBE2D2);
+  vertical-align: top;
+}
+.apartado-detalle-tabla tbody tr:nth-child(even) td { background: rgba(120, 90, 50, 0.05); }
+.apartado-detalle-tabla td.apartado-detalle-num {
+  width: 2.2rem;
+  text-align: right;
+  color: var(--at-muted, #7C6A56);
+  font-weight: 700;
+}
+.apartado-detalle-tabla td.apartado-detalle-desc { width: 100%; color: var(--at-text, #251C14); }
+.apartado-detalle-tabla td.apartado-detalle-codigo,
+.apartado-detalle-tabla td.apartado-detalle-cantidad { white-space: nowrap; font-weight: 700; }
+
+/* En el celular la tabla de cotizaciones se vuelve tarjetas: el detalle
+   sigue siendo una tabla normal (con su propio scroll si no cabe). */
+@media (max-width: 760px) {
+  .apartados-tabla tbody tr.apartado-fila-detalle { display: block; padding: 0 0 0.9rem; }
+  .apartados-tabla tbody tr.apartado-fila-detalle > td { padding: 0 0.6rem; }
+  .apartados-tabla .apartado-detalle-tabla tbody tr {
+    display: table-row;
+    padding: 0;
+    border-bottom: none;
+  }
+  .apartados-tabla .apartado-detalle-tabla tbody td { display: table-cell; padding: 0.35rem 0.5rem; }
 }
