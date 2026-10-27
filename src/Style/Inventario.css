@@ -1436,3 +1436,183 @@
   }
   .apartados-tabla .apartado-detalle-tabla tbody td { display: table-cell; padding: 0.35rem 0.5rem; }
 }
+
+/* ── Formulario de cotización / apartado ─────────────────────────────────
+   Ancho para aprovechar la pantalla; tres secciones numeradas; cada
+   producto en su tarjeta (cabecera con empresa, bodega y Quitar; campos en
+   una fila: código | cantidad | medida | tipo; descripción debajo) y un pie
+   fijo con el resumen y los botones. */
+.inventario-form.apartado-form {
+  max-width: 1100px;
+  padding-bottom: 0;
+}
+.apartado-form-seccion {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 1.6rem 0 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--at-text, #251C14);
+}
+.apartado-form-paso {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: var(--at-terra, #B7451F);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.apartado-form-contador {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.05rem 0.55rem;
+  border-radius: 999px;
+  background: var(--at-surface-2, #F1E9DC);
+  color: var(--at-text-2, #4A392C);
+}
+.apartado-form-opcional {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--at-muted, #7C6A56);
+}
+.apartado-form-datos {
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.8fr) minmax(220px, 1.6fr);
+}
+
+/* Tarjeta de cada producto */
+.apartado-item {
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-radius: 12px;
+  margin-bottom: 0.9rem;
+  background: var(--at-surface, #FFFFFF);
+  overflow: hidden;
+}
+.apartado-item-cabecera {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--at-surface-2, #F1E9DC);
+  border-bottom: 1px solid var(--at-border, #E1D5C0);
+}
+.apartado-item-numero {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--at-text, #251C14);
+  white-space: nowrap;
+}
+.apartado-item-cabecera .apartado-linea-cabecera {
+  flex: 1;
+  justify-content: flex-start;
+}
+.apartado-item-cabecera .apartado-linea-con-salida { flex: 1; }
+.apartado-item-cabecera .apartados-select { background: var(--at-surface, #FFFFFF); }
+.apartado-item-quitar {
+  margin-left: auto;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--at-red, #C23B2C);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.apartado-item-quitar:hover,
+.apartado-item-quitar:focus-visible {
+  border-color: rgba(194, 59, 44, 0.35);
+  background: rgba(194, 59, 44, 0.07);
+}
+.apartado-item-campos {
+  padding: 0.9rem;
+  grid-template-columns: minmax(200px, 1.6fr) repeat(3, minmax(120px, 1fr));
+  gap: 0.9rem 1rem;
+}
+.apartado-campo-ancho { grid-column: span 2; }
+
+/* Tipo de material: botones segmentados */
+.apartado-tipos {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border-radius: 10px;
+  background: var(--at-surface-2, #F1E9DC);
+}
+.apartado-tipo-boton {
+  padding: 0.45rem 0.95rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--at-text-2, #4A392C);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.apartado-tipo-boton:hover { background: rgba(255, 255, 255, 0.6); }
+.apartado-tipo-boton:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 1px; }
+.apartado-tipo-boton.apartado-tipo-activo {
+  background: var(--at-surface, #FFFFFF);
+  color: var(--at-terra, #B7451F);
+  font-weight: 800;
+  box-shadow: 0 1px 3px rgba(37, 28, 20, 0.15);
+}
+
+.apartado-agregar {
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px dashed var(--at-border, #E1D5C0);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--at-terra, #B7451F);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.apartado-agregar:hover,
+.apartado-agregar:focus-visible {
+  border-color: var(--at-terra-light, #D9642F);
+  background: var(--at-terra-dim, rgba(183, 69, 31, 0.06));
+}
+
+/* Pie fijo: resumen + Crear / Cancelar siempre a la vista */
+.inventario-form-botones.apartado-form-pie {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 1.25rem -1.75rem 0;
+  padding: 0.85rem 1.75rem;
+  background: var(--at-surface, #FFFFFF);
+  box-shadow: 0 -6px 14px -10px rgba(37, 28, 20, 0.25);
+}
+.apartado-form-resumen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  margin-right: auto;
+  font-size: 0.85rem;
+  color: var(--at-text-2, #4A392C);
+}
+.apartado-form-resumen-codigo { font-family: var(--at-font-mono, monospace); }
+
+@media (max-width: 760px) {
+  .apartado-form-datos { grid-template-columns: 1fr; }
+  .apartado-item-campos { grid-template-columns: 1fr 1fr; padding: 0.75rem; }
+  .apartado-campo-codigo,
+  .apartado-campo-ancho { grid-column: 1 / -1; }
+  .apartado-tipos { display: flex; }
+  .apartado-tipo-boton { flex: 1 1 auto; }
+  /* En el celular el pie va al final (fijo taparía lo que se escribe). */
+  .inventario-form-botones.apartado-form-pie { position: static; box-shadow: none; margin: 1rem 0 0; padding: 0.9rem 0 1.2rem; }
+  .apartado-form-resumen { width: 100%; }
+}

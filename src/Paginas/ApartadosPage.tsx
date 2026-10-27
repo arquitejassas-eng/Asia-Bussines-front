@@ -174,6 +174,25 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     });
   }
   const lineasQueSePasan = Object.keys(excesoPorLinea).map((i) => Number(i) + 1);
+
+  // Pie del formulario: cuántos productos lleva y cuántos metros de cada código.
+  function resumenDelFormulario() {
+    const metrosPorCodigo: Record<string, number> = {};
+    for (const item of a.formulario.items) {
+      const codigo = String(item.codigoInterno || "").trim().toUpperCase();
+      if (item.modalidad !== "por_rollo" || !codigo || !(Number(item.cantidad) > 0) || !(Number(item.medida) > 0)) continue;
+      metrosPorCodigo[codigo] = (metrosPorCodigo[codigo] ?? 0) + metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto).metros;
+    }
+    const n = a.formulario.items.length;
+    return (
+      <>
+        <strong>{n} producto{n === 1 ? "" : "s"}</strong>
+        {Object.entries(metrosPorCodigo).map(([codigo, metros]) => (
+          <span key={codigo} className="apartado-form-resumen-codigo">{codigo}: <strong>{num(metros)} m</strong></span>
+        ))}
+      </>
+    );
+  }
   const ofrecerMaterialEnCamino = lineaSinMaterial || a.formulario.materialEnCamino
     || a.errorFormularioApartado.includes("viene en camino");
 
@@ -703,7 +722,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           {a.errorAccionApartado && <p className="inventario-error">{a.errorAccionApartado}</p>}
 
           {a.mostrarFormularioApartado && (
-            <form className="inventario-form" onSubmit={guardarFormulario} noValidate>
+            <form className="inventario-form apartado-form" onSubmit={guardarFormulario} noValidate>
               <h2 className="inventario-form-subtitulo">
                 {a.formulario.ordenInterna
                   ? (a.editandoId ? `Editar orden ${a.formulario.numeroCotizacion}` : "Nueva orden de producción interna")
@@ -729,7 +748,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </p>
               )}
 
-              <div className="inventario-form-grid">
+              <h3 className="apartado-form-seccion"><span className="apartado-form-paso">1</span> Datos de la {a.formulario.ordenInterna ? "orden" : "cotización"}</h3>
+              <div className="inventario-form-grid apartado-form-datos">
                 <div>
                   <label>Esta cotización es de *</label>
                   <select value={a.formulario.empresa} onChange={(e) => a.actualizarCampoApartado("empresa", e.target.value)}>
@@ -758,11 +778,16 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 )}
               </div>
 
-              <h3 className="inventario-form-subtitulo">Productos solicitados</h3>
+              <h3 className="apartado-form-seccion">
+                <span className="apartado-form-paso">2</span> Productos
+                <span className="apartado-form-contador">{a.formulario.items.length}</span>
+              </h3>
               {a.formulario.items.map((item, indice) => (
-                <div key={indice} className="inventario-form-grid" style={{ marginBottom: "0.75rem", borderBottom: "1px solid #eee", paddingBottom: "0.75rem" }}>
+                <div key={indice} className="apartado-item">
+                  <div className="apartado-item-cabecera">
+                  <span className="apartado-item-numero">Producto {indice + 1}</span>
                   {item.id && (item.metrosConsumidos || item.stockDescontado) ? (
-                    <p className="apartado-linea-con-salida" style={{ gridColumn: "1 / -1" }}>
+                    <p className="apartado-linea-con-salida">
                       ✓ Esta línea ya tiene salida{item.stockDescontado ? " (stock descontado)" : `: ${item.metrosConsumidos} m`}.
                       {item.stockDescontado ? " No se puede cambiar." : " Puedes subirla, pero no quitarla ni bajarla de lo que ya salió."}
                       {item.bodegaId && ` Sale de ${almacen.bodegas.find((b) => String(b.id) === String(item.bodegaId))?.nombre || "otra bodega"}.`}
@@ -770,7 +795,6 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   ) : null}
                   {!(item.metrosConsumidos || item.stockDescontado) && (
                     <div className="apartado-linea-cabecera">
-                      <strong>Producto {indice + 1}</strong>
                       <select
                         aria-label="Empresa de la que sale el material de este producto"
                         className={`apartados-select ${item.empresa ? "apartados-select-activo" : ""}`}
@@ -810,26 +834,34 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       </select>
                     </div>
                   )}
+                  {(a.formulario.items.length > 1 || a.parteEditada.otrasPartes.length > 0) && !(item.metrosConsumidos || item.stockDescontado) && (
+                    <button type="button" className="apartado-item-quitar" onClick={() => a.quitarItemApartado(indice)}
+                      aria-label={`Quitar el producto ${indice + 1}`}>
+                      Quitar
+                    </button>
+                  )}
+                  </div>
+                  <div className="inventario-form-grid apartado-item-campos">
                   <div style={{ gridColumn: "1 / -1", display: item.id || a.formulario.ordenInterna ? "none" : undefined }}>
                     <label>Tipo de material</label>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <div className="apartado-tipos" role="group" aria-label="Tipo de material">
                       <button
                         type="button"
-                        className={`produccion-tipo-boton ${item.modalidad === "por_rollo" ? "produccion-tipo-activo" : ""}`}
+                        className={`apartado-tipo-boton ${item.modalidad === "por_rollo" ? "apartado-tipo-activo" : ""}`}
                         onClick={() => a.cambiarModalidadItem(indice, "por_rollo")}
                       >
                         Material por rollo
                       </button>
                       <button
                         type="button"
-                        className={`produccion-tipo-boton ${item.modalidad === "por_stock" ? "produccion-tipo-activo" : ""}`}
+                        className={`apartado-tipo-boton ${item.modalidad === "por_stock" ? "apartado-tipo-activo" : ""}`}
                         onClick={() => a.cambiarModalidadItem(indice, "por_stock")}
                       >
                         Producto de stock
                       </button>
                       <button
                         type="button"
-                        className={`produccion-tipo-boton ${item.modalidad === "rollo_completo" ? "produccion-tipo-activo" : ""}`}
+                        className={`apartado-tipo-boton ${item.modalidad === "rollo_completo" ? "apartado-tipo-activo" : ""}`}
                         onClick={() => a.cambiarModalidadItem(indice, "rollo_completo")}
                       >
                         Rollo completo
@@ -838,7 +870,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   </div>
 
                   {item.modalidad === "por_rollo" ? (
-                    <div>
+                    <div className="apartado-campo-codigo">
                       <label>Código de clasificación *</label>
                       <input
                         placeholder="Ej. LA50170,27"
@@ -915,7 +947,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       alReintentar={() => a.cargarRollosParaApartar(item.bodegaId || a.formulario.bodegaId, true)}
                     />
                   ) : (
-                    <div>
+                    <div className="apartado-campo-ancho">
                       <label>Producto *</label>
                       {item.productoId ? (
                         <div className="inventario-carga-ayuda" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1034,22 +1066,6 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     </div>
                   )}
 
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <label>Descripción</label>
-                    {/* Ancha y de dos renglones: las descripciones de las cotizaciones son largas. */}
-                    <textarea
-                      className="apartado-descripcion-linea"
-                      rows={2}
-                      placeholder="Ej. Teja de 6 metros"
-                      value={item.descripcion}
-                      onChange={(e) => a.actualizarItemApartado(indice, "descripcion", e.target.value)}
-                    />
-                    {item.modalidad === "por_rollo" && calibreQueNoCuadra(item.codigoInterno, item.descripcion) && (
-                      <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
-                        {calibreQueNoCuadra(item.codigoInterno, item.descripcion)}
-                      </p>
-                    )}
-                  </div>
                   {item.modalidad !== "rollo_completo" && (
                     <div>
                       <label>Cantidad *</label>
@@ -1141,26 +1157,40 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       />
                     </div>
                   )}
-                  {(a.formulario.items.length > 1 || a.parteEditada.otrasPartes.length > 0) && !(item.metrosConsumidos || item.stockDescontado) && (
-                    <div style={{ alignSelf: "end" }}>
-                      <button type="button" className="inventario-boton-cancelar" onClick={() => a.quitarItemApartado(indice)}>
-                        Quitar
-                      </button>
-                    </div>
-                  )}
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label>Descripción</label>
+                    {/* Ancha y de dos renglones: las descripciones de las cotizaciones son largas. */}
+                    <textarea
+                      className="apartado-descripcion-linea"
+                      rows={2}
+                      placeholder="Ej. Teja de 6 metros"
+                      value={item.descripcion}
+                      onChange={(e) => a.actualizarItemApartado(indice, "descripcion", e.target.value)}
+                    />
+                    {item.modalidad === "por_rollo" && calibreQueNoCuadra(item.codigoInterno, item.descripcion) && (
+                      <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
+                        {calibreQueNoCuadra(item.codigoInterno, item.descripcion)}
+                      </p>
+                    )}
+                  </div>
+                  </div>
                 </div>
               ))}
-              <button type="button" className="inventario-boton-cancelar" onClick={a.agregarItemApartado} style={{ marginBottom: "1rem" }}>
+              <button type="button" className="apartado-agregar" onClick={a.agregarItemApartado}>
                 + Agregar producto
               </button>
 
-              <div>
-                <label>Observaciones</label>
-                <textarea
-                  rows={3}
-                  value={a.formulario.observaciones}
-                  onChange={(e) => a.actualizarCampoApartado("observaciones", e.target.value)}
-                />
+              <h3 className="apartado-form-seccion"><span className="apartado-form-paso">3</span> Observaciones <span className="apartado-form-opcional">(opcional)</span></h3>
+              <div className="inventario-form-grid">
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <textarea
+                    rows={3}
+                    aria-label="Observaciones"
+                    placeholder="Ej. el cliente recoge el viernes"
+                    value={a.formulario.observaciones}
+                    onChange={(e) => a.actualizarCampoApartado("observaciones", e.target.value)}
+                  />
+                </div>
               </div>
 
               {ofrecerMaterialEnCamino && (
@@ -1185,7 +1215,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </p>
               )}
 
-              <div className="inventario-form-botones">
+              <div className="inventario-form-botones apartado-form-pie">
+                <div className="apartado-form-resumen">{resumenDelFormulario()}</div>
                 <button type="submit" className="inventario-boton" disabled={a.guardandoApartado || lineasQueSePasan.length > 0}>
                   {a.guardandoApartado ? "Guardando..." : quitaEstaParte ? `Quitar de ${a.parteEditada.bodega}` : a.editandoId ? "Guardar cambios" : a.formulario.ordenInterna ? "Crear orden" : "Crear apartado"}
                 </button>
