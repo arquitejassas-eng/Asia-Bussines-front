@@ -221,30 +221,32 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const aqui = almacen.bodegas.find((b) => String(b.id) === String(item.bodegaId))?.nombre || "esta bodega";
     const empresa = EMPRESAS[item.empresa || a.formulario.empresa] || "esta empresa";
     const nombreOtra = otraEmpresa ? EMPRESAS[otraEmpresa.empresa] || otraEmpresa.empresa : "";
-    const unidad = item.modalidad === "por_stock" ? "" : " m";
-    const textoAqui = libre > 0.005 ? `no alcanza el material de ${empresa} (hay ${libre}${unidad})` : `no hay material de ${empresa}`;
+    const unidad = item.modalidad === "por_stock" ? " und" : " m";
     return (
       <div className="apartado-aviso-otra-bodega">
         {faltaEnEmpresa ? (
           <p>
-            En <strong>{empresa}</strong> no hay suficiente: {Math.max(totalEmpresa ?? 0, 0)}{unidad} sin prometer en todas las bodegas.
+            Sumando todas las bodegas, <strong>{empresa}</strong> solo tiene {num(Math.max(totalEmpresa ?? 0, 0))}{unidad} disponibles
+            de este material: no alcanza.
             {otraEmpresa && otraEmpresa.total > 0.005 ? (
-              <> Pero en <strong>{nombreOtra}</strong> sí hay: {otraEmpresa.total}{unidad}
-                {otraEmpresa.cantidad > 0.005 && <> ({otraEmpresa.cantidad}{unidad} aquí en {aqui})</>}. Usa material de {nombreOtra}.</>
-            ) : " Tampoco alcanza en la otra empresa."}
+              <> <strong>{nombreOtra}</strong> sí tiene {num(otraEmpresa.total)}{unidad} disponibles
+                {otraEmpresa.cantidad > 0.005 && <> ({num(otraEmpresa.cantidad)}{unidad} aquí en {aqui})</>}: puedes usar material
+                de {nombreOtra} y quedará como préstamo entre empresas.</>
+            ) : " La otra empresa tampoco tiene suficiente."}
           </p>
         ) : (
           <>
             {otra && (
               <p>
-                Este material se puede despachar en <strong>{otra.bodega}</strong> ({otra.cantidad}{unidad} libres de {empresa}) porque en{" "}
-                <strong>{aqui}</strong> {textoAqui}. Solicita el intercambio.
+                <strong>{otra.bodega}</strong> tiene <strong>{num(otra.cantidad)}{unidad} disponibles de {empresa}</strong>. Puedes
+                despachar esta línea desde {otra.bodega} o solicitar un intercambio para traer el material a {aqui}.
               </p>
             )}
             {otraEmpresa && otraEmpresa.cantidad > 0.005 && (
               <p>
-                {otra ? "También: en " : "En "}<strong>{aqui}</strong> {otra ? "" : `${textoAqui}, pero `}hay{" "}
-                <strong>{otraEmpresa.cantidad}{unidad} de {nombreOtra}</strong> libres.
+                Los {num(otraEmpresa.cantidad)}{unidad} de <strong>{nombreOtra}</strong> que hay en {aqui} son de otra empresa y
+                no cuentan para esta cotización. Si quieres usarlos, toca «Usar material de {nombreOtra}» (quedará como préstamo
+                entre empresas).
               </p>
             )}
           </>
@@ -262,6 +264,43 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           )}
         </div>
       </div>
+    );
+  }
+
+  // Lo que hay del código en la bodega de la línea, en palabras sencillas:
+  // "Ricaurte tiene acero de Asia Business, pero todo está reservado…".
+  function disponibilidadDelCodigo(item: (typeof a.formulario.items)[number], datos: DatosDisponibilidad) {
+    const bodega = almacen.bodegas.find((b) => String(b.id) === String(item.bodegaId))?.nombre || "Esta bodega";
+    const empresa = EMPRESAS[item.empresa || a.formulario.empresa] || "esta empresa";
+    const rollos = datos.cantidadRollos ?? 0;
+    const libre = datos.metrosDisponibles ?? 0;
+    const enCamino = datos.metrosEnCamino ?? 0;
+    const porRepartir = datos.metrosPorRepartir ?? 0;
+    if (rollos === 0 && !enCamino && !porRepartir) {
+      return <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>{bodega} no tiene rollos de {empresa} con este código.</p>;
+    }
+    return (
+      <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>
+        {rollos === 0
+          ? <>{bodega} no tiene rollos de {empresa} con este código.</>
+          : libre > 0.005
+            ? <>{bodega} tiene <strong>{num(libre)} m disponibles</strong> de {empresa} ({rollos} rollo{rollos === 1 ? "" : "s"}
+                {(datos.metrosReservados ?? 0) > 0 && <>; otros {num(datos.metrosReservados)} m ya están reservados para otras cotizaciones</>}).</>
+            : libre < -0.005
+              ? <>{bodega} tiene acero de {empresa}, pero <strong>todo está reservado</strong>. Faltan {num(-libre)} m para cubrir
+                  las cotizaciones que ya están apartadas.</>
+              : <>{bodega} tiene acero de {empresa}, pero <strong>todo está reservado</strong> para otras cotizaciones.</>}
+        {(enCamino > 0 || porRepartir > 0) && (
+          <>
+            <br />
+            Además, a {empresa} le {enCamino > 0 ? <>vienen {num(enCamino)} m en camino</> : null}
+            {enCamino > 0 && porRepartir > 0 ? " y " : ""}
+            {porRepartir > 0 && <>Admin Inventario tiene {num(porRepartir)} m por repartir</>}
+            {(datos.metrosEsperando ?? 0) > 0 && <> ({num(datos.metrosEsperando)} m de eso ya están apartados)</>}.{" "}
+            <strong>Puedes apartar hasta {num(datos.metrosParaApartar)} m.</strong>
+          </>
+        )}
+      </p>
     );
   }
 
@@ -895,43 +934,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           No se pudo consultar el material disponible.
                         </p>
                       )}
-                      {disponibilidadItems[indice]?.datos && (
-                        disponibilidadItems[indice].datos.cantidadRollos === 0 && !disponibilidadItems[indice].datos.metrosEnCamino
-                          && !disponibilidadItems[indice].datos.metrosPorRepartir ? (
-                          <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
-                            No hay rollos de {EMPRESAS[item.empresa || a.formulario.empresa] || "esa empresa"} con ese código en esa bodega.
-                          </p>
-                        ) : (
-                          <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>
-                            {disponibilidadItems[indice].datos.familia && `${disponibilidadItems[indice].datos.familia} · `}
-                            {disponibilidadItems[indice].datos.cantidadRollos} rollo{disponibilidadItems[indice].datos.cantidadRollos === 1 ? "" : "s"} ·{" "}
-                            {(disponibilidadItems[indice].datos.metrosDisponibles ?? 0) >= 0 ? (
-                              <strong>{disponibilidadItems[indice].datos.metrosDisponibles} m libres</strong>
-                            ) : (
-                              <>
-                                <strong>0 m libres</strong> (lo ya apartado aquí de {EMPRESAS[item.empresa || a.formulario.empresa] || "esta empresa"} supera
-                                lo que hay: esas cotizaciones esperan {-(disponibilidadItems[indice].datos.metrosDisponibles ?? 0)} m más)
-                              </>
-                            )}
-                            {(disponibilidadItems[indice].datos?.metrosReservados ?? 0) > 0 && ` · ${disponibilidadItems[indice].datos?.metrosReservados} m ya reservados`}
-                            {((disponibilidadItems[indice].datos?.metrosEnCamino ?? 0) > 0 || (disponibilidadItems[indice].datos?.metrosPorRepartir ?? 0) > 0) && (
-                              <>
-                                <br />
-                                Empresa: {disponibilidadItems[indice].datos?.metrosEnCamino} m en camino
-                                {` · ${disponibilidadItems[indice].datos?.metrosPorRepartir} m por repartir en Admin Inventario`}
-                                {(disponibilidadItems[indice].datos?.metrosEsperando ?? 0) > 0 && ` · ${disponibilidadItems[indice].datos?.metrosEsperando} m ya apartados de ahí`}
-                                <br />
-                                <strong>Puedes apartar hasta {disponibilidadItems[indice].datos?.metrosParaApartar} m</strong>
-                              </>
-                            )}
-                          </p>
-                        )
-                      )}
+                      {disponibilidadItems[indice]?.datos && disponibilidadDelCodigo(item, disponibilidadItems[indice].datos)}
                       {excesoPorLinea[indice] && (
-                        <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
-                          Con esta línea la cotización pide <strong>{excesoPorLinea[indice].pedido} m</strong> de {excesoPorLinea[indice].codigo} y
-                          solo hay {excesoPorLinea[indice].hay} m libres (sumando Arquitejas y Asia, todas las bodegas y lo que viene en
-                          camino). Faltan {Math.round((excesoPorLinea[indice].pedido - excesoPorLinea[indice].hay) * 100) / 100} m.
+                        <p className="inventario-error apartado-aviso-texto">
+                          Con esta línea, la cotización pide <strong>{num(excesoPorLinea[indice].pedido)} m</strong> de {excesoPorLinea[indice].codigo},
+                          pero entre las dos empresas y todas las bodegas solo hay <strong>{num(excesoPorLinea[indice].hay)} m disponibles</strong>.
+                          Faltan {num(excesoPorLinea[indice].pedido - excesoPorLinea[indice].hay)} m: baja la cantidad o quita la línea.
                         </p>
                       )}
                       {avisoOtraBodega(item, indice)}
@@ -1030,14 +1038,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       )}
                       {disponibilidadItems[indice]?.datos && item.modalidad === "por_stock" && (
                         <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>
-                          Stock físico <strong>{disponibilidadItems[indice].datos.stock}</strong> · reservado{" "}
-                          {disponibilidadItems[indice].datos.cantidadReservada} ·{" "}
-                          <strong>{disponibilidadItems[indice].datos.cantidadDisponible} disponible</strong> en esta bodega
+                          Esta bodega tiene <strong>{num(Math.max(disponibilidadItems[indice].datos.cantidadDisponible ?? 0, 0))} disponibles</strong>
+                          {" "}de este producto (hay {num(disponibilidadItems[indice].datos.stock)} y {num(disponibilidadItems[indice].datos.cantidadReservada)} ya
+                          están reservados para otras cotizaciones).
                           {disponibilidadItems[indice].datos.disponibleEmpresa != null && (
                             <>
                               <br />
-                              En toda la empresa: <strong>{disponibilidadItems[indice].datos.disponibleEmpresa}</strong>
-                              {disponibilidadItems[indice].datos.enOtrasBodegas && <> (hay en {disponibilidadItems[indice].datos.enOtrasBodegas})</>}
+                              Sumando todas las bodegas de la empresa hay <strong>{num(disponibilidadItems[indice].datos.disponibleEmpresa)}</strong> disponibles
+                              {disponibilidadItems[indice].datos.enOtrasBodegas && <> (también en {disponibilidadItems[indice].datos.enOtrasBodegas})</>}.
                             </>
                           )}
                         </p>
@@ -1057,9 +1065,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       {item.modalidad === "por_stock" && item.productoId && !item.stockDescontado && !item.hayFisico
                         && (disponibilidadItems[indice]?.datos?.cantidadDisponible ?? Infinity) + 0.005 < (Number(item.cantidad) || 1) && (
                         <p className="inventario-error" style={{ margin: "0.25rem 0 0" }}>
-                          No hay suficiente stock libre de este producto en esta bodega
-                          ({Math.max(disponibilidadItems[indice]?.datos?.cantidadDisponible ?? 0, 0)} libres): no se puede apartar
-                          lo que el sistema no tiene. Dale entrada primero o escoge otra bodega.
+                          Esta bodega solo tiene {num(Math.max(disponibilidadItems[indice]?.datos?.cantidadDisponible ?? 0, 0))} disponibles
+                          de este producto: no alcanza. Dale entrada en Inventario o escoge otra bodega.
                         </p>
                       )}
                       {item.modalidad === "por_stock" && !item.hayFisico && avisoOtraBodega(item, indice)}
@@ -1195,9 +1202,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
               {ofrecerMaterialEnCamino && (
                 <p className="inventario-carga-ayuda" style={{ margin: "0.75rem 0" }}>
-                  <strong>En esta bodega no alcanza.</strong> Si hay en otras bodegas de la empresa (o viene en camino), la cotización
-                  se crea y queda "esperando material": la bodega de despacho pide el traslado y la envía a producción cuando llegue.
-                  Si no alcanza ni sumando toda la empresa, no se puede crear.
+                  <strong>Alguna línea no tiene suficiente material en su bodega.</strong> Si lo que falta está en otra bodega o
+                  viene en camino, la cotización se crea igual y queda «esperando material»: la bodega pide el traslado y la envía
+                  a producción cuando llegue. Si no alcanza ni sumando toda la empresa, no se puede crear.
                 </p>
               )}
 
