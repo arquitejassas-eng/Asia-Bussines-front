@@ -81,6 +81,24 @@ function PanelHistorialInventario({
         Historial de movimientos — {sesion?.bodegaNombre || "mi bodega"}
       </h1>
 
+      {/* Dos partes: lo de la bodega (producción, entradas, salidas…) y los traslados. */}
+      <div className="inventario-pestanas" role="tablist" aria-label="Parte del historial">
+        <button
+          type="button" role="tab" aria-selected={filtros.grupo !== "traslados"}
+          className={`inventario-pestana-boton ${filtros.grupo !== "traslados" ? "inventario-pestana-activa" : ""}`}
+          onClick={() => actualizarFiltro("grupo", "movimientos")}
+        >
+          Producción y movimientos
+        </button>
+        <button
+          type="button" role="tab" aria-selected={filtros.grupo === "traslados"}
+          className={`inventario-pestana-boton ${filtros.grupo === "traslados" ? "inventario-pestana-activa" : ""}`}
+          onClick={() => actualizarFiltro("grupo", "traslados")}
+        >
+          Traslados entre bodegas
+        </button>
+      </div>
+
       <div className="inventario-form inventario-filtros">
         <div className="inventario-form-grid">
           <div>

@@ -75,14 +75,14 @@ def nuevo_producto_en_bodega(origen: Producto, *, bodega_id: int | None, cantida
     return Producto(bodega_id=bodega_id, entrada=cantidad, stock=cantidad, **datos)
 
 
-def productos_bajo_minimo(db: Session, bodega_id: int | None) -> list[Producto]:
+def productos_bajo_minimo(db: Session, bodega_id: int | None, *, todas_las_bodegas: bool = False) -> list[Producto]:
     """Productos con `stock_minimo` configurado y `stock` por debajo de ese
     umbral. Un producto sin `stock_minimo` configurado nunca aparece aquí —
     mismo criterio ya usado por `GET /inventario/productos/alertas`."""
     return (
         db.query(Producto)
         .filter(
-            coincide_bodega(Producto.bodega_id, bodega_id),
+            *(() if todas_las_bodegas else (coincide_bodega(Producto.bodega_id, bodega_id),)),
             Producto.familia != FAMILIA_ROLLOS,
             Producto.stock_minimo.isnot(None),
             Producto.stock < Producto.stock_minimo,

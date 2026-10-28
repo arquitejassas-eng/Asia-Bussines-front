@@ -4,6 +4,10 @@ import { movimientoDesdeApi, productoDesdeApi } from "./Mapeo";
 import { finDelDiaColombia, inicioDelDiaColombia } from "../Utils/fechas";
 
 const FILTROS_VACIOS = {
+  // Qué parte se ve: "movimientos" (producción, entradas, salidas…) o "traslados".
+  grupo: "movimientos",
+  // Solo Superadmin: una bodega ("" = todas).
+  bodegaId: "",
   tipo: "",
   codigoProducto: "",
   codigoRollo: "",
@@ -33,12 +37,14 @@ export function useControladorReportes(_sesion: unknown, _almacen: unknown) {
   const [cargandoAlertasStock, setCargandoAlertasStock] = useState(true);
 
   function actualizarFiltro(campo: keyof Filtros, valor: string) {
-    setFiltros((actual) => ({ ...actual, [campo]: valor }));
+    // Al cambiar de parte, el tipo de la otra parte ya no aplica.
+    setFiltros((actual) => ({ ...actual, [campo]: valor, ...(campo === "grupo" ? { tipo: "" } : {}) }));
     setPagina(1);
   }
 
   function limpiarFiltros() {
-    setFiltros(FILTROS_VACIOS);
+    // Limpiar no cambia de parte ni de bodega.
+    setFiltros((actual) => ({ ...FILTROS_VACIOS, grupo: actual.grupo, bodegaId: actual.bodegaId }));
     setPagina(1);
   }
 
@@ -52,6 +58,8 @@ export function useControladorReportes(_sesion: unknown, _almacen: unknown) {
     setErrorMovimientos("");
     try {
       const parametros = new URLSearchParams();
+      if (filtros.grupo) parametros.set("grupo", filtros.grupo);
+      if (filtros.bodegaId) parametros.set("bodega_id", filtros.bodegaId);
       if (filtros.codigoProducto) parametros.set("codigo_producto", filtros.codigoProducto);
       if (filtros.codigoRollo) parametros.set("codigo_rollo", filtros.codigoRollo);
       if (filtros.cotizacion) parametros.set("cotizacion", filtros.cotizacion);

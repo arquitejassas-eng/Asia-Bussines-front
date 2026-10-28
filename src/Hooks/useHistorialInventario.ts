@@ -4,10 +4,12 @@ import { movimientoDesdeApi } from "../Componentes/Mapeo";
 import { finDelDiaColombia, inicioDelDiaColombia } from "../Utils/fechas";
 import { useActualizacionAutomatica } from "./useActualizacionAutomatica";
 
-const FILTROS_VACIOS = { codigoProducto: "", cotizacion: "", empresaExterna: "", fechaDesde: "", fechaHasta: "" };
+// `grupo`: qué parte del historial se ve ("movimientos" = producción, entradas,
+// salidas…; "traslados" = entre bodegas y envíos).
+const FILTROS_VACIOS = { grupo: "movimientos", codigoProducto: "", cotizacion: "", empresaExterna: "", fechaDesde: "", fechaHasta: "" };
 
 /** Consulta, filtros y paginación del historial; no depende de la interfaz. */
-type Filtros = { codigoProducto: string; cotizacion: string; empresaExterna: string; fechaDesde: string; fechaHasta: string };
+type Filtros = { grupo: string; codigoProducto: string; cotizacion: string; empresaExterna: string; fechaDesde: string; fechaHasta: string };
 type Paginacion = { total: number; pagina: number; total_paginas: number };
 
 type RespuestaHistorial = { items: Record<string, unknown>[] } & Paginacion;
@@ -64,6 +66,7 @@ export function useHistorialInventario(bodegaId: number | undefined) {
     }
     try {
       const filtrosApi = new URLSearchParams();
+      if (filtros.grupo) filtrosApi.set("grupo", filtros.grupo);
       if (filtros.codigoProducto) filtrosApi.set("codigo_producto", filtros.codigoProducto);
       if (filtros.cotizacion) filtrosApi.set("cotizacion", filtros.cotizacion);
       if (filtros.empresaExterna) filtrosApi.set("empresa_externa", filtros.empresaExterna);
@@ -119,7 +122,8 @@ export function useHistorialInventario(bodegaId: number | undefined) {
   }
 
   function limpiarFiltros() {
-    setFiltros(FILTROS_VACIOS);
+    // Limpiar no cambia de parte (traslados / movimientos).
+    setFiltros((actual) => ({ ...FILTROS_VACIOS, grupo: actual.grupo }));
     setPaginaHistorial(1);
   }
 

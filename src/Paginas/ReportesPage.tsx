@@ -17,6 +17,14 @@ const ETIQUETAS_TIPO: Record<string, string> = {
 
 function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const r = useControladorReportes(sesion, almacen);
+  // Superadmin ve los reportes de todas las bodegas.
+  const todasLasBodegas = sesion?.rol === "superadmin";
+  const nombreBodega = (id: number | null | undefined) => almacen.bodegas.find((b) => b.id === id)?.nombre || "";
+  const bodegaDe = (m: { bodegaOrigenId?: number | null; bodegaDestinoId?: number | null }) => {
+    const origen = nombreBodega(m.bodegaOrigenId), destino = nombreBodega(m.bodegaDestinoId);
+    return origen && destino ? `${origen} → ${destino}` : origen || destino || "—";
+  };
+  const traslados = r.filtros.grupo === "traslados";
 
   const notificaciones = contarNotificaciones(almacen, sesion);
 
@@ -30,7 +38,9 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
             <div>
               <h1 className="reportes-titulo">Reportes</h1>
               <p className="reportes-subtitulo">
-                Todas las entradas, salidas y movimientos de {sesion?.bodegaNombre}.
+                {todasLasBodegas
+                  ? "Todas las entradas, salidas y movimientos de todas las bodegas."
+                  : `Todas las entradas, salidas y movimientos de ${sesion?.bodegaNombre}.`}
               </p>
             </div>
             <CampanaAlertas
@@ -38,6 +48,20 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
               cargando={r.cargandoAlertasStock}
               unidadPorFamilia={almacen?.unidadPorFamilia || {}}
             />
+          </div>
+
+          {/* Dos partes: lo de la bodega (producción, entradas, salidas…) y los traslados. */}
+          <div className="reportes-pestanas" role="tablist" aria-label="Parte del reporte">
+            <button type="button" role="tab" aria-selected={!traslados}
+              className={`reportes-pestana ${!traslados ? "reportes-pestana-activa" : ""}`}
+              onClick={() => r.actualizarFiltro("grupo", "movimientos")}>
+              Producción y movimientos
+            </button>
+            <button type="button" role="tab" aria-selected={traslados}
+              className={`reportes-pestana ${traslados ? "reportes-pestana-activa" : ""}`}
+              onClick={() => r.actualizarFiltro("grupo", "traslados")}>
+              Traslados entre bodegas
+            </button>
           </div>
 
           {/* ================== RESUMEN ================== */}
@@ -64,14 +88,30 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
           <section className="reportes-tarjeta">
             <h2>Filtrar movimientos</h2>
             <div className="reportes-filtros-grid">
+              {todasLasBodegas && (
+                <div>
+                  <label>Bodega</label>
+                  <select value={r.filtros.bodegaId} onChange={(e) => r.actualizarFiltro("bodegaId", e.target.value)}>
+                    <option value="">Todas las bodegas</option>
+                    {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <label>Tipo</label>
                 <select value={r.filtros.tipo} onChange={(e) => r.actualizarFiltro("tipo", e.target.value)}>
                   <option value="">Todos</option>
-                  <option value="entrada">Entrada</option>
-                  <option value="salida">Salida</option>
-                  <option value="traslado">Traslado</option>
-                  <option value="transferencia">Transferencia</option>
+                  {traslados ? (
+                    <>
+                      <option value="transferencia">Transferencia</option>
+                      <option value="traslado">Traslado</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="entrada">Entrada</option>
+                      <option value="salida">Salida</option>
+                    </>
+                  )}
                 </select>
               </div>
               <div>
@@ -156,6 +196,7 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
                   <thead>
                     <tr>
                       <th>Fecha</th>
+                      {todasLasBodegas && <th>Bodega</th>}
                       <th>Tipo</th>
                       <th>Motivo</th>
                       <th>Producto</th>
@@ -171,6 +212,7 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
                     {r.movimientos.map((m) => (
                       <tr key={m.id}>
                         <td>{formatearFechaColombia(m.fecha)}</td>
+                        {todasLasBodegas && <td>{bodegaDe(m)}</td>}
                         <td>
                           <span className={`reportes-tipo-badge tipo-${m.tipo}`}>
                             {ETIQUETAS_TIPO[m.tipo] || m.tipo}

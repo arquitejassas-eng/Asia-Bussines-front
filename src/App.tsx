@@ -147,7 +147,7 @@ export default function App() {
       />
       <Route
         path="/reportes"
-        element={paginaProtegida(["administrativo"], ReportesPage)}
+        element={paginaProtegida(["administrativo", "superadmin"], ReportesPage)}
       />
       <Route
         path="/ia"

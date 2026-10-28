@@ -18,7 +18,7 @@ const MODULOS = [
   { clave: "admin_inventario", etiqueta: "Inventario total", ruta: "/admin-inventario", disponible: true, roles: ["admin_inventario", "vendedor"] },
   { clave: "merma", etiqueta: "Merma", ruta: "/merma", disponible: true, roles: ["admin_inventario"] },
   { clave: "prestamos", etiqueta: "Préstamos entre empresas", ruta: "/prestamos", disponible: true, roles: ["admin_inventario"] },
-  { clave: "reportes", etiqueta: "Reportes", ruta: "/reportes", disponible: true, roles: ["administrativo"] },
+  { clave: "reportes", etiqueta: "Reportes", ruta: "/reportes", disponible: true, roles: ["administrativo", "superadmin"] },
   { clave: "ia", etiqueta: "Asistente de IA", ruta: "/ia", disponible: true, roles: ["administrativo", "admin_inventario"] },
   { clave: "produccion", etiqueta: "Registrar Producción", ruta: "/produccion", disponible: true, notificable: true, roles: ["jefe_planta"] },
   { clave: "merma_planta", etiqueta: "Merma", ruta: "/merma-planta", disponible: true, roles: ["jefe_planta"] },

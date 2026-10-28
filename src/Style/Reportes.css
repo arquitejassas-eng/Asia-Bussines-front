@@ -162,3 +162,36 @@
 .reportes-tipo-badge.tipo-salida { background: var(--at-red-dim, rgba(194, 59, 44, 0.12)); color: var(--at-red, #C23B2C); }
 .reportes-tipo-badge.tipo-traslado { background: var(--at-amber-dim, rgba(184, 114, 10, 0.12)); color: var(--at-amber, #B8720A); }
 .reportes-tipo-badge.tipo-transferencia { background: var(--at-terra-dim, rgba(183, 69, 31, 0.12)); color: var(--at-terra, #B7451F); }
+
+/* Dos partes del reporte: producción y movimientos / traslados entre bodegas. */
+.reportes-pestanas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 1.25rem;
+  padding: 0.28rem;
+  background: var(--at-surface-3, #E8DCC8);
+  border: 1px solid var(--at-border-soft, #EBE2D2);
+  border-radius: var(--at-r-md, 12px);
+}
+.reportes-pestana {
+  padding: 0.5rem 1.15rem;
+  border: none;
+  border-radius: var(--at-r-sm, 8px);
+  background: transparent;
+  color: var(--at-muted, #7C6A56);
+  font: inherit;
+  font-size: 0.87rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.reportes-pestana:hover { color: var(--at-text, #251C14); }
+.reportes-pestana:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 1px; }
+.reportes-pestana-activa {
+  background: var(--at-surface, #FFFFFF);
+  color: var(--at-terra, #B7451F);
+  font-weight: 700;
+  box-shadow: var(--at-shadow-xs, 0 1px 2px rgba(37, 28, 20, 0.06));
+}

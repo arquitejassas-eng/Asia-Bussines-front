@@ -76,7 +76,10 @@ def listar_productos_bajo_minimo(
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Producto]:
     """Productos de mi bodega con `stock_minimo` configurado y `stock` por
-    debajo de ese umbral — para la campana de alertas de Inventario."""
+    debajo de ese umbral — para la campana de alertas de Inventario.
+    Superadmin: los de todas las bodegas (Reportes)."""
+    if usuario.rol == RolUsuario.SUPERADMIN:
+        return srv_productos.productos_bajo_minimo(db, None, todas_las_bodegas=True)
     return srv_productos.productos_bajo_minimo(db, usuario.bodega_id)
 
 
@@ -351,6 +354,12 @@ def historial(
     # Varias cotizaciones EXACTAS a la vez (?cotizaciones=a&cotizaciones=b):
     # el historial agrupa por cotización y antes pedía una por una.
     cotizaciones: list[str] = Query(default=[]),
+    # El historial va en dos partes: "traslados" (entre bodegas y envíos de
+    # Admin Inventario) y "movimientos" (todo lo demás: producción, entradas,
+    # salidas...). Vacío = todo junto.
+    grupo: str = "",
+    # Solo Superadmin (ve todas las bodegas): los de una sola bodega.
+    bodega_id: int | None = None,
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Movimiento] | PaginaMovimientos:
     # Una bodega solo ve los movimientos en que fue origen o destino. Las
@@ -359,17 +368,26 @@ def historial(
     # esa sede. Antes, el filtro "origen o destino IS NULL" les mostraba todas
     # las entradas y salidas de todas las sedes (toda entrada tiene origen
     # NULL y toda salida destino NULL).
-    if usuario.bodega_id is None:
+    # Superadmin recibe los reportes de TODAS las bodegas (o de una, con bodega_id).
+    if usuario.rol == RolUsuario.SUPERADMIN:
+        consulta = db.query(Movimiento)
+        if bodega_id is not None:
+            consulta = consulta.filter((Movimiento.bodega_origen_id == bodega_id) | (Movimiento.bodega_destino_id == bodega_id))
+    elif usuario.bodega_id is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tu usuario no tiene acceso al historial de movimientos.")
-    consulta = db.query(Movimiento).filter(
-        (Movimiento.bodega_origen_id == usuario.bodega_id) | (Movimiento.bodega_destino_id == usuario.bodega_id)
-    )
+    else:
+        consulta = db.query(Movimiento).filter(
+            (Movimiento.bodega_origen_id == usuario.bodega_id) | (Movimiento.bodega_destino_id == usuario.bodega_id)
+        )
     if codigo_producto: consulta = consulta.filter(Movimiento.producto_codigo.ilike(f"%{codigo_producto}%"))
     if codigo_rollo: consulta = consulta.filter(Movimiento.identificador_rollo.ilike(f"%{codigo_rollo}%"))
     if cotizacion: consulta = consulta.filter(Movimiento.cotizacion.ilike(f"%{cotizacion}%"))
     if cotizaciones: consulta = consulta.filter(Movimiento.cotizacion.in_(cotizaciones))
     if empresa_externa: consulta = consulta.filter(Movimiento.empresa_externa.ilike(f"%{empresa_externa}%"))
     if tipo: consulta = consulta.filter(Movimiento.tipo == tipo)
+    de_traslado = (TipoMovimiento.TRANSFERENCIA, TipoMovimiento.TRASLADO)
+    if grupo == "traslados": consulta = consulta.filter(Movimiento.tipo.in_(de_traslado))
+    elif grupo == "movimientos": consulta = consulta.filter(Movimiento.tipo.notin_(de_traslado))
     if fecha_desde: consulta = consulta.filter(Movimiento.fecha >= fecha_desde)
     if fecha_hasta: consulta = consulta.filter(Movimiento.fecha <= fecha_hasta)
     consulta = consulta.order_by(Movimiento.fecha.desc())
