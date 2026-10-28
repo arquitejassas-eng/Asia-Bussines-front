@@ -7,6 +7,8 @@ import { claseColorMaterial } from "../Utils/colorRollo";
 import Paginacion from "../Componentes/Paginacion";
 import PanelMermaRollo from "../Componentes/PanelMermaRollo";
 import PanelBuscarRollos from "../Componentes/PanelBuscarRollos";
+import ModalHistorialRollo from "../Componentes/ModalHistorialRollo";
+import { useHistorialRollo } from "../Hooks/useHistorialRollo";
 import CeldaApartado from "../Componentes/CeldaApartado";
 import PanelResumenProductos from "../Componentes/PanelResumenProductos";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
@@ -43,6 +45,8 @@ function CeldaEmpresa({ metros }: { metros?: { fisico: number; reservado: number
 
 function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const c = useControladorAdminInventario(sesion, almacen);
+  // "Ver historial" de cada rollo del resumen por código (Admin Inventario).
+  const historial = useHistorialRollo<(typeof c.rollosDelCodigoExpandido)[number]>();
   const bodegas = c.comparativo.bodegas;
   const [mostrarAdminUnidades, setMostrarAdminUnidades] = useState(false);
 
@@ -286,7 +290,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   </button>
                 )}
               </div>
-              <PanelBuscarRollos bodegas={bodegas} empresa={c.empresaResumen} setEmpresa={c.setEmpresaResumen} />
+              <PanelBuscarRollos bodegas={bodegas} empresa={c.empresaResumen} setEmpresa={c.setEmpresaResumen} conHistorial={!c.soloLectura} />
               {c.errorComparativo && <p className="inventario-error">{c.errorComparativo}</p>}
               {c.cargandoComparativo ? (
                 <p className="inventario-cargando">Cargando...</p>
@@ -426,6 +430,12 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                                   <span className={`rollos-estado-badge estado-${rollo.estado}`}>
                                                     {(ESTADOS_ROLLO as Record<string, string>)[rollo.estado]}
                                                   </span>
+                                                  {!c.soloLectura && (
+                                                    <button type="button" className="rollos-boton-secundario buscar-rollos-historial"
+                                                      onClick={() => historial.abrirHistorial(rollo)}>
+                                                      Ver historial
+                                                    </button>
+                                                  )}
                                                 </td>
                                               </tr>
                                             ))}
@@ -458,6 +468,16 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                     </table>
                   </div>
                   <Paginacion paginacion={c.paginacionRollos} alCambiarPagina={c.setPaginaRollos} etiqueta="códigos" />
+                  {historial.rolloParaHistorial && (
+                    <ModalHistorialRollo
+                      rolloParaHistorial={historial.rolloParaHistorial}
+                      cerrarHistorial={historial.cerrarHistorial}
+                      ESTADOS_ROLLO={ESTADOS_ROLLO}
+                      cargandoHistorial={historial.cargandoHistorial}
+                      errorHistorial={historial.errorHistorial}
+                      historialRollo={historial.historialRollo}
+                    />
+                  )}
                   <p className="inventario-carga-ayuda" style={{ marginTop: "0.5rem" }}>
                     En cada sede se muestran los metros disponibles y, debajo, cuántos rollos de esa
                     clasificación hay ahí. Si hay cotizaciones apartadas, se ve cuánto está apartado y

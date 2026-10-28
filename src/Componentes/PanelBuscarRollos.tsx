@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { rolloDesdeApi } from "./Mapeo";
+import ModalHistorialRollo from "./ModalHistorialRollo";
+import { useHistorialRollo } from "../Hooks/useHistorialRollo";
 import { ESTADOS_ROLLO } from "./Rollos";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
 import { claseColorMaterial } from "../Utils/colorRollo";
@@ -20,8 +22,10 @@ function normalizar(texto: unknown) {
  * código, referencia o kilos de la etiqueta, y filtrar por estado y bodega.
  * Va en la misma fila que el filtro de Empresa de la tabla por código, que
  * sirve para las dos cosas (ver backend /admin-inventario/rollos). */
-export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa }: {
+export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHistorial = false }: {
   bodegas: Bodega[]; empresa: string; setEmpresa: (valor: string) => void;
+  // Admin Inventario: "Ver historial" de cada rollo (misma ventana que Rollos almacenados).
+  conHistorial?: boolean;
 }) {
   const [estado, setEstado] = useState("");
   const [rollos, setRollos] = useState<Rollo[]>([]);
@@ -42,6 +46,8 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa }: {
   }, [estado]);
 
   useEffect(() => { setPagina(1); }, [busqueda, bodega, empresa, estado]);
+
+  const h = useHistorialRollo<Rollo>();
 
   const filtrados = useMemo(() => {
     const termino = normalizar(busqueda);
@@ -128,6 +134,11 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa }: {
                           <span className={`rollos-estado-badge estado-${r.estado}`}>
                             {(ESTADOS_ROLLO as Record<string, string>)[r.estado] || r.estado}
                           </span>
+                          {conHistorial && (
+                            <button type="button" className="rollos-boton-secundario buscar-rollos-historial" onClick={() => h.abrirHistorial(r)}>
+                              Ver historial
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -144,6 +155,16 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa }: {
             </div>
           )}
         </>
+      )}
+      {h.rolloParaHistorial && (
+        <ModalHistorialRollo
+          rolloParaHistorial={h.rolloParaHistorial}
+          cerrarHistorial={h.cerrarHistorial}
+          ESTADOS_ROLLO={ESTADOS_ROLLO}
+          cargandoHistorial={h.cargandoHistorial}
+          errorHistorial={h.errorHistorial}
+          historialRollo={h.historialRollo}
+        />
       )}
     </section>
   );

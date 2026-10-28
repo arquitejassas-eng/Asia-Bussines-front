@@ -1624,3 +1624,10 @@
   margin: 0.35rem 0 0;
   line-height: 1.45;
 }
+
+/* Inventario total → Buscar rollos: "Ver historial" debajo del estado. */
+.buscar-rollos-historial {
+  display: block;
+  margin-top: 0.4rem;
+  white-space: nowrap;
+}

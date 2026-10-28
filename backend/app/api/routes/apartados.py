@@ -273,6 +273,9 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
     # producción interna (para stock), solo Admin Inventario.
     if usuario.rol == RolUsuario.VENDEDOR and datos.orden_interna:
         raise HTTPException(status_code=403, detail="Las órdenes de producción interna las crea Admin Inventario.")
+    # El número no se repite en la misma empresa (las partes de esta cotización
+    # en varias bodegas se crean aquí mismo, juntas).
+    srv.exigir_numero_libre_en_la_empresa(db, datos.numero_cotizacion, datos.empresa)
     por_parte: dict[int | None, list] = {}
     # Dónde iba cada línea de cada parte en la cotización (ver _en_el_orden_escrito).
     posiciones: dict[int | None, list[int]] = {}
@@ -387,6 +390,10 @@ def editar_apartado(
     bodega: se le suman si ya existe ahí, o se crea. Todo junto o nada."""
     # Una cotización no se vuelve orden interna ni al revés.
     datos = datos.model_copy(update={"orden_interna": srv.apartado_de_mi_bodega(db, apartado_id, usuario).orden_interna})
+    # Si le cambian el número o la empresa, que no choque con otra cotización de
+    # esa empresa (sus propias partes no cuentan).
+    srv.exigir_numero_libre_en_la_empresa(db, datos.numero_cotizacion, datos.empresa,
+                                          excepto=[apartado_id, *datos.otras_partes_ids])
     if datos.items:
         apartado = _editar_cotizacion_completa(db, apartado_id, datos, usuario)
         db.commit(); db.refresh(apartado)

@@ -1055,6 +1055,27 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     return apartado
 
 
+def exigir_numero_libre_en_la_empresa(db: Session, numero: str, empresa: str, excepto: list[int] | None = None) -> None:
+    """Un número de cotización no se repite dentro de la misma empresa (en
+    ninguna bodega): la 3002 de Asia es una sola. La 3002 de Arquitejas es
+    otra cotización y sí se puede. Una anulada no cuenta. `excepto`: las
+    partes de la misma cotización (al editarla)."""
+    numero = (numero or "").strip()
+    consulta = db.query(Apartado).filter(
+        func.upper(Apartado.numero_cotizacion) == numero.upper(), Apartado.empresa == empresa,
+        Apartado.estado != EstadoApartado.CANCELADO,
+    )
+    if excepto:
+        consulta = consulta.filter(Apartado.id.notin_(excepto))
+    otra = consulta.order_by(Apartado.id).first()
+    if otra is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La cotización {numero} de {EMPRESAS_CONOCIDAS.get(empresa, empresa)} ya existe (en {otra.bodega_nombre}). "
+            "Usa otro número o edita esa cotización.",
+        )
+
+
 def _exigir_bodegas_de_conversion(db: Session, lineas) -> None:
     for linea in lineas:
         if linea.bodega_conversion_id and db.get(Bodega, linea.bodega_conversion_id) is None:

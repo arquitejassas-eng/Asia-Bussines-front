@@ -39,6 +39,14 @@ function calibreQueNoCuadra(codigo: string, descripcion: string): string | null 
     + `(0,${final[1]}). Corrige uno de los dos: si no, Planta mezclaría espesores al producir.`;
 }
 
+// Para ordenar la lista por número de cotización: "4002" -> 4002; "3811-AR"
+// -> 3811; una orden interna ("OI-0003") va en su propio grupo, después.
+function claveDeNumero(numero: string) {
+  const texto = (numero || "").trim().toUpperCase();
+  const digitos = /^OI-/.test(texto) ? texto.match(/\d+/) : texto.match(/^\d+/) ?? texto.match(/\d+/);
+  return { orden: /^OI-/.test(texto) ? 2 : digitos ? 0 : 1, numero: digitos ? Number(digitos[0]) : 0, texto };
+}
+
 // Con coma decimal, como se escriben en las cotizaciones: 5,3 m.
 const num = (n: number | null | undefined) => (n ?? 0).toLocaleString("es-CO", { maximumFractionDigits: 2 });
 
@@ -343,11 +351,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   }
   const apartadosFiltrados = useMemo(() => {
     const texto = filtroTexto.trim().toLowerCase();
-    // Lo más reciente primero (las cargadas desde Excel conservan el orden en
-    // que se escribieron: ver importar_cotizaciones).
-    return [...a.apartados].sort((x, y) =>
-      y.fechaCreacion.localeCompare(x.fechaCreacion) || y.id - x.id,
-    ).filter((ap) =>
+    // Por número, de mayor a menor (4002, 4001, 4000…), sin importar cuándo
+    // se creó cada una; las órdenes internas (OI-…) van después. Las partes de
+    // un mismo número (3811, 3811-AR, 3776-SAL) quedan juntas, la primera arriba.
+    return [...a.apartados].sort((x, y) => {
+      const kx = claveDeNumero(x.numeroCotizacion), ky = claveDeNumero(y.numeroCotizacion);
+      return kx.orden - ky.orden || ky.numero - kx.numero || kx.texto.localeCompare(ky.texto) || x.id - y.id;
+    }).filter((ap) =>
       vaEnPestana(ap, pestana)
       && (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
       && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
