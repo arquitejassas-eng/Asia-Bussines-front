@@ -14,7 +14,7 @@ function KilosRollo({ producto }: { producto: { pesoNeto: number | null; pesoAct
   const { pesoNeto, pesoActualKg, estadoRollo } = producto;
   if (pesoNeto == null && pesoActualKg == null) return <>—</>;
   if (estadoRollo !== "abierto" || pesoActualKg == null || pesoNeto == null) return <>{kg(pesoNeto ?? pesoActualKg ?? 0)}</>;
-  return <>{kg(pesoNeto)} <span className="bodegas-texto-ayuda" style={{ margin: 0 }}>(quedan ≈ {kg(pesoActualKg)})</span></>;
+  return <>{kg(pesoNeto)} <span className="bodegas-kilos-quedan">quedan ≈ {kg(pesoActualKg)}</span></>;
 }
 
 function EstadoRollo({ estado }: { estado: string }) {
@@ -215,7 +215,8 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                       : "Esta bodega todavía no tiene productos registrados."}
                   </p>
                 ) : (
-                  <table className="bodegas-tabla">
+                  <div className="bodegas-tabla-contenedor">
+                  <table className="bodegas-tabla bodegas-tabla-inventario">
                     <thead>
                       <tr>
                         <th>Código</th>
@@ -225,20 +226,21 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                         <th>Stock disponible</th>
                         <th>Kilos</th>
                         <th>Estado</th>
-                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
                       {b.inventarioBodegaSeleccionada.map((p) => (
                         <tr key={p.id}>
-                          <td>{p.codigo}</td>
-                          <td>{(p as { empresa?: string }).empresa ? nombreEmpresa((p as { empresa?: string }).empresa) : "—"}</td>
-                          <td>{p.identificadorRollo || "—"}</td>
-                          <td>{p.descripcion}</td>
-                          <td>{p.stock} {almacen?.unidadPorFamilia?.[p.familia] || ""}</td>
-                          <td>{p.rolloId ? <KilosRollo producto={p} /> : "—"}</td>
-                          <td>{p.rolloId && p.estadoRollo ? <EstadoRollo estado={p.estadoRollo} /> : "—"}</td>
-                          <td>
+                          <td className="bod-col-codigo" data-etiqueta="Código">{p.codigo}</td>
+                          <td data-etiqueta="Empresa">{(p as { empresa?: string }).empresa ? nombreEmpresa((p as { empresa?: string }).empresa) : "—"}</td>
+                          <td className="bod-col-rollo" data-etiqueta="Rollo">{p.identificadorRollo || "—"}</td>
+                          <td className="bod-col-descripcion" data-etiqueta="Descripción">{p.descripcion}</td>
+                          <td className="bod-col-numero" data-etiqueta="Stock disponible">{p.stock} {almacen?.unidadPorFamilia?.[p.familia] || ""}</td>
+                          <td className="bod-col-kilos" data-etiqueta="Kilos">{p.rolloId ? <KilosRollo producto={p} /> : "—"}</td>
+                          {/* El estado y, debajo, el botón para pedirlo. */}
+                          <td className="bod-col-estado" data-etiqueta="Estado">
+                            <div className="bod-estado-acciones">
+                            {p.rolloId && p.estadoRollo ? <EstadoRollo estado={p.estadoRollo} /> : null}
                             <button
                               className="bodegas-boton-solicitar"
                               disabled={p.stock <= 0}
@@ -246,11 +248,13 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                             >
                               {p.rolloId ? "Solicitar este rollo" : "Solicitar / Intercambio"}
                             </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </div>
             )}

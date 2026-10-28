@@ -505,3 +505,85 @@
   font-size: 0.87rem;
   margin-top: 0.85rem;
 }
+
+/* ── Inventario de otra bodega: tabla dentro de su recuadro ──────────────
+   Nunca se sale de la tarjeta (scroll propio si hace falta); el botón para
+   pedir va debajo del estado; en el celular cada producto es una tarjeta. */
+.bodegas-tabla-contenedor {
+  overflow-x: auto;
+  border-radius: var(--at-r-md, 12px);
+  border: 1px solid var(--at-border-soft, #EBE2D2);
+}
+.bodegas-tabla-inventario th,
+.bodegas-tabla-inventario td { padding-left: 0.55rem; padding-right: 0.55rem; }
+.bodegas-tabla-inventario td { vertical-align: top; }
+/* Un código como LA50170,38 no se parte; los largos (PROD-…, referencias
+   de rollo) se parten en sus guiones. */
+.bodegas-tabla-inventario .bod-col-codigo { min-width: 6.6rem; }
+.bodegas-tabla-inventario .bod-col-rollo { min-width: 8.2rem; }
+.bodegas-tabla-inventario .bod-col-descripcion { min-width: 9rem; }
+.bodegas-tabla-inventario .bod-col-numero,
+.bodegas-tabla-inventario .bod-col-kilos { white-space: nowrap; }
+.bodegas-kilos-quedan {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--at-muted, #7C6A56);
+}
+.bodegas-tabla-inventario .bod-estado-acciones {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+.bodegas-tabla-inventario .bodegas-boton-solicitar { white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .bodegas-page { padding: 1.1rem 0.85rem; }
+  .bodegas-tarjeta { padding: 1.1rem 1rem; }
+  .bodegas-buscador-bodega { flex-wrap: wrap; }
+  .bodegas-buscador-bodega input { min-width: 0; }
+  .bodegas-inventario-header { gap: 0.6rem; }
+  .bodegas-notificacion { flex-direction: column; }
+  .bodegas-acciones-notificacion { flex-wrap: wrap; }
+  .bodegas-modal { width: 92vw; max-width: 92vw; box-sizing: border-box; }
+
+  /* Cada producto, una tarjeta: dato por dato con su nombre. */
+  .bodegas-tabla-contenedor { overflow: visible; border: none; }
+  .bodegas-tabla-inventario thead { display: none; }
+  .bodegas-tabla-inventario,
+  .bodegas-tabla-inventario tbody { display: block; width: 100%; }
+  .bodegas-tabla-inventario tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.5rem 0.9rem;
+    padding: 0.85rem 0.9rem;
+    margin-bottom: 0.7rem;
+    border: 1px solid var(--at-border-soft, #EBE2D2);
+    border-radius: var(--at-r-md, 12px);
+    background: var(--at-surface, #FFFFFF);
+  }
+  .bodegas-tabla-inventario tbody td {
+    display: block;
+    padding: 0;
+    border: none;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    background: transparent !important;
+  }
+  .bodegas-tabla-inventario td[data-etiqueta]::before {
+    content: attr(data-etiqueta);
+    display: block;
+    font-family: var(--at-font-sans, sans-serif);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--at-muted, #7C6A56);
+    margin-bottom: 0.1rem;
+  }
+  .bodegas-tabla-inventario .bod-col-descripcion { grid-column: 1 / -1; min-width: 0; }
+  .bodegas-tabla-inventario .bod-col-estado { grid-column: 1 / -1; min-width: 0; }
+  .bodegas-tabla-inventario .bodegas-boton-solicitar { width: 100%; padding: 0.7rem; }
+}
