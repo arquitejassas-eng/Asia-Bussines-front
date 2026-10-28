@@ -404,8 +404,13 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   // Los rollos ya escogidos se quedan en la tabla (arriba) aunque se cambie
   // o se borre la búsqueda: antes, al buscar otro, el escogido desaparecía y
   // se perdía de la producción.
+  // Solo QUÉ rollos están escogidos (no sus metros): si la lista dependiera
+  // de `seleccion` completa, al escribir los metros se recalculaba y el
+  // reparto automático volvía a poner encima los metros calculados.
+  const idsEscogidos = Object.keys(seleccion).filter((id) => seleccion[id]?.seleccionado).sort().join(",");
   const rollosDisponibles = useMemo(() => {
-    const escogidos = rollosDeMiBodega.filter((r) => seleccion[r.id]?.seleccionado);
+    const escogidosIds = new Set(idsEscogidos.split(",").filter(Boolean).map(Number));
+    const escogidos = rollosDeMiBodega.filter((r) => escogidosIds.has(r.id));
     const termino = normalizarTexto(codigoBusqueda);
     if (!termino) return escogidos;
     // También por los kilos de la etiqueta del rollo (peso neto): "4466",
@@ -413,7 +418,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     const kilos = kilosBuscados(termino);
     const encontrados = rollosDeMiBodega.filter(
       (r) =>
-        !seleccion[r.id]?.seleccionado &&
+        !escogidosIds.has(r.id) &&
         r.metrosDisponibles > 0 &&
         (!empresaFiltro || r.empresa === empresaFiltro) &&
         (normalizarTexto(r.codigoInterno).includes(termino) ||
@@ -421,7 +426,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
           coincideKilos(r.pesoNeto, kilos))
     );
     return [...escogidos, ...encontrados];
-  }, [rollosDeMiBodega, codigoBusqueda, empresaFiltro, seleccion]);
+  }, [rollosDeMiBodega, codigoBusqueda, empresaFiltro, idsEscogidos]);
 
   // Orden en que Planta escogió los rollos: la cotización sale del primero
   // (y si no le alcanza, del siguiente).
