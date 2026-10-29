@@ -972,6 +972,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     iniciarNuevoRegistro,
 
     misProducciones,
+    cargarProducciones,
 
     solicitudesPendientes,
     stockParaAlistar,

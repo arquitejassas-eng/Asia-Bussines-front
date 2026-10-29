@@ -318,3 +318,11 @@
     position: static;
   }
 }
+/* Admin Inventario: corregir metros mal digitados de una producción. */
+.hv-corregir {
+  display: block;
+  margin: 0.25rem 0 0 auto;
+  min-height: 28px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.75rem;
+}

@@ -145,6 +145,18 @@ class ConversionLaminaResponse(BaseModel):
     piezas: int
 
 
+class RolloCorregido(BaseModel):
+    """Los metros que de verdad salieron de un rollo de la producción."""
+    rollo_id: int
+    metros: float = Field(ge=0)
+
+
+class CorregirMetrosProduccion(BaseModel):
+    """Admin Inventario corrige los metros mal digitados de una producción."""
+    rollos: list[RolloCorregido] = Field(min_length=1)
+    observaciones: str = Field(default="", max_length=300)
+
+
 class RolloUtilizadoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     rollo_id: int

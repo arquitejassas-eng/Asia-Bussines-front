@@ -5,9 +5,10 @@ from app.models.apartado import ApartadoItem
 from app.models.produccion import Produccion
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.produccion import (
-    ConversionLaminaResponse, ConversionPendienteResponse, ConvertirLaminaLisa, ProduccionCrear, ProduccionResponse,
+    ConversionLaminaResponse, ConversionPendienteResponse, ConvertirLaminaLisa, CorregirMetrosProduccion, ProduccionCrear,
+    ProduccionResponse,
 )
-from app.services.produccion import conversiones_pendientes
+from app.services.produccion import conversiones_pendientes, corregir_metros_produccion
 from app.services.produccion import convertir_lamina_lisa as aplicar_conversion
 from app.services.produccion import registrar_produccion as aplicar_produccion
 
@@ -31,6 +32,17 @@ def convertir_lamina_lisa(datos: ConvertirLaminaLisa, db: Session = Depends(get_
     resultado = aplicar_conversion(db, datos, usuario)
     db.commit()
     return resultado
+
+@router.post("/{produccion_id}/corregir-metros", response_model=ProduccionResponse,
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def corregir_metros(
+    produccion_id: int, datos: CorregirMetrosProduccion, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Produccion:
+    """Se digitaron metros de más: vuelven a cada rollo (ver corregir_metros_produccion)."""
+    produccion = corregir_metros_produccion(db, produccion_id, {r.rollo_id: r.metros for r in datos.rollos},
+                                            datos.observaciones, usuario)
+    db.commit(); db.refresh(produccion)
+    return produccion
 
 @router.get("", response_model=list[ProduccionResponse])
 def listar_producciones(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> list[Produccion]:

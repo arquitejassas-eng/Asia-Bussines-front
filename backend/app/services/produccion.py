@@ -134,6 +134,84 @@ def _numero(valor: float) -> str:
     return f"{valor:g}".replace(".", ",")
 
 
+MOTIVO_CORRECCION_PRODUCCION = "correccion_produccion"
+
+
+def corregir_metros_produccion(db: Session, produccion_id: int, rollos: dict[int, float], observaciones: str,
+                               usuario: Usuario) -> Produccion:
+    """Se digitaron más metros de los que salieron (ej. 140 m en vez de 40):
+    la diferencia vuelve a cada rollo como "Corrección de producción" (no es
+    sobrante ni merma: no cuenta en Merma) y la producción queda con los
+    metros reales. Solo se pueden quitar metros que no quedaron cargados a
+    la cotización ni al stock adicional (los de más, el "excedente"): la
+    cotización nunca se carga más de lo que pide, así que un número de más
+    siempre cae ahí. Caballetes/flanches y lámina lisa no aplican (su corte
+    exige metros exactos), ni las órdenes internas (todo va al stock)."""
+    from app.services.merma_rollo import _bloquear
+
+    produccion = db.query(Produccion).filter(Produccion.id == produccion_id).with_for_update().populate_existing().first()
+    if produccion is None:
+        raise HTTPException(status_code=404, detail="Producción no encontrada.")
+    if produccion.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO or produccion.tipo_producto == LAMINA_LISA:
+        raise HTTPException(status_code=400, detail="Los caballetes, flanches y lámina lisa se registran con metros exactos: esta producción no se corrige así.")
+    if produccion.apartado_item is not None and produccion.apartado_item.apartado.orden_interna:
+        raise HTTPException(status_code=400, detail="Las producciones de una orden interna no se corrigen así: todo lo producido entró al stock.")
+    usados = {ru.rollo_id: ru for ru in produccion.rollos_utilizados}
+    cambios: list[tuple[RolloUtilizadoProduccion, float]] = []
+    for rollo_id, metros in rollos.items():
+        usado = usados.get(rollo_id)
+        if usado is None:
+            raise HTTPException(status_code=400, detail="Ese rollo no se usó en esta producción.")
+        metros = round(metros, 2)
+        if metros > usado.metros_consumidos + 0.005:
+            raise HTTPException(status_code=400, detail=f"Del rollo {usado.identificador_rollo} se registraron {usado.metros_consumidos:g} m: solo se puede bajar.")
+        diferencia = round(usado.metros_consumidos - metros, 2)
+        if diferencia > 0.005:
+            cambios.append((usado, diferencia))
+    if not cambios:
+        raise HTTPException(status_code=400, detail="Escribe los metros reales: deben ser menos de los registrados.")
+
+    # Lo que quedó como stock adicional de esta producción también salió del rollo.
+    stock_metros = 0.0
+    for mov in db.query(Movimiento).filter(Movimiento.motivo == "produccion_excedente",
+                                          Movimiento.observaciones == nota_stock_de_produccion(produccion.codigo_unico)):
+        producto = (db.query(Producto).filter(Producto.codigo == mov.producto_codigo, Producto.bodega_id == mov.bodega_destino_id)
+                    .first())
+        stock_metros += float(mov.cantidad) * float(producto.metros_por_unidad or 0) if producto else 0.0
+    libres = round(max(0.0, (produccion.metros_excedente or 0) - stock_metros), 2)
+    quitar = round(sum(diferencia for _, diferencia in cambios), 2)
+    if quitar > libres + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Solo se pueden quitar {libres:g} m de esta producción: el resto quedó cargado a la cotización "
+            f"{produccion.cotizacion} o al stock adicional que se declaró.",
+        )
+
+    ahora = datetime.now(timezone.utc)
+    extra = f" {observaciones.strip()}" if observaciones.strip() else ""
+    for usado, diferencia in cambios:
+        rollo = _bloquear(db, usado.rollo_id, usuario)
+        antes = usado.metros_consumidos
+        rollo.metros_disponibles = round(rollo.metros_disponibles + diferencia, 2)
+        rollo.metros_consumidos = round(max(0.0, (rollo.metros_consumidos or 0) - diferencia), 2)
+        rollo.recalcular_estado()
+        usado.metros_consumidos = round(antes - diferencia, 2)
+        db.add(Movimiento(
+            fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo=MOTIVO_CORRECCION_PRODUCCION, producto_codigo=rollo.codigo_interno,
+            producto_descripcion=f"{rollo.descripcion} (rollo {rollo.identificador_rollo})",
+            rollo_id=rollo.id, identificador_rollo=rollo.identificador_rollo, bodega_origen_id=None,
+            bodega_destino_id=rollo.bodega_id, cantidad=diferencia, usuario=usuario.correo, cotizacion=produccion.cotizacion,
+            observaciones=(f"Corrección de la producción {produccion.codigo_unico}: se registraron {antes:g} m de este rollo, "
+                           f"eran {usado.metros_consumidos:g} m.{extra}")[:500],
+        ))
+    produccion.total_metros_consumidos = round(produccion.total_metros_consumidos - quitar, 2)
+    produccion.metros_excedente = round((produccion.metros_excedente or 0) - quitar, 2)
+    nota = f"Corregida el {ahora:%d/%m/%Y} por {usuario.correo}: {quitar:g} m de menos.{extra}"
+    produccion.observaciones = f"{produccion.observaciones}\n{nota}".strip() if produccion.observaciones else nota
+    db.flush()
+    return produccion
+
+
 def nota_stock_de_produccion(codigo_unico: str) -> str:
     """Observación del movimiento de entrada del stock que sobra de una
     producción: con ella el historial de cada rollo usado encuentra ese stock

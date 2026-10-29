@@ -4,13 +4,16 @@ import { formatearFechaColombia } from "../Utils/fechas";
 import { useControladorProduccion } from "../Componentes/Produccion";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import { filasStockAdicional } from "../Utils/produccion";
+import PanelCorregirProduccion from "../Componentes/PanelCorregirProduccion";
+import ModalConfirmacion from "../Componentes/ModalConfirmacion";
 import "../Style/Hojadevida.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
 type ProduccionRegistro = {
   id: number | string; bodegaId: number; codigoUnico: string; cotizacion?: string; clienteApartado?: string; fecha: string;
   responsable: string; productoFabricado: string; modelo: string; medidaProducto: string;
-  cantidadProductos: number; rollosUtilizados: { identificadorRollo: string }[];
+  cantidadProductos: number; rollosUtilizados: { rolloId: number; identificadorRollo: string; metrosConsumidos: number }[];
+  tipoProducto?: string;
   codigoClasificacion: string; totalMetrosConsumidos: number; saldoCodigo: number; observaciones?: string;
 };
 
@@ -46,6 +49,12 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   // una sea el real: por eso ve la columna Bodega y puede filtrar por sede.
   const esAdminInventario = sesion?.rol === "admin_inventario";
   const [bodegaFiltro, setBodegaFiltro] = useState("");
+  // "Corregir metros": la producción que se está corrigiendo y el aviso al terminar.
+  const [corrigiendo, setCorrigiendo] = useState<ProduccionRegistro | null>(null);
+  const [aviso, setAviso] = useState("");
+  // Caballetes, flanches y lámina lisa se registran con metros exactos.
+  const sePuedeCorregir = (prod: ProduccionRegistro) =>
+    esAdminInventario && !["caballete", "flanche", "lamina_lisa"].includes(prod.tipoProducto || "teja");
   const nombreBodega = (id: number) => (almacen?.bodegas || []).find((b) => b.id === id)?.nombre || `Bodega ${id}`;
   const misProducciones = (p.misProducciones as ProduccionRegistro[])
     .filter((prod) => !bodegaFiltro || String(prod.bodegaId) === bodegaFiltro);
@@ -90,7 +99,14 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
         </span>
       </td>
 
-      <td className="num hv-metros">{prod.totalMetrosConsumidos} m</td>
+      <td className="num hv-metros">
+        {prod.totalMetrosConsumidos} m
+        {sePuedeCorregir(prod) && (
+          <button type="button" className="hv-corregir" onClick={(e) => { e.stopPropagation(); setCorrigiendo(prod); }}>
+            Corregir
+          </button>
+        )}
+      </td>
       <td className="num hv-saldo">{prod.saldoCodigo} m</td>
 
       <td className="hv-observaciones">{prod.observaciones || "—"}</td>
@@ -247,6 +263,14 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
           )}
         </div>
       </div>
+      {corrigiendo && (
+        <PanelCorregirProduccion
+          produccion={{ ...corrigiendo, totalMetrosConsumidos: Number(corrigiendo.totalMetrosConsumidos) }}
+          alTerminar={(mensaje) => { setCorrigiendo(null); setAviso(mensaje); p.cargarProducciones(true); }}
+          alCerrar={() => setCorrigiendo(null)}
+        />
+      )}
+      {aviso && <ModalConfirmacion mensaje={aviso} textoConfirmar="Entendido" onConfirmar={() => setAviso("")} />}
     </div>
   );
 }
