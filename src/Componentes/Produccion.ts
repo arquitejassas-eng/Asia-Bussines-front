@@ -27,6 +27,13 @@ function normalizarTexto(texto: unknown) {
     .trim();
 }
 
+// El nombre del producto de una línea sin su cantidad ni sus medidas
+// ("40 TEJA ARQ DE 5 MTR ROJO--- 200 MTR" → "TEJA ARQ ROJO").
+function nombreDeLinea(descripcion: string) {
+  return String(descripcion || "").replace(/^\s*\d+([.,]\d+)?\s+/, "").split("---")[0]
+    .replace(/\s+DE\s+\d+([.,]\d+)?\s*(MTR|MTS|MT|M|METROS?)\b\.?/i, "").replace(/\s+/g, " ").trim();
+}
+
 function redondear(numero: number, decimales = 2) {
   const factor = 10 ** decimales;
   return Math.round(numero * factor) / factor;
@@ -320,6 +327,14 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     setMedidaProducto(medidas.map((m) => `${m} m`).join(" / "));
     const unidades = lineasProduccion.reduce((suma, l) => suma + (Number(l.cantidad) || 0), 0);
     setCantidadProductos(unidades ? String(unidades) : "");
+    // El producto también va corto: lo hecho y el total primero, el nombre una
+    // vez al final (antes cada descripción completa no cabía en 150 letras y
+    // se perdía la última línea).
+    const hecho = lineasProduccion.map((l) => (l.cantidad && l.medida
+      ? `${l.cantidad} de ${String(l.medida).replace(".", ",")} m` : nombreDeLinea(l.descripcion))).join(" + ");
+    const metros = redondear(lineasProduccion.reduce((suma, l) => suma + l.metros, 0));
+    const total = unidades ? ` = ${unidades} tejas, ${String(metros).replace(".", ",")} m` : "";
+    setProductoFabricado(`${hecho}${total} · ${nombreDeLinea(lineasProduccion[0].descripcion)}`.slice(0, 150));
   }, [lineasProduccion]);
 
   function alternarProducirJunto(solicitud) {
