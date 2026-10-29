@@ -3,6 +3,7 @@ import BarraLateral from "../Componentes/BarraLateral";
 import { api, ErrorApi } from "../Componentes/Api";
 import { EMPRESAS } from "../Utils/empresas";
 import { formatearFechaColombia } from "../Utils/fechas";
+import { exportarHojasAExcel } from "../Utils/exportarExcel";
 import "../Style/Inventario.css";
 import "../Style/Merma.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
@@ -76,6 +77,28 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const sinSaldar = reporte.prestamos.filter((p) => !p.saldado);
   const todosElegidos = sinSaldar.length > 0 && sinSaldar.every((p) => seleccion.has(p.id));
 
+  // Lo que se ve en pantalla (con los mismos filtros), una hoja por sección.
+  function exportar() {
+    exportarHojasAExcel([
+      { nombre: "Lo que se deben", filas: reporte.resumen.map((d) => ({
+        "Quién debe": nombre(d.debe), "A quién": nombre(d.presta), "Material": d.codigo,
+        "Tipo": d.tipo === "lamina" ? "lámina" : "producto", "Descripción": d.descripcion, "Cantidad": d.cantidad,
+        "Unidad": d.unidad === "m" ? "m" : "und",
+      })) },
+      { nombre: "Detalle", filas: reporte.prestamos.map((p) => ({
+        "Fecha": formatearFechaColombia(p.fecha), "Presta": p.prestador || nombre(p.empresa_presta),
+        "Recibe": nombre(p.empresa_recibe), "Cotización": p.numero_cotizacion, "Bodega": nombreBodega(p.bodega_id),
+        "Material": p.codigo, "Descripción": p.descripcion, "Rollo": p.referencia_rollo, "Cantidad": p.cantidad,
+        "Unidad": p.unidad === "m" ? "m" : "und", "Dónde se anotó": ORIGEN[p.origen] || p.origen, "Usuario": p.usuario,
+        "Estado": p.saldado ? "Saldado" : "Sin saldar", "Saldado el": p.fecha_saldado ? formatearFechaColombia(p.fecha_saldado) : "",
+      })) },
+      { nombre: "Sacado sin existencia", filas: reporte.sacado_sin_existencia.map((s) => ({
+        "Fecha": formatearFechaColombia(s.fecha), "Bodega": nombreBodega(s.bodega_id), "Producto": s.producto_codigo,
+        "Descripción": s.producto_descripcion, "Cantidad": s.cantidad, "Cotización": s.cotizacion, "Quién": s.usuario,
+      })) },
+    ], `Prestamos${desde || hasta ? `_${desde || "inicio"}_a_${hasta || "hoy"}` : ""}.xlsx`);
+  }
+
   async function saldar() {
     if (seleccion.size === 0) return;
     if (!window.confirm(`¿Marcar ${seleccion.size} préstamo(s) como saldado(s)? Dejan de contar en lo que se deben las empresas.`)) return;
@@ -121,6 +144,9 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             <label className="apartados-check">
               <input type="checkbox" checked={incluirSaldados} onChange={(e) => setIncluirSaldados(e.target.checked)} /> Ver también los saldados
             </label>
+            {!cargando && (reporte.resumen.length > 0 || reporte.prestamos.length > 0 || reporte.sacado_sin_existencia.length > 0) && (
+              <button type="button" className="apartados-limpiar" onClick={exportar}>Exportar a Excel</button>
+            )}
           </div>
 
           {error && <p className="inventario-error">{error}</p>}
