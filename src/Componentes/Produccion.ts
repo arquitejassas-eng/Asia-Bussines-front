@@ -133,7 +133,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     setStockAdicional((actual) => [...actual, {
       calidad: "primera", cantidad: "1", motivoSegunda: "",
       metros: actual.length ? actual[actual.length - 1].metros || "" : (metrosPorUnidad || String(parseFloat(String(medidaProducto).replace(",", ".")) || "")),
-      rolloId: actual.length ? actual[actual.length - 1].rolloId || "" : "",
+      // El rollo de donde salió lo escoge Planta (no se copia de la anterior).
+      rolloId: "",
     }]);
   }
   function quitarLineaStock(indice) {
@@ -331,7 +332,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   }
 
   function seleccionarSolicitud(solicitud) {
-    gestionandoStockRef.current = false; // arranca en blanco para esta nueva solicitud.
+    stockAplicadoRef.current = {}; // arranca en blanco para esta nueva solicitud.
     setApartadoItemId(solicitud.itemId);
     setItemsJuntos([]);
     setMedidasPorLinea({});
@@ -375,7 +376,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   }
 
   function limpiarSolicitud() {
-    gestionandoStockRef.current = false;
+    stockAplicadoRef.current = {};
     setApartadoItemId(null);
     setItemsJuntos([]);
     setMedidasPorLinea({});
@@ -435,6 +436,12 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   function alternarSeleccionRollo(rollo: Rollo) {
     ordenRollosRef.current = ordenRollosRef.current.filter((id) => id !== rollo.id);
     if (!seleccion[rollo.id]?.seleccionado) ordenRollosRef.current.push(rollo.id);
+    // Pasar de un rollo a dos: el stock que ya estaba declarado salió del
+    // primero (con un solo rollo no se pregunta), así no pierde esos metros.
+    const yaEscogidos = Object.keys(seleccion).filter((id) => seleccion[id]?.seleccionado).map(Number);
+    if (!seleccion[rollo.id]?.seleccionado && yaEscogidos.length === 1) {
+      setStockAdicional((actual) => actual.map((linea) => (linea.rolloId ? linea : { ...linea, rolloId: String(yaEscogidos[0]) })));
+    }
     setSeleccion((actual) => {
       const actualDeEste = actual[rollo.id];
       if (actualDeEste?.seleccionado) {
@@ -456,11 +463,13 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         }
       } else {
         if (solicitudesElegidas.length) {
-          // Solo lo que todavía falta (cotización + stock) después de los
-          // rollos ya escogidos: el segundo rollo no repite la cotización.
-          const enOtros = Object.values(actual).reduce(
-            (suma, s) => suma + (s?.seleccionado ? Number(s.metrosTexto) || 0 : 0), 0);
-          const falta = redondear(Math.max(0, metrosParaCotizacion + metrosDelStock - enOtros));
+          // Solo lo que todavía falta de la cotización después de los rollos
+          // ya escogidos (sin contar el stock que ya se les sumó): el segundo
+          // rollo no repite la cotización. El stock de este rollo lo suma el
+          // efecto de abajo.
+          const enOtros = Object.entries(actual).reduce(
+            (suma, [id, s]) => suma + (s?.seleccionado ? (Number(s.metrosTexto) || 0) - (stockAplicadoRef.current[Number(id)] || 0) : 0), 0);
+          const falta = redondear(Math.max(0, metrosParaCotizacion - enOtros));
           if (falta <= 0) return { ...actual, [rollo.id]: { seleccionado: true, metrosTexto: "" } };
           return calcularAsignacionRollos(falta, [rollo], { ...actual, [rollo.id]: undefined }).seleccion;
         }
@@ -488,20 +497,11 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
     );
   }, [rollosSeleccionados]);
 
-  // Cada vez que cambia el stock adicional (o los metros por unidad), se
-  // vuelven a calcular solos los metros que hacen falta del rollo — nunca
-  // hay que recalcularlos a mano. Sube O baja según haga falta (si el
-  // usuario se equivoca y corrige una cantidad hacia abajo, o borra la
-  // última línea, los metros seleccionados del rollo también bajan) — así
-  // el aviso de "no alcanza el material" en validar() solo aparece cuando
-  // de verdad no hay más metros físicos de ese código disponibles.
-  //
-  // gestionandoStockRef evita tocar una selección puramente manual (sin
-  // stock declarado nunca): solo empieza a intervenir cuando aparece la
-  // primera línea de stock con metros por unidad válidos, y suelta el
-  // control cuando el stock vuelve a quedar en 0 (línea corregida o
-  // borrada), pero antes hace un último ajuste al pendiente del apartado.
-  const gestionandoStockRef = useRef(false);
+  // Metros de stock adicional que ya se le sumaron a cada rollo escogido
+  // ({rolloId: metros}). Al cambiar el stock solo se suma o se resta la
+  // DIFERENCIA en su rollo: si Planta escribió 200 m en un rollo y agrega 3 m
+  // de stock de ese rollo, queda en 203 m (lo escrito a mano no se pisa).
+  const stockAplicadoRef = useRef<Record<number, number>>({});
 
   // Lo que piden todas las líneas elegidas (la principal y las que van junto).
   const pendienteSolicitudElegida = useMemo(
@@ -550,57 +550,35 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   const firmaStock = stockAdicional.map((linea) => `${linea.cantidad}x${linea.metros}@${linea.rolloId || ""}`).join("|");
 
   useEffect(() => {
-    // Caballetes/Flanches: el rollo lo elige Planta a mano (ver
-    // alternarSeleccionRollo) -- el total EXACTO que exige el corte físico lo
-    // sigue garantizando validar()/el backend, no este efecto. Igual que Teja,
-    // aquí ya no se auto-asigna nada por FIFO.
+    // Caballetes/Flanches: el corte exige metros exactos (ver validar()); aquí
+    // no se toca nada.
     if (SECCIONES_POR_TIPO_PRODUCTO[tipoProducto]) return;
-
-    const metrosNecesariosStock = metrosDelStock;
-
-    if (metrosNecesariosStock > 0) {
-      gestionandoStockRef.current = true;
-    } else if (!gestionandoStockRef.current) {
-      return; // nunca hubo stock declarado: no tocar una selección manual.
-    } else {
-      gestionandoStockRef.current = false; // último ajuste: soltar el control.
+    const escogidos = idsEscogidos.split(",").filter(Boolean).map(Number);
+    // El stock de cada rollo: el de "Salió del rollo" o, con un solo rollo
+    // escogido, ese. Con varios y sin escoger de cuál, no se le suma a ninguno
+    // (Planta lo escoge; validar() lo pide).
+    const nuevo: Record<number, number> = {};
+    for (const linea of stockAdicional) {
+      const id = escogidos.length === 1 ? escogidos[0] : Number(linea.rolloId) || null;
+      if (!id || !escogidos.includes(id)) continue;
+      nuevo[id] = redondear((nuevo[id] || 0) + (Number(linea.cantidad) || 0) * (Number(linea.metros) || 0));
     }
-
-    // Reparte los metros SOLO entre los rollos que Planta escogió (nunca
-    // escoge uno por su cuenta ni desmarca uno escogido):
-    // - el stock, en el rollo de "Salió del rollo" (o en el único escogido);
-    // - la cotización, en el orden en que se escogieron los rollos, sin
-    //   pasarse de lo que tiene cada uno.
-    // Un rollo al que no le toca nada conserva lo que se escribió a mano.
+    const anterior = stockAplicadoRef.current;
+    const cambios = escogidos
+      .map((id) => [id, redondear((nuevo[id] || 0) - (anterior[id] || 0))] as const)
+      .filter(([, diferencia]) => Math.abs(diferencia) > 0.0001);
+    stockAplicadoRef.current = nuevo;
+    if (!cambios.length) return;
     setSeleccion((actual) => {
-      const ordenados = [
-        ...ordenRollosRef.current.filter((id) => actual[id]?.seleccionado),
-        ...Object.keys(actual).map(Number).filter((id) => actual[id]?.seleccionado && !ordenRollosRef.current.includes(id)),
-      ].map((id) => rollosDisponibles.find((r) => r.id === id)).filter(Boolean);
-      if (ordenados.length === 0) return actual;
-      const stockPorRollo: Record<number, number> = {};
-      for (const linea of stockAdicional) {
-        const id = ordenados.length === 1 ? ordenados[0].id : Number(linea.rolloId) || ordenados[0].id;
-        stockPorRollo[id] = (stockPorRollo[id] || 0) + (Number(linea.cantidad) || 0) * (Number(linea.metros) || 0);
+      const siguiente = { ...actual };
+      for (const [id, diferencia] of cambios) {
+        if (!actual[id]?.seleccionado) continue;
+        const metros = redondear(Math.max(0, (Number(actual[id].metrosTexto) || 0) + diferencia));
+        siguiente[id] = { ...actual[id], metrosTexto: metros ? String(metros) : "" };
       }
-      const nueva = { ...actual };
-      let falta = metrosParaCotizacion;
-      for (const rollo of ordenados) {
-        const delStock = redondear(stockPorRollo[rollo.id] || 0);
-        const parte = redondear(Math.max(0, Math.min(falta, rollo.metrosDisponibles - delStock)));
-        falta = redondear(falta - parte);
-        const total = redondear(parte + delStock);
-        if (total > 0) nueva[rollo.id] = { seleccionado: true, metrosTexto: String(total) };
-      }
-      return nueva;
+      return siguiente;
     });
-    // Depende del NÚMERO pendiente de la solicitud elegida, no de la lista de
-    // solicitudes: la actualización automática crea una lista nueva en cada
-    // recarga aunque nada cambie, y eso recalculaba la asignación y deshacía
-    // los metros que Planta había ajustado a mano. Solo si el pendiente cambia
-    // de verdad (ej. otro registro para el mismo apartado) se recalcula.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipoProducto, firmaStock, metrosPorUnidad, apartadoItemId, rollosDisponibles, metrosParaCotizacion]);
+  }, [tipoProducto, firmaStock, idsEscogidos]);
 
   // Siembra la línea de stock adicional con el sobrante calculado (5
   // unidades pedidas -> corte de 6 -> 1 de sobrante), pero solo si el
@@ -864,7 +842,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       }
       const registro = produccionDesdeApi(respuesta);
 
-      gestionandoStockRef.current = false;
+      stockAplicadoRef.current = {};
       setProduccionesRegistradas((actual) => [registro, ...actual]);
       setProduccionConfirmada(registro);
       setSeleccion({});
@@ -894,7 +872,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   }
 
   function cancelar() {
-    gestionandoStockRef.current = false;
+    stockAplicadoRef.current = {};
     setProductoFabricado("");
     setModelo("");
     setMedidaProducto("");
