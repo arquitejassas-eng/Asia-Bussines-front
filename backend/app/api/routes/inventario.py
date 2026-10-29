@@ -32,8 +32,9 @@ router = APIRouter(prefix="/inventario", tags=["Inventario"])
 
 
 def _producto_de_mi_bodega(db: Session, producto_id: int, usuario: Usuario) -> Producto:
+    """La bodega solo toca sus productos; Admin Inventario, los de todas."""
     producto = db.get(Producto, producto_id)
-    if producto is None or producto.bodega_id != usuario.bodega_id:
+    if producto is None or (usuario.rol != RolUsuario.ADMIN_INVENTARIO and producto.bodega_id != usuario.bodega_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Producto no encontrado.")
     return producto
 

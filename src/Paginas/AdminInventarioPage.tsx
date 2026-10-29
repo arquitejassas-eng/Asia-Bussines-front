@@ -505,7 +505,10 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                       alCrear={() => c.cargarComparativo()}
                     />
                   )}
-                  {!c.soloLectura && <PanelEliminarProducto bodegas={bodegas} alEliminar={() => c.cargarComparativo()} />}
+                  {!c.soloLectura && (
+                    <PanelEliminarProducto bodegas={bodegas} alEliminar={() => c.cargarComparativo(true)}
+                      familias={(almacen?.unidadesFamilia || []).map((u) => u.familia)} />
+                  )}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Resumen — productos por código en toda la empresa — Unidades</h2>
                     {c.comparativo.productos.length > 0 && (
