@@ -821,6 +821,12 @@
   font-weight: 600;
   color: var(--at-green, #2E7D4F);
 }
+.apartado-linea-devolver {
+  margin-left: 0.5rem;
+  min-height: 32px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+}
 
 /* ── Inventario total: metros por empresa ─────────────────────────────── */
 .empresa-resumen-negativo {

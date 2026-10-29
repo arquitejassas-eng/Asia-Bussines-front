@@ -1764,6 +1764,45 @@ def cancelar_apartado(db: Session, apartado_id: int, usuario: Usuario) -> Aparta
     return apartado
 
 
+def devolver_linea_a_bodega(db: Session, item_id: int, usuario: Usuario) -> Apartado:
+    """Una línea de stock que quedó descontada pero esas unidades no salieron
+    (ej. cargada del Excel, que descontaba al escribir la cotización, sin que
+    hubiera stock): vuelven al producto de la bodega, con su entrada en el
+    historial, y la línea queda sin salida para poder cambiarla (ej. a
+    fabricación). Lo mismo que hace Anular, pero solo con esta línea."""
+    from app.models.prestamo import PrestamoEmpresa
+
+    item = db.query(ApartadoItem).filter(ApartadoItem.id == item_id).with_for_update().populate_existing().first()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Línea no encontrada.")
+    apartado = apartado_de_mi_bodega(db, item.apartado_id, usuario)
+    if apartado.estado not in ESTADOS_RESERVA_ACTIVA:
+        raise HTTPException(status_code=400, detail="Solo en cotizaciones activas (no terminadas, entregadas ni anuladas).")
+    if item.modalidad != ModalidadApartado.POR_STOCK or not item.stock_descontado:
+        raise HTTPException(status_code=400, detail="Esta línea no tiene stock descontado.")
+    producto = (db.query(Producto).filter(Producto.id == item.producto_id).with_for_update().populate_existing().first()
+                if item.producto_id else None)
+    item.stock_descontado = False
+    # Una línea "sacada sin existencia" nunca bajó el stock del sistema: no se le suma nada.
+    if producto is not None and not item.hay_fisico:
+        producto.stock += Decimal(str(item.cantidad))
+        db.add(Movimiento(
+            fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.ENTRADA, motivo="devolucion_a_bodega",
+            producto_codigo=producto.codigo, producto_descripcion=producto.descripcion,
+            bodega_origen_id=None, bodega_destino_id=producto.bodega_id,
+            cantidad=item.cantidad, usuario=usuario.correo, cotizacion=apartado.numero_cotizacion,
+            observaciones=f"Línea de la cotización {apartado.numero_cotizacion} devuelta a la bodega: no salió.",
+        ))
+    item.hay_fisico = False
+    if producto is not None:
+        db.query(PrestamoEmpresa).filter(
+            PrestamoEmpresa.apartado_id == apartado.id, PrestamoEmpresa.tipo == PRODUCTO,
+            PrestamoEmpresa.codigo == producto.codigo, PrestamoEmpresa.saldado.is_(False),
+        ).delete(synchronize_session=False)
+    db.flush()
+    return apartado
+
+
 def _devolver_stock_descontado(db: Session, apartado: Apartado, usuario: Usuario) -> None:
     """Las líneas de stock ya descontadas de una cotización que se cancela:
     sus unidades vuelven al producto y los préstamos de producto de esta

@@ -594,6 +594,15 @@ def completar_linea_con_stock(
     return _con_faltantes(db, [apartado])[0]
 
 
+@router.post("/items/{item_id}/devolver-a-bodega", response_model=ApartadoResponse,
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def devolver_linea_a_bodega(item_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    """Línea de stock descontada que no salió: vuelve a la bodega (ver srv.devolver_linea_a_bodega)."""
+    apartado = srv.devolver_linea_a_bodega(db, item_id, usuario)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
+
+
 @router.post("/{apartado_id}/separar", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
 def separar_apartado(

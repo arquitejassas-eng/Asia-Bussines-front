@@ -637,6 +637,24 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
   const [errorAccionApartado, setErrorAccionApartado] = useState("");
 
+  // Línea de stock descontada que no salió (ej. del Excel sin stock): vuelve
+  // a la bodega y queda libre para cambiarla en el formulario.
+  async function devolverLineaABodega(indice: number) {
+    const id = formulario.items[indice]?.id;
+    if (!id) return;
+    setErrorFormularioApartado("");
+    try {
+      await api.post(`/apartados/items/${id}/devolver-a-bodega`, {});
+      setFormulario((actual) => ({
+        ...actual,
+        items: actual.items.map((it) => (it.id === id ? { ...it, stockDescontado: false, hayFisico: false, hayFisicoOriginal: false } : it)),
+      }));
+      await cargarApartados();
+    } catch (err) {
+      setErrorFormularioApartado(err instanceof ErrorApi ? err.message : "No se pudo devolver la línea a la bodega.");
+    }
+  }
+
   async function cancelarApartado(id: number) {
     setErrorAccionApartado("");
     try {
@@ -718,7 +736,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     disponibilidadItems, consultarDisponibilidadItem,
     resultadosBusquedaProducto, buscarProductoParaItem, seleccionarProductoParaItem,
 
-    errorAccionApartado, cancelarApartado, eliminarApartado, enviarApartadoAProduccion,
+    errorAccionApartado, cancelarApartado, eliminarApartado, enviarApartadoAProduccion, devolverLineaABodega,
     cancelarVarios, enviarVariosAProduccion, eliminarVarios,
     marcarApartadoProduccionTerminada, marcarApartadoEntregado,
   };

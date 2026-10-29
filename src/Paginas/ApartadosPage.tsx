@@ -854,6 +854,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       ✓ Esta línea ya tiene salida{item.stockDescontado ? " (stock descontado)" : `: ${item.metrosConsumidos} m`}.
                       {item.stockDescontado ? " No se puede cambiar." : " Puedes subirla, pero no quitarla ni bajarla de lo que ya salió."}
                       {item.bodegaId && ` Sale de ${almacen.bodegas.find((b) => String(b.id) === String(item.bodegaId))?.nombre || "otra bodega"}.`}
+                      {item.stockDescontado && esAdminInventario && (
+                        <button type="button" className="apartado-linea-devolver" onClick={() => setConfirmacion({
+                          titulo: "¿Devolver esta línea a la bodega?",
+                          mensaje: `Úsalo solo si esas unidades NO salieron de la bodega (por ejemplo, vino del Excel y no había stock). `
+                            + `Vuelven ${item.cantidad} al stock del producto, queda la entrada en el historial y la línea se puede cambiar (por ejemplo, a fabricación).`,
+                          textoConfirmar: "Sí, devolver a la bodega",
+                          ejecutar: () => a.devolverLineaABodega(indice),
+                        })}>Devolver a la bodega</button>
+                      )}
                     </p>
                   ) : null}
                   {!(item.metrosConsumidos || item.stockDescontado) && (
