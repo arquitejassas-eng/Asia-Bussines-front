@@ -1,5 +1,6 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { claseColorMaterial } from "../Utils/colorRollo";
+import { EMPRESAS } from "../Utils/empresas";
 
 // Modal "Ingresar rollo manualmente" de Rollos. Extraído de RollosPage.tsx
 // sin cambiar props ni comportamiento -- no usa estado local propio, todo
@@ -192,6 +193,32 @@ function ModalIngresoRollo({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Prestado: queda en Préstamos entre empresas a nombre de quien lo prestó. */}
+          <div className="rollos-form-seccion">
+            <h4>¿Es prestado? *</h4>
+            <div className="rollo-prestado-opciones" role="radiogroup" aria-label="¿Es prestado?">
+              {[["no", "No, es nuestro"], ["si", "Sí, nos lo prestaron"]].map(([valor, texto]) => (
+                <label key={valor} className={formularioRollo.prestado === valor ? "rollo-prestado-activo" : ""}>
+                  <input type="radio" name="rollo-prestado" value={valor} checked={formularioRollo.prestado === valor}
+                    onChange={() => actualizarCampoRollo("prestado", valor)} />
+                  {texto}
+                </label>
+              ))}
+            </div>
+            {formularioRollo.prestado === "si" && (
+              <div className="rollos-mapeo-campo" style={{ marginTop: "0.6rem" }}>
+                <label htmlFor="rollo-prestador">¿Quién lo prestó? *</label>
+                <input id="rollo-prestador" list="rollo-prestador-opciones" maxLength={150}
+                  placeholder="Empresa o persona (ej. Aceros XYZ)" value={formularioRollo.prestador}
+                  onChange={(e) => actualizarCampoRollo("prestador", e.target.value)} />
+                <datalist id="rollo-prestador-opciones">
+                  {Object.values(EMPRESAS).map((n) => <option key={n} value={n} />)}
+                </datalist>
+                <p className="rollos-texto-ayuda">Sus metros quedan en Préstamos entre empresas hasta que lo marques como saldado.</p>
+              </div>
+            )}
           </div>
 
           <div className="rollos-form-seccion">

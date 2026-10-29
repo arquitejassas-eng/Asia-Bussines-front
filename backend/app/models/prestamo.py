@@ -18,6 +18,8 @@ class PrestamoEmpresa(Base):
     fecha: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
     empresa_presta: Mapped[str] = mapped_column(String(10), nullable=False)
     empresa_recibe: Mapped[str] = mapped_column(String(10), nullable=False)
+    # Rollo prestado por un tercero (empresa_presta = "EXT"): su nombre.
+    prestador: Mapped[str] = mapped_column(String(150), default="", server_default="", nullable=False)
     bodega_id: Mapped[int | None] = mapped_column(ForeignKey("bodegas.id"), nullable=True, index=True)
     # El número queda escrito aparte: la cotización se puede borrar después.
     apartado_id: Mapped[int | None] = mapped_column(ForeignKey("apartados.id", ondelete="SET NULL"), nullable=True, index=True)

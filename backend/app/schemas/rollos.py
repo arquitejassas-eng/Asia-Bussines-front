@@ -101,6 +101,9 @@ class RolloCrear(BaseModel):
     proveedor: str = ""
     lote: str = ""
     observaciones: str = ""
+    # Rollo prestado: queda en Préstamos entre empresas a nombre de quien lo prestó.
+    prestado: bool = False
+    prestador: str = Field(default="", max_length=150)
 
 
 class ConsumoRolloCrear(BaseModel):

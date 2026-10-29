@@ -22,6 +22,7 @@ from app.services import carga_rollos as srv_carga
 from app.services import clasificacion as srv_excel
 from app.services.consumos_rollo import registrar_consumo_rollo, registrar_salida_externa_rollo
 from app.services import merma_rollo
+from app.services.prestamos import registrar_prestamo_de_rollo
 
 router = APIRouter(prefix="/rollos", tags=["Rollos almacenados"])
 
@@ -316,6 +317,9 @@ def crear_rollo(
     )
     rollo.recalcular_estado()
     db.add(rollo)
+    if datos.prestado:
+        db.flush()  # la empresa del rollo se completa al guardarlo (ver Rollo._completar_empresa)
+        registrar_prestamo_de_rollo(db, rollo=rollo, prestador=datos.prestador, usuario=usuario)
     db.commit()
     db.refresh(rollo)
     return rollo

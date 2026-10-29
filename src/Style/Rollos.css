@@ -481,3 +481,11 @@
 
 /* Historial del rollo: el stock que sobró de sus producciones. */
 .rollos-historial-stock td { background: color-mix(in srgb, #2f7d4f 8%, transparent); }
+
+/* Ingreso manual: ¿es prestado? (dos opciones grandes, fáciles de tocar). */
+.rollo-prestado-opciones { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.rollo-prestado-opciones label {
+  display: inline-flex; align-items: center; gap: 0.45rem; min-height: 44px; padding: 0.5rem 0.9rem;
+  border: 1px solid var(--at-border, #E1D5C0); border-radius: 10px; cursor: pointer; font-size: 0.9rem;
+}
+.rollo-prestado-opciones label.rollo-prestado-activo { border-color: var(--at-terra, #B7451F); background: #fbf1ec; font-weight: 600; }

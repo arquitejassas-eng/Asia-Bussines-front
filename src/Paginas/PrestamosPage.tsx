@@ -8,7 +8,7 @@ import "../Style/Merma.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
 type Prestamo = {
-  id: number; fecha: string; empresa_presta: string; empresa_recibe: string; bodega_id: number | null;
+  id: number; fecha: string; empresa_presta: string; empresa_recibe: string; prestador: string; bodega_id: number | null;
   numero_cotizacion: string; tipo: string; codigo: string; descripcion: string; cantidad: number; unidad: string;
   referencia_rollo: string; origen: string; usuario: string; saldado: boolean; saldado_por: string; fecha_saldado: string | null;
 };
@@ -21,7 +21,7 @@ type Reporte = { resumen: Deuda[]; prestamos: Prestamo[]; sacado_sin_existencia:
 
 const ORIGEN: Record<string, string> = {
   produccion: "Producción (Planta)", fin_produccion: "Producción terminada", salida: "Salida (Admin Inventario)",
-  stock_planta: "Planta sacó de stock", union_cotizacion: "Al unir la cotización",
+  stock_planta: "Planta sacó de stock", union_cotizacion: "Al unir la cotización", ingreso_rollo: "Ingreso del rollo (prestado)",
 };
 const nombre = (sigla: string) => EMPRESAS[sigla] || sigla;
 const cantidadTexto = (cantidad: number, unidad: string) =>
@@ -101,7 +101,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           <p className="inventario-carga-ayuda">
             Cuando una línea de una cotización dice <strong>"Material de"</strong> la otra empresa, lo que sale de esa línea
             (al producir, al terminar la producción o al dar salida) queda anotado aquí como préstamo. Cuando las empresas
-            cuadren cuentas, marca los préstamos como saldados.
+            cuadren cuentas, marca los préstamos como saldados. Los rollos que nos prestan (otra empresa o una persona)
+            se anotan al ingresarlos a mano en Rollos almacenados; márcalos como saldados cuando se devuelvan o se paguen.
           </p>
 
           <div className="apartados-filtros">
@@ -128,7 +129,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               {/* ================== LO QUE SE DEBEN ================== */}
               <h2 className="inventario-form-subtitulo">Lo que se deben (sin saldar)</h2>
               {reporte.resumen.length === 0 ? (
-                <p className="inventario-vacio">Las empresas no se deben nada{desde || hasta || bodegaId ? " con estos filtros" : ""}.</p>
+                <p className="inventario-vacio">No se debe nada{desde || hasta || bodegaId ? " con estos filtros" : ""}.</p>
               ) : (
                 <div className="inventario-tabla-contenedor">
                   <table className="inventario-tabla">
@@ -181,8 +182,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             {!p.saldado && <input type="checkbox" aria-label={`Elegir préstamo ${p.id}`} checked={seleccion.has(p.id)} onChange={() => alternar(p.id)} />}
                           </td>
                           <td>{formatearFechaColombia(p.fecha)}</td>
-                          <td>{nombre(p.empresa_presta)}</td>
-                          <td>{nombre(p.empresa_recibe)}</td>
+                          <td>{p.prestador || nombre(p.empresa_presta)}</td>
+                          <td>{nombre(p.empresa_recibe) || "—"}</td>
                           <td>{p.numero_cotizacion || "—"}</td>
                           <td>{nombreBodega(p.bodega_id)}</td>
                           <td>

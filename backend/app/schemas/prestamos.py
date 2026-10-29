@@ -11,6 +11,7 @@ class PrestamoResponse(ModeloConFechasUtc):
     fecha: datetime
     empresa_presta: str
     empresa_recibe: str
+    prestador: str = ""
     bodega_id: int | None = None
     apartado_id: int | None = None
     numero_cotizacion: str

@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.models.apartado import Apartado
 from app.models.prestamo import PrestamoEmpresa
+from app.models.rollo import Rollo
 from app.models.usuario import Usuario
+from app.services.empresas import EMPRESAS_CONOCIDAS, sigla_empresa_desde_nombre
 
 LAMINA = "lamina"
 PRODUCTO = "producto"
@@ -37,6 +39,36 @@ def registrar_prestamo(
         tipo=tipo, codigo=codigo, descripcion=(descripcion or "")[:255], cantidad=round(float(cantidad), 2),
         unidad="m" if tipo == LAMINA else "und", referencia_rollo=(referencia_rollo or "")[:60],
         origen=origen, usuario=usuario.correo,
+    )
+    db.add(prestamo)
+    return prestamo
+
+
+PRESTADOR_EXTERNO = "EXT"
+
+
+def registrar_prestamo_de_rollo(db: Session, *, rollo: Rollo, prestador: str, usuario: Usuario) -> PrestamoEmpresa:
+    """Rollo que nos prestaron (se ingresó a mano): todos sus metros quedan
+    como préstamo de quien lo prestó a la empresa del rollo. Si lo prestó
+    Arquitejas o Asia Business cuenta igual que los préstamos entre ellas;
+    si no, queda a nombre del tercero (empresa_presta = "EXT")."""
+    nombre = " ".join((prestador or "").split())
+    if not nombre:
+        raise HTTPException(status_code=400, detail="Escribe quién prestó el rollo (empresa o persona).")
+    sigla = sigla_empresa_desde_nombre(nombre)
+    recibe = (rollo.empresa or "").strip().upper()
+    if sigla and sigla == recibe:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ese rollo ya es de {EMPRESAS_CONOCIDAS[sigla]} (por su referencia): no puede ser prestado por ella misma.",
+        )
+    metros = round(float(rollo.metros_disponibles or 0), 2)
+    prestamo = PrestamoEmpresa(
+        fecha=rollo.fecha_ingreso or datetime.now(timezone.utc), empresa_presta=sigla or PRESTADOR_EXTERNO,
+        empresa_recibe=recibe, prestador="" if sigla else nombre[:150], bodega_id=rollo.bodega_id,
+        apartado_id=None, numero_cotizacion="", tipo=LAMINA, codigo=rollo.codigo_interno,
+        descripcion=(rollo.descripcion or "")[:255], cantidad=metros, unidad="m",
+        referencia_rollo=(rollo.identificador_rollo or "")[:60], origen="ingreso_rollo", usuario=usuario.correo,
     )
     db.add(prestamo)
     return prestamo
@@ -72,7 +104,8 @@ def resumen(prestamos: list[PrestamoEmpresa]) -> list[dict]:
             continue
         clave = (p.tipo, p.codigo, p.unidad)
         pares = por_codigo.setdefault(clave, {})
-        par = (p.empresa_presta, p.empresa_recibe)
+        # Un tercero va por su nombre: lo que se le debe no se cruza con nadie más.
+        par = (p.prestador or p.empresa_presta, p.empresa_recibe)
         pares[par] = pares.get(par, 0) + p.cantidad
         descripciones[clave] = descripciones.get(clave) or p.descripcion
     filas = []
