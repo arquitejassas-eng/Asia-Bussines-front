@@ -118,7 +118,19 @@ def historial_de_rollo(
     propios = db.query(Movimiento).filter(Movimiento.rollo_id == rollo_id).all()
     # También el stock que sobró de las producciones donde se usó este rollo.
     from app.services.produccion import stock_de_producciones_del_rollo
-    return sorted(propios + stock_de_producciones_del_rollo(db, rollo_id), key=lambda m: (m.fecha, m.id))
+    from app.services.apartados import cotizaciones_unidas
+    movimientos = sorted(propios + stock_de_producciones_del_rollo(db, rollo_id), key=lambda m: (m.fecha, m.id))
+    # Cotización que después se unió a otra: "4028 (unida a 4006)". Solo en
+    # la respuesta; el movimiento guardado no cambia.
+    unidas = cotizaciones_unidas(db, {m.cotizacion for m in movimientos if m.cotizacion})
+    if not unidas:
+        return movimientos
+    respuesta = []
+    for m in movimientos:
+        fila = MovimientoResponse.model_validate(m)
+        destino = unidas.get((m.bodega_origen_id, m.cotizacion)) or unidas.get((m.bodega_destino_id, m.cotizacion))
+        respuesta.append(fila.model_copy(update={"cotizacion": f"{m.cotizacion} (unida a {destino})"}) if destino else fila)
+    return respuesta
 
 
 def _match_equivalencias(db: Session, prefijo: str) -> tuple[TablaTipoMaterialEquivalencia, TablaColorEquivalencia] | None:

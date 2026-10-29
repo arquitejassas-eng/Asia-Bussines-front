@@ -9,6 +9,7 @@ import { EMPRESAS, AMBAS_EMPRESAS, nombreMaterial } from "../Utils/empresas";
 import PanelImportarCotizaciones from "../Componentes/PanelImportarCotizaciones";
 import PanelRegistrarSalida from "../Componentes/PanelRegistrarSalida";
 import PanelSepararCotizacion from "../Componentes/PanelSepararCotizacion";
+import PanelUnirCotizacion from "../Componentes/PanelUnirCotizacion";
 import Paginacion from "../Componentes/Paginacion";
 import { numeroSinEmpresa, useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
@@ -326,6 +327,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   // "Separar": el cliente no se lleva todo y parte pasa a una cotización nueva.
   const [separarAbierta, setSepararAbierta] = useState<number | null>(null);
   const cerrarSeparar = useCallback(() => setSepararAbierta(null), []);
+  // "Unir": lo contrario de Separar; otra cotización pasa sus líneas a esta.
+  const [unirAbierta, setUnirAbierta] = useState<number | null>(null);
+  const cerrarUnir = useCallback(() => setUnirAbierta(null), []);
+  // Las que se pueden unir a esta: misma bodega, empresa y estado (ver backend unir_apartado).
+  const candidatasParaUnir = (ap: ApartadoDeLista) => a.apartados.filter((otra) => otra.id !== ap.id && !otra.ordenInterna
+    && otra.bodegaId === ap.bodegaId && otra.empresa === ap.empresa && otra.estado === ap.estado);
   const cerrarSalida = useCallback(() => setSalidaAbierta(null), []);
   const [lineasExpandidas, setLineasExpandidas] = useState<Set<number>>(new Set());
   function alternarLineas(id: number) {
@@ -603,7 +610,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           ejecutar: () => a.cancelarApartado(ap.id),
         })}>Anular</button>
       )}
-      {a.puedeCancelarApartados && ap.estado === "cancelado" && !ap.items.some((it) => it.tieneProduccionRegistrada) && (
+      {/* Sin líneas = se unió a otra: no se elimina (así se sabe a dónde fueron). */}
+      {a.puedeCancelarApartados && ap.estado === "cancelado" && ap.items.length > 0 && !ap.items.some((it) => it.tieneProduccionRegistrada) && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
           titulo: `¿Eliminar la cotización anulada ${ap.numeroCotizacion}?`,
           mensaje: "Se borra de la lista para siempre. No afecta el inventario: su material ya quedó libre al anularla.",
@@ -618,6 +626,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         && ((esAdminInventario && (ESTADOS_CANCELABLES.includes(ap.estado) || ap.estado === "produccion_terminada"))
           || (a.puedeMarcarEntregado && ap.estado === "produccion_terminada" && !ap.ordenInterna)) && (
         <button onClick={() => { setSalidaAbierta(null); setSepararAbierta(ap.id); }}>Separar</button>
+      )}
+      {!ap.ordenInterna && candidatasParaUnir(ap).length > 0
+        && ((esAdminInventario && (ESTADOS_CANCELABLES.includes(ap.estado) || ap.estado === "produccion_terminada"))
+          || (a.puedeMarcarEntregado && ap.estado === "produccion_terminada")) && (
+        <button onClick={() => { setSalidaAbierta(null); setSepararAbierta(null); setUnirAbierta(ap.id); }}>Unir</button>
       )}
       {tieneProduccionPendiente && !veTodasLasBodegas && (
         <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>
@@ -656,7 +669,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const conSalida = activas.filter((parte) => !parte.ordenInterna);
     const separables = grupo.filter((parte) => !parte.ordenInterna && (parte.items.length > 1 || (parte.items[0]?.cantidad ?? 0) > 1)
       && (ESTADOS_CANCELABLES.includes(parte.estado) || parte.estado === "produccion_terminada"));
-    const eliminables = grupo.filter((parte) => parte.estado === "cancelado" && !parte.items.some((it) => it.tieneProduccionRegistrada));
+    const eliminables = grupo.filter((parte) => parte.estado === "cancelado" && parte.items.length > 0
+      && !parte.items.some((it) => it.tieneProduccionRegistrada));
     const elegir = (accion: "salida" | "separar", partes: ApartadoDeLista[]) => {
       if (partes.length === 1) {
         if (accion === "salida") { setSepararAbierta(null); setSalidaAbierta(partes[0].id); }
@@ -1454,6 +1468,21 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           alCerrar={cerrarSeparar}
         />
       )}
+      {unirAbierta !== null && a.apartados.some((ap) => ap.id === unirAbierta) && (() => {
+        const destino = a.apartados.find((ap) => ap.id === unirAbierta)!;
+        return (
+          <PanelUnirCotizacion
+            apartado={destino}
+            candidatas={candidatasParaUnir(destino)}
+            alTerminar={(numeroUnida) => {
+              setUnirAbierta(null);
+              setMensajeInformativo(`Listo: la cotización ${numeroUnida} quedó unida a la ${destino.numeroCotizacion} (y quedó anulada con una nota).`);
+              a.cargarApartados();
+            }}
+            alCerrar={cerrarUnir}
+          />
+        );
+      })()}
       {mensajeInformativo && (
         <ModalConfirmacion
           mensaje={mensajeInformativo}

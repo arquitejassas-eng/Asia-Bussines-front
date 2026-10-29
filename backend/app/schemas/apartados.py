@@ -170,6 +170,11 @@ class SepararApartadoRequest(BaseModel):
     cliente: str | None = Field(default=None, max_length=150)
 
 
+class UnirApartadoRequest(BaseModel):
+    """La otra cotización (misma bodega) que se une a esta y deja de existir."""
+    numero_cotizacion: str = Field(min_length=1, max_length=32)
+
+
 class ApartadoItemEditar(ApartadoItemCrear):
     # Línea que ya existe (se modifica); sin id es una línea nueva.
     id: int | None = None

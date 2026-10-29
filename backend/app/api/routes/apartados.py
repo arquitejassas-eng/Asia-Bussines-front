@@ -15,7 +15,7 @@ from app.schemas.apartados import (
 from app.models.rollo import Rollo
 from app.core.config import settings
 from app.schemas.apartados import (
-    ApartadoEditar, ApartadoItemEditar, CompletarConStockRequest, RegistrarSalidaRequest, SepararApartadoRequest,
+    ApartadoEditar, ApartadoItemEditar, CompletarConStockRequest, RegistrarSalidaRequest, SepararApartadoRequest, UnirApartadoRequest,
     StockParaCompletarResponse,
 )
 from app.schemas.inventario import ProductoResponse
@@ -606,6 +606,18 @@ def separar_apartado(
     nueva = srv.separar_apartado(db, apartado_id, datos, usuario)
     db.commit(); db.refresh(nueva)
     return _con_faltantes(db, [nueva])[0]
+
+
+@router.post("/{apartado_id}/unir", response_model=ApartadoResponse,
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
+def unir_apartado(
+    apartado_id: int, datos: UnirApartadoRequest, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Apartado:
+    """Lo contrario de Separar: la otra cotización pasa sus líneas a esta y
+    queda anulada (ver srv.unir_apartado). Devuelve esta cotización."""
+    apartado = srv.unir_apartado(db, apartado_id, datos, usuario)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
 
 
 @router.patch("/{apartado_id}/cancelar", response_model=ApartadoResponse,

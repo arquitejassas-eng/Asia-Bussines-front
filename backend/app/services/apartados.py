@@ -42,7 +42,7 @@ from app.services.prestamos import PRODUCTO, registrar_prestamo
 from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.services.productos import nuevo_producto_en_bodega
 from app.services.seccionados import metros_de_linea
-from app.schemas.apartados import SepararApartadoRequest, ApartadoCrear, ApartadoEditar
+from app.schemas.apartados import SepararApartadoRequest, ApartadoCrear, ApartadoEditar, UnirApartadoRequest
 
 ESTADOS_RESERVA_ACTIVA = (
     EstadoApartado.APARTADO,
@@ -1645,6 +1645,104 @@ def separar_apartado(db: Session, apartado_id: int, datos: SepararApartadoReques
     return nueva
 
 
+NOTA_UNIDA = "Unida a la cotización"
+_DESTINO_DE_UNIDA = re.compile(re.escape(NOTA_UNIDA) + r" (.+?) el \d{2}/\d{2}/\d{4}")
+
+
+def es_unida(apartado: Apartado) -> bool:
+    """Anulada al unirse a otra (sus líneas pasaron allá): no tiene líneas
+    propias; ninguna otra cotización queda sin líneas."""
+    return apartado.estado == EstadoApartado.CANCELADO and not apartado.items
+
+
+def cotizaciones_unidas(db: Session, numeros: set[str]) -> dict[tuple[int, str], str]:
+    """{(bodega, número de la unida): número al que se unió}, para mostrar en
+    el historial "4028 (unida a 4006)" sin reescribir los movimientos."""
+    if not numeros:
+        return {}
+    unidas = {}
+    for ap in (db.query(Apartado).filter(Apartado.numero_cotizacion.in_(numeros),
+                                         Apartado.estado == EstadoApartado.CANCELADO,
+                                         Apartado.observaciones.contains(NOTA_UNIDA))):
+        encontrado = _DESTINO_DE_UNIDA.search(ap.observaciones or "")
+        if encontrado and es_unida(ap):
+            unidas[(ap.bodega_id, ap.numero_cotizacion)] = encontrado.group(1)
+    return unidas
+
+
+def unir_apartado(db: Session, apartado_id: int, datos: UnirApartadoRequest, usuario: Usuario) -> Apartado:
+    """Lo contrario de separar: las líneas de otra cotización de la misma
+    bodega y empresa pasan a esta, con todo lo que ya tienen (producción
+    registrada, metros gastados, stock descontado, préstamos), y la otra queda
+    anulada con una nota. No se produce ni se descuenta nada de nuevo: las
+    líneas solo cambian de cotización. Las dos deben estar en el mismo estado
+    (ej. las dos con producción terminada); la encargada de la bodega solo
+    puede unir cotizaciones con la producción terminada, como al separar."""
+    from app.models.prestamo import PrestamoEmpresa
+
+    destino = apartado_de_mi_bodega(db, apartado_id, usuario)
+    numero = datos.numero_cotizacion.strip()
+    origen = (
+        db.query(Apartado)
+        .filter(Apartado.bodega_id == destino.bodega_id, Apartado.numero_cotizacion == numero,
+                Apartado.estado != EstadoApartado.CANCELADO)
+        .first()
+    )
+    if origen is None:
+        raise HTTPException(status_code=404, detail=f"No hay una cotización {numero} activa en esta bodega.")
+    if origen.id == destino.id:
+        raise HTTPException(status_code=400, detail="Escoge otra cotización: no se puede unir consigo misma.")
+    # Se bloquean las dos en el mismo orden (por id) para no cruzarse con otra operación.
+    bloqueadas = {
+        ap.id: ap for ap in db.query(Apartado).filter(Apartado.id.in_((destino.id, origen.id)))
+        .order_by(Apartado.id).with_for_update().populate_existing()
+    }
+    destino, origen = bloqueadas[destino.id], bloqueadas[origen.id]
+    for ap in (destino, origen):
+        if ap.estado not in ESTADOS_SEPARABLES:
+            raise HTTPException(status_code=400, detail=f"La cotización {ap.numero_cotizacion} ya fue entregada o anulada: no se puede unir.")
+        if ap.orden_interna:
+            raise HTTPException(status_code=400, detail="Las órdenes de producción interna no se unen con cotizaciones.")
+    if origen.estado != destino.estado:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Las dos cotizaciones deben estar en el mismo estado para unirlas ({destino.numero_cotizacion} y "
+            f"{origen.numero_cotizacion} están en estados distintos).",
+        )
+    if (origen.empresa or "") != (destino.empresa or ""):
+        raise HTTPException(status_code=400, detail="Las dos cotizaciones deben ser de la misma empresa para unirlas.")
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO and destino.estado != EstadoApartado.PRODUCCION_TERMINADA:
+        raise HTTPException(status_code=403, detail="Solo Admin Inventario puede unir cotizaciones que no han terminado su producción.")
+
+    con_stock = lambda ap: any(it.modalidad == ModalidadApartado.POR_STOCK for it in ap.items)  # noqa: E731
+    confirmado = ((destino.stock_separado_confirmado or not con_stock(destino))
+                  and (origen.stock_separado_confirmado or not con_stock(origen)))
+    if confirmado and not destino.stock_separado_confirmado and con_stock(origen):
+        destino.stock_separado_por, destino.stock_separado_en = origen.stock_separado_por, origen.stock_separado_en
+    destino.stock_separado_confirmado = confirmado and (con_stock(destino) or con_stock(origen))
+    destino.salida_pendiente = bool(destino.salida_pendiente or origen.salida_pendiente)
+
+    lineas = list(origen.items)
+    for item in lineas:
+        item.apartado_id = destino.id
+    db.query(PrestamoEmpresa).filter(PrestamoEmpresa.apartado_id == origen.id).update(
+        {PrestamoEmpresa.apartado_id: destino.id}, synchronize_session=False)
+
+    ahora = datetime.now(timezone.utc)
+    nota_destino = (f"Se le unió la cotización {origen.numero_cotizacion} ({len(lineas)} línea(s)) "
+                    f"el {ahora:%d/%m/%Y} por {usuario.correo}.")
+    destino.observaciones = f"{destino.observaciones}\n{nota_destino}".strip() if destino.observaciones else nota_destino
+    nota_origen = f"{NOTA_UNIDA} {destino.numero_cotizacion} el {ahora:%d/%m/%Y}: sus líneas pasaron allá."
+    origen.observaciones = f"{origen.observaciones}\n{nota_origen}".strip() if origen.observaciones else nota_origen
+    origen.estado = EstadoApartado.CANCELADO
+    origen.cancelado_por = usuario.correo
+    origen.fecha_cancelado = ahora
+    db.flush()
+    db.expire(destino, ["items"])
+    db.expire(origen, ["items"])
+    return destino
+
+
 def cancelar_apartado(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
     """Cancela un apartado mientras no haya terminado su producción. Antes
     solo se podía en APARTADO: si el cliente desistía después de enviarlo a
@@ -1711,6 +1809,11 @@ def eliminar_apartado_cancelado(db: Session, apartado_id: int, usuario: Usuario)
     apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().one()
     if apartado.estado != EstadoApartado.CANCELADO:
         raise HTTPException(status_code=400, detail="Solo se pueden eliminar cotizaciones anuladas. Anúlala primero.")
+    if es_unida(apartado):
+        raise HTTPException(
+            status_code=400,
+            detail="Esta cotización se unió a otra: no se puede eliminar, así se sabe a dónde fueron sus líneas.",
+        )
     if any(item.producciones for item in apartado.items):
         raise HTTPException(
             status_code=400,
