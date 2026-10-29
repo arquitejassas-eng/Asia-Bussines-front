@@ -20,6 +20,7 @@
     "seed": "cd backend && .\\.venv\\Scripts\\python.exe -m scripts.seed"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.4",
