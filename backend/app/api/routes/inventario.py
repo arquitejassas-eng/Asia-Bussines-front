@@ -77,8 +77,8 @@ def listar_productos_bajo_minimo(
 ) -> list[Producto]:
     """Productos de mi bodega con `stock_minimo` configurado y `stock` por
     debajo de ese umbral — para la campana de alertas de Inventario.
-    Superadmin: los de todas las bodegas (Reportes)."""
-    if usuario.rol == RolUsuario.SUPERADMIN:
+    Superadmin y Admin Inventario: los de todas las bodegas (Reportes)."""
+    if usuario.rol in (RolUsuario.SUPERADMIN, RolUsuario.ADMIN_INVENTARIO):
         return srv_productos.productos_bajo_minimo(db, None, todas_las_bodegas=True)
     return srv_productos.productos_bajo_minimo(db, usuario.bodega_id)
 
@@ -358,18 +358,14 @@ def historial(
     # Admin Inventario) y "movimientos" (todo lo demás: producción, entradas,
     # salidas...). Vacío = todo junto.
     grupo: str = "",
-    # Solo Superadmin (ve todas las bodegas): los de una sola bodega.
+    # Solo Superadmin y Admin Inventario (ven todas las bodegas): los de una sola bodega.
     bodega_id: int | None = None,
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Movimiento] | PaginaMovimientos:
-    # Una bodega solo ve los movimientos en que fue origen o destino. Las
-    # cuentas sin bodega (admin_inventario, vendedor, superadmin) no tienen
-    # historial -- decisión del negocio: el historial de cada sede es solo de
-    # esa sede. Antes, el filtro "origen o destino IS NULL" les mostraba todas
-    # las entradas y salidas de todas las sedes (toda entrada tiene origen
-    # NULL y toda salida destino NULL).
-    # Superadmin recibe los reportes de TODAS las bodegas (o de una, con bodega_id).
-    if usuario.rol == RolUsuario.SUPERADMIN:
+    # Una bodega solo ve los movimientos en que fue origen o destino.
+    # Superadmin y Admin Inventario reciben los reportes de TODAS las bodegas
+    # (o de una, con bodega_id); el vendedor no tiene historial.
+    if usuario.rol in (RolUsuario.SUPERADMIN, RolUsuario.ADMIN_INVENTARIO):
         consulta = db.query(Movimiento)
         if bodega_id is not None:
             consulta = consulta.filter((Movimiento.bodega_origen_id == bodega_id) | (Movimiento.bodega_destino_id == bodega_id))

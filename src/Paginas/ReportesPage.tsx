@@ -17,8 +17,8 @@ const ETIQUETAS_TIPO: Record<string, string> = {
 
 function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const r = useControladorReportes(sesion, almacen);
-  // Superadmin ve los reportes de todas las bodegas.
-  const todasLasBodegas = sesion?.rol === "superadmin";
+  // Superadmin y Admin Inventario ven los reportes de todas las bodegas.
+  const todasLasBodegas = sesion?.rol === "superadmin" || sesion?.rol === "admin_inventario";
   const nombreBodega = (id: number | null | undefined) => almacen.bodegas.find((b) => b.id === id)?.nombre || "";
   const bodegaDe = (m: { bodegaOrigenId?: number | null; bodegaDestinoId?: number | null }) => {
     const origen = nombreBodega(m.bodegaOrigenId), destino = nombreBodega(m.bodegaDestinoId);

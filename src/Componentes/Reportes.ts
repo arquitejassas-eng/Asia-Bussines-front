@@ -6,7 +6,7 @@ import { finDelDiaColombia, inicioDelDiaColombia } from "../Utils/fechas";
 const FILTROS_VACIOS = {
   // Qué parte se ve: "movimientos" (producción, entradas, salidas…) o "traslados".
   grupo: "movimientos",
-  // Solo Superadmin: una bodega ("" = todas).
+  // Solo Superadmin y Admin Inventario: una bodega ("" = todas).
   bodegaId: "",
   tipo: "",
   codigoProducto: "",
