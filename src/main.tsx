@@ -12,6 +12,15 @@ window.addEventListener('vite:preloadError', (evento) => {
   if (recargarPorVersionNueva()) evento.preventDefault()
 })
 
+// El navegador sube o baja el número de un campo con la rueda del mouse si
+// el cursor está dentro (así salió una producción de 17 tejas en vez de 20).
+// Al girar la rueda encima se suelta el campo: el número no cambia y la
+// página baja normal. Las flechas del teclado siguen funcionando.
+window.addEventListener('wheel', (evento) => {
+  const campo = evento.target
+  if (campo instanceof HTMLInputElement && campo.type === 'number' && campo === document.activeElement) campo.blur()
+}, { capture: true, passive: true })
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
