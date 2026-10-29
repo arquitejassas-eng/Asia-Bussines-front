@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { movimientoDesdeApi, rolloDesdeApi } from "./Mapeo";
 import { FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
-import { formatearFechaColombia } from "../Utils/fechas";
+import { finDelDiaColombia, formatearFechaColombia, inicioDelDiaColombia } from "../Utils/fechas";
 import { coincideKilos, kilosBuscados, kilosDelRollo } from "../Utils/kilos";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import type { AlmacenGlobal } from "../types/dominio";
@@ -34,6 +34,9 @@ export function useControladorMerma(almacen: AlmacenGlobal) {
   // Por defecto solo los que dejaron merma o metros de más: los que se
   // acabaron justo no dicen nada aquí.
   const [soloConMerma, setSoloConMerma] = useState(true);
+  // Reporte por fechas (AAAA-MM-DD): el día en que se anotó la merma.
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
 
   const cargar = useCallback(async () => {
     setCargando(true); setError("");
@@ -85,8 +88,15 @@ export function useControladorMerma(almacen: AlmacenGlobal) {
     const termino = normalizar(busqueda);
     const kilos = kilosBuscados(busqueda);
     const mapa = new Map<string, GrupoMerma>();
+    const inicio = desde ? new Date(inicioDelDiaColombia(desde)).getTime() : null;
+    const fin = hasta ? new Date(finDelDiaColombia(hasta)).getTime() : null;
     for (const r of rollos) {
       if (soloConMerma && !(r.mermaMetros || r.sobranteMetros)) continue;
+      if (inicio !== null || fin !== null) {
+        // Sin merma anotada no hay fecha: con fechas puestas no entra.
+        const fecha = r.fechaMerma ? new Date(/(Z|[+-]\d{2}:\d{2})$/i.test(r.fechaMerma) ? r.fechaMerma : `${r.fechaMerma}Z`).getTime() : NaN;
+        if (Number.isNaN(fecha) || (inicio !== null && fecha < inicio) || (fin !== null && fecha > fin)) continue;
+      }
       if (bodega && String(r.bodegaId) !== bodega) continue;
       if (empresa && (empresa === FILTRO_SIN_EMPRESA ? r.empresa : r.empresa !== empresa)) continue;
       if (termino && !(normalizar(r.codigoInterno).includes(termino) || normalizar(r.identificadorRollo).includes(termino)
@@ -100,7 +110,7 @@ export function useControladorMerma(almacen: AlmacenGlobal) {
       grupo.sobrante += r.sobranteMetros || 0;
     }
     return [...mapa.values()].sort((a, b) => a.codigoInterno.localeCompare(b.codigoInterno));
-  }, [rollos, busqueda, empresa, bodega, soloConMerma]);
+  }, [rollos, busqueda, empresa, bodega, soloConMerma, desde, hasta]);
 
   const totales = useMemo(() => ({
     rollos: grupos.reduce((s, g) => s + g.rollos.length, 0),
@@ -117,9 +127,9 @@ export function useControladorMerma(almacen: AlmacenGlobal) {
     hayVarios: rollos.length > 1,
   }), [rollos, almacen.bodegas]);
 
-  const hayFiltros = Boolean(busqueda.trim() || empresa || bodega || !soloConMerma);
+  const hayFiltros = Boolean(busqueda.trim() || empresa || bodega || !soloConMerma || desde || hasta);
   function limpiarFiltros() {
-    setBusqueda(""); setEmpresa(""); setBodega(""); setSoloConMerma(true);
+    setBusqueda(""); setEmpresa(""); setBodega(""); setSoloConMerma(true); setDesde(""); setHasta("");
   }
 
   function exportar() {
@@ -128,13 +138,18 @@ export function useControladorMerma(almacen: AlmacenGlobal) {
       "Bodega": nombreBodega(r.bodegaId), "Empresa": nombreEmpresa(r.empresa),
       "Kilos": kilosDelRollo(r.pesoNeto) ?? "", "Metros proveedor": r.metrosProveedor ?? "",
       "Metros consumidos": r.metrosConsumidos, "Merma (m)": r.mermaMetros || 0, "Metros de más": r.sobranteMetros || 0,
+      "Fecha de la merma": r.fechaMerma ? formatearFechaColombia(r.fechaMerma, false) : "",
       "Ingreso": formatearFechaColombia(r.fechaIngreso, false),
-    }))), "Merma_rollos.xlsx", "Merma");
+    } as Record<string, unknown>))).concat([{
+      "Código": "TOTAL", "Referencia": `${totales.rollos} rollo${totales.rollos === 1 ? "" : "s"}`,
+      "Merma (m)": totales.merma, "Metros de más": totales.sobrante,
+    }]), `Merma${desde || hasta ? `_${desde || "inicio"}_a_${hasta || "hoy"}` : "_rollos"}.xlsx`, "Merma");
   }
 
   return {
     cargando, error, cargar, grupos, totales, nombreBodega,
     busqueda, setBusqueda, empresa, setEmpresa, bodega, setBodega, soloConMerma, setSoloConMerma,
+    desde, setDesde, hasta, setHasta,
     opcionesFiltro, hayFiltros, limpiarFiltros, exportar,
     rolloParaHistorial, historialRollo, cargandoHistorial, errorHistorial, abrirHistorial, cerrarHistorial,
   };

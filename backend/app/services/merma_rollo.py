@@ -141,8 +141,9 @@ def registrar_sobrante(db: Session, rollo_id: int, metros: float, observaciones:
     return rollo
 
 
-def merma_y_sobrante_por_rollo(db: Session, rollo_ids: list[int]) -> dict[int, tuple[float, float]]:
-    """(merma, metros de más) de cada rollo, por separado."""
+def merma_y_sobrante_por_rollo(db: Session, rollo_ids: list[int]) -> dict[int, tuple[float, float, object]]:
+    """(merma, metros de más, fecha de la última) de cada rollo: la fecha es
+    la del día en que se anotó (el reporte de Merma filtra por ella)."""
     if not rollo_ids:
         return {}
     filas = (
@@ -150,12 +151,14 @@ def merma_y_sobrante_por_rollo(db: Session, rollo_ids: list[int]) -> dict[int, t
             Movimiento.rollo_id,
             func.sum(case((Movimiento.motivo == MOTIVO_MERMA, Movimiento.cantidad), else_=0)),
             func.sum(case((Movimiento.motivo == MOTIVO_SOBRANTE, Movimiento.cantidad), else_=0)),
+            func.max(Movimiento.fecha),
         )
         .filter(Movimiento.rollo_id.in_(rollo_ids), Movimiento.motivo.in_((MOTIVO_MERMA, MOTIVO_SOBRANTE)))
         .group_by(Movimiento.rollo_id)
         .all()
     )
-    return {rollo_id: (round(float(merma or 0), 2), round(float(sobrante or 0), 2)) for rollo_id, merma, sobrante in filas}
+    return {rollo_id: (round(float(merma or 0), 2), round(float(sobrante or 0), 2), fecha)
+            for rollo_id, merma, sobrante, fecha in filas}
 
 
 def rollos_con_merma_o_sobrante(db: Session):
@@ -171,4 +174,4 @@ def asignar_merma_y_sobrante(db: Session, rollos: list[Rollo]) -> None:
     """Llena merma_metros y sobrante_metros (atributos de respuesta) de cada rollo."""
     datos = merma_y_sobrante_por_rollo(db, [r.id for r in rollos])
     for rollo in rollos:
-        rollo.merma_metros, rollo.sobrante_metros = datos.get(rollo.id, (0.0, 0.0))
+        rollo.merma_metros, rollo.sobrante_metros, rollo.fecha_merma = datos.get(rollo.id, (0.0, 0.0, None))

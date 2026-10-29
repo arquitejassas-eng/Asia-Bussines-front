@@ -42,3 +42,14 @@
   .merma-grupo .rollos-grupo-info { flex-basis: 100%; }
   .merma-grupo .rollos-grupo-cantidad { padding: 0.35rem 0.7rem; }
 }
+
+/* Reporte por fechas: Desde / Hasta junto a los filtros. */
+.merma-fecha {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.85rem; color: var(--at-text-2, #4A392C);
+}
+.merma-fecha input {
+  border: 1px solid var(--at-border, #E1D5C0); border-radius: var(--at-r-pill, 999px);
+  padding: 0.45rem 0.8rem; font: inherit; font-size: 0.85rem; min-height: 40px;
+  background: var(--at-surface, #FFFFFF); color: var(--at-text-2, #4A392C);
+}

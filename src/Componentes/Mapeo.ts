@@ -64,6 +64,7 @@ export function rolloDesdeApi(r: RegistroApi) {
     pesoActualToneladas: r.peso_actual_toneladas == null ? null : numero(r.peso_actual_toneladas),
     mermaMetros: r.merma_metros == null ? null : numero(r.merma_metros),
     sobranteMetros: r.sobrante_metros == null ? null : numero(r.sobrante_metros),
+    fechaMerma: r.fecha_merma == null ? null : texto(r.fecha_merma),
     metrosProveedor: numero(r.metros_proveedor), metrosCalculados: numero(r.metros_calculados),
     metrosDisponibles: numero(r.metros_disponibles), metrosConsumidos: numero(r.metros_consumidos),
     fechaIngreso: texto(r.fecha_ingreso), estado: texto(r.estado), observaciones: texto(r.observaciones),

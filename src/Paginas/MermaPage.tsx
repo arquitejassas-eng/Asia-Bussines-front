@@ -77,6 +77,15 @@ function MermaPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerr
                 <option value="todos">Todos los finalizados</option>
               </select>
             )}
+            {/* Reporte por fechas: el día en que se anotó la merma del rollo. */}
+            <label className="merma-fecha">
+              <span>Desde</span>
+              <input type="date" value={m.desde} max={m.hasta || undefined} onChange={(e) => m.setDesde(e.target.value)} />
+            </label>
+            <label className="merma-fecha">
+              <span>Hasta</span>
+              <input type="date" value={m.hasta} min={m.desde || undefined} onChange={(e) => m.setHasta(e.target.value)} />
+            </label>
             {m.hayFiltros && <button type="button" className="apartados-limpiar" onClick={m.limpiarFiltros}>Limpiar filtros</button>}
             {m.grupos.length > 0 && <button type="button" className="apartados-limpiar" onClick={m.exportar}>Exportar a Excel</button>}
           </div>
