@@ -16,7 +16,7 @@ type LineaParaSiigo = {
   siigoCantidad: string; siigoCantidadManual?: boolean; siigoProducto: string; siigoUnidad?: string; siigoAviso?: string;
 };
 type FormularioParaSiigo = {
-  empresa: string; ordenInterna: boolean; subirASiigo: boolean; cliente: string; clienteIdentificacion: string;
+  empresa: string; ordenInterna: boolean; deSiigo: boolean; cliente: string; clienteIdentificacion: string;
   siigoVendedor: string; siigoIva: boolean; siigoRetefuente: boolean;
   items: LineaParaSiigo[];
 };
@@ -35,7 +35,18 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
   }, [activo]);
   const empresaConectada = Boolean(conectadas[formulario.empresa]);
   const usaSiigo = activo && empresaConectada && !formulario.ordenInterna;
-  const enSiigo = usaSiigo && formulario.subirASiigo;
+  // Toda cotización nueva de una empresa conectada va a Siigo; al editar, la que ya es de Siigo.
+  const enSiigo = usaSiigo && formulario.deSiigo;
+
+  // Porcentajes del IVA y la retención de la empresa (para el total aproximado).
+  const [impuestos, setImpuestos] = useState<Record<string, { iva: number | null; retefuente: number | null }>>({});
+  useEffect(() => {
+    const empresa = formulario.empresa;
+    if (!enSiigo || impuestos[empresa]) return;
+    api.get<{ iva: number | null; retefuente: number | null }>(`/siigo/${empresa}/impuestos`)
+      .then((datos) => setImpuestos((actual) => ({ ...actual, [empresa]: datos || { iva: null, retefuente: null } })))
+      .catch(() => setImpuestos((actual) => ({ ...actual, [empresa]: { iva: null, retefuente: null } })));
+  }, [enSiigo, formulario.empresa, impuestos]);
 
   // Vendedores del Siigo de la empresa (y el que este usuario usó la última vez).
   const [vendedores, setVendedores] = useState<Record<string, VendedorSiigo[] | "cargando" | "error">>({});
@@ -72,7 +83,8 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
       setCliente({ estado: datos.existe ? "existe" : "no_existe", nombre: datos.nombre });
       setFormulario((actual) => ({
         ...actual,
-        cliente: actual.cliente.trim() ? actual.cliente : datos.nombre,
+        // El nombre es el de Siigo: así no se escribe dos veces ni distinto.
+        cliente: datos.existe && datos.nombre ? datos.nombre : actual.cliente,
         ...(datos.impuestos_recordados ? {
           siigoIva: datos.impuestos_recordados.includes("iva"), siigoRetefuente: datos.impuestos_recordados.includes("retefuente"),
         } : {}),
@@ -150,8 +162,13 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clave]);
 
+  // "kg", "cm" o "und": la unidad de Siigo de una línea (la de la lámina de la empresa mientras no hay sugerencia).
+  function unidadDe(item: { siigoUnidad?: string }) {
+    return item.siigoUnidad || (formulario.empresa === "AR" ? "cm" : "kg");
+  }
+
   return {
-    conectadas, empresaConectada, usaSiigo, enSiigo,
+    conectadas, empresaConectada, usaSiigo, enSiigo, impuestos: impuestos[formulario.empresa], unidadDe,
     vendedores: vendedores[formulario.empresa], cliente, consultarCliente,
     productos, buscarProducto, cerrarBusquedaProducto,
   };

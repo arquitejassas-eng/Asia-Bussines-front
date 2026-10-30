@@ -116,9 +116,6 @@ class ApartadoCrear(BaseModel):
     siigo_iva: bool = True
     siigo_retefuente: bool = False
     siigo_vendedor: int | None = None
-    # Al crearla, subirla de una vez a Siigo: el número lo pone Siigo (el que
-    # venga en numero_cotizacion se ignora) y si Siigo la rechaza no se guarda.
-    subir_a_siigo: bool = False
 
     @model_validator(mode="after")
     def _empresa_valida(self) -> "ApartadoCrear":
@@ -347,6 +344,8 @@ class ApartadoResponse(ModeloConFechasUtc):
     siigo_retefuente: bool = False
     siigo_vendedor: int | None = None
     fecha_siigo: datetime | None = None
+    siigo_pendiente: bool = False
+    siigo_error: str = ""
 
     @field_serializer("fecha_creacion", "fecha_enviado_a_produccion", "fecha_cancelado", "fecha_entregado", "stock_separado_en", "fecha_siigo", when_used="json")
     def _serializar_fechas_opcionales(self, valor: datetime | None) -> str | None:

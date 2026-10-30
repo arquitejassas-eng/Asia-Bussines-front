@@ -222,13 +222,40 @@ def crear_cotizacion(empresa: str, cuerpo: dict, ya_usadas: set[str] = frozenset
             raise
         logger.warning("Siigo: la creación de la cotización no respondió (%s); se busca si quedó creada.", error.codigo)
         time.sleep(5)
-        recientes = _todas_las_paginas(empresa, "/v1/quotations", {
-            "created_start": date.today().isoformat(), "customer_identification": cuerpo["customer"]["identification"]}, maximo=300)
-        for encontrada in sorted(recientes, key=lambda q: q.get("number") or 0, reverse=True):
-            if encontrada.get("id") not in ya_usadas and _misma_cotizacion(encontrada, cuerpo):
-                return encontrada
+        encontrada = buscar_creada(empresa, cuerpo, ya_usadas, desde=date.today())
+        if encontrada is not None:
+            return encontrada
+        if error.codigo == "duplicated_document":
+            raise ErrorSiigo("Siigo dice que es igual a otra cotización que se acaba de crear. Espera un minuto y vuelve a intentar.",
+                             codigo=error.codigo) from error
         raise ErrorSiigo("Siigo no confirmó si creó la cotización. Revisa en Siigo antes de volver a intentar.",
                          codigo=error.codigo) from error
+
+
+def buscar_creada(empresa: str, cuerpo: dict, ya_usadas: set[str], desde: date) -> dict | None:
+    """La cotización de Siigo con el mismo cliente y las mismas líneas, creada
+    desde ese día y que no esté ligada a otra (`ya_usadas`): la que quedó
+    creada aunque Siigo no alcanzó a responder."""
+    recientes = _todas_las_paginas(empresa, "/v1/quotations", {
+        "created_start": desde.isoformat(), "customer_identification": cuerpo["customer"]["identification"]}, maximo=300)
+    for encontrada in sorted(recientes, key=lambda q: q.get("number") or 0, reverse=True):
+        if encontrada.get("id") not in ya_usadas and _misma_cotizacion(encontrada, cuerpo):
+            return encontrada
+    return None
+
+
+def actualizar_cotizacion(empresa: str, siigo_id: str, cuerpo: dict) -> dict:
+    """Reemplaza en Siigo la cotización (cliente, vendedor, líneas, precios):
+    conserva su número."""
+    return pedir(empresa, "PUT", f"/v1/quotations/{siigo_id}", json=cuerpo)
+
+
+def porcentajes_impuestos(empresa: str) -> dict:
+    """{"iva": 19.0, "retefuente": 2.5}: los porcentajes de los impuestos
+    configurados para la empresa (para mostrar el total aproximado)."""
+    config = _config(empresa)
+    por_id = {str(t.get("id")): t.get("percentage") for t in pedir(empresa, "GET", "/v1/taxes")}
+    return {"iva": por_id.get(str(config["iva"])), "retefuente": por_id.get(str(config["retefuente"]))}
 
 
 def borrar_cotizacion(empresa: str, siigo_id: str) -> None:

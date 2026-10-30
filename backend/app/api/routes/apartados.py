@@ -276,11 +276,11 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
     # producción interna (para stock), solo Admin Inventario.
     if usuario.rol == RolUsuario.VENDEDOR and datos.orden_interna:
         raise HTTPException(status_code=403, detail="Las órdenes de producción interna las crea Admin Inventario.")
-    if datos.subir_a_siigo:
-        if datos.orden_interna:
-            raise HTTPException(status_code=400, detail="Una orden de producción interna no va a Siigo: no tiene cliente.")
-        # El número lo pone Siigo: mientras tanto, uno provisional que no choca con nada.
-        datos = datos.model_copy(update={"numero_cotizacion": f"SIIGO-{secrets.token_hex(6)}"})
+    # Con la empresa conectada a Siigo, toda cotización va a Siigo y el número
+    # lo pone Siigo: mientras tanto, uno provisional que no choca con nada.
+    a_siigo = not datos.orden_interna and siigo.esta_configurada(datos.empresa)
+    if a_siigo:
+        datos = datos.model_copy(update={"numero_cotizacion": f"PEND-{secrets.token_hex(6)}"})
     # El número no se repite en la misma empresa (las partes de esta cotización
     # en varias bodegas se crean aquí mismo, juntas).
     srv.exigir_numero_libre_en_la_empresa(db, datos.numero_cotizacion, datos.empresa)
@@ -316,7 +316,7 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
             raise
     if len(creados) > 1:
         _en_el_orden_escrito(db, creados, [posiciones[parte.bodega_id] for parte in partes])
-    if datos.subir_a_siigo:
+    if a_siigo:
         _subir_recien_creada_a_siigo(db, creados, usuario)
     db.commit()
     # Recargadas con sus líneas y producciones de una vez (con refresh, la
@@ -331,27 +331,13 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
 
 def _subir_recien_creada_a_siigo(db: Session, creados: list[Apartado], usuario: Usuario) -> None:
     """La cotización recién creada (todas sus partes) va a Siigo y queda con
-    el número que Siigo le dio. Si Siigo la rechaza, la excepción deshace todo:
-    no se guarda nada en el programa."""
+    el número que Siigo le dio. Si Siigo falla, se guarda igual con un número
+    provisional "PEND-<id>" y queda pendiente de subir (ver siigo_cotizacion.sincronizar)."""
     db.flush()
-    db.expire_all()
-    primera = db.get(Apartado, creados[0].id)
-    partes, creada = siigo_cotizacion.subir(db, primera, usuario)
-    numero = str(creada.get("number") or "").strip()
-    try:
-        if not numero:
-            raise HTTPException(status_code=502, detail="Siigo creó la cotización pero no devolvió su número.")
-        srv.exigir_numero_libre_en_la_empresa(db, numero, primera.empresa, excepto=[p.id for p in partes])
-    except HTTPException:
-        # Para no dejar en Siigo una cotización que el programa no guarda.
-        try:
-            siigo.borrar_cotizacion(primera.empresa, creada["id"])
-        except siigo.ErrorSiigo:
-            pass
-        raise
-    for parte in partes:
-        parte.numero_cotizacion = numero
-    db.flush()
+    provisional = f"PEND-{creados[0].id}"
+    for parte in creados:
+        parte.numero_cotizacion, parte.siigo_pendiente = provisional, True
+    siigo_cotizacion.sincronizar(db, creados[0], usuario)
 
 
 def _en_el_orden_escrito(db: Session, creados: list[Apartado], posiciones: list[list[int]]) -> None:
@@ -424,13 +410,24 @@ def editar_apartado(
     Las líneas que salen de OTRA bodega se pasan a la misma cotización en esa
     bodega: se le suman si ya existe ahí, o se crea. Todo junto o nada."""
     # Una cotización no se vuelve orden interna ni al revés.
-    datos = datos.model_copy(update={"orden_interna": srv.apartado_de_mi_bodega(db, apartado_id, usuario).orden_interna})
+    original = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+    datos = datos.model_copy(update={"orden_interna": original.orden_interna})
+    # La que va a Siigo conserva el número que le dio Siigo (o el provisional)
+    # y su empresa: los cambios se pasan a esa misma cotización de Siigo.
+    de_siigo = siigo_cotizacion.es_de_siigo(original)
+    if de_siigo:
+        if datos.empresa != original.empresa:
+            raise HTTPException(status_code=400, detail="Esta cotización ya es del Siigo de su empresa: no se le puede cambiar la empresa.")
+        datos = datos.model_copy(update={"numero_cotizacion": srv.numero_sin_empresa(original.numero_cotizacion)})
     # Si le cambian el número o la empresa, que no choque con otra cotización de
     # esa empresa (sus propias partes no cuentan).
     srv.exigir_numero_libre_en_la_empresa(db, datos.numero_cotizacion, datos.empresa,
                                           excepto=[apartado_id, *datos.otras_partes_ids])
     if datos.items:
         apartado = _editar_cotizacion_completa(db, apartado_id, datos, usuario)
+        if de_siigo:
+            siigo_cotizacion.sincronizar(db, apartado, usuario)
+            apartado = db.get(Apartado, apartado.id)
         db.commit(); db.refresh(apartado)
         return _con_faltantes(db, [apartado])[0]
     bodega = srv.bodega_de_consulta(db, usuario, datos.bodega_id)
@@ -459,9 +456,16 @@ def editar_apartado(
         )
         if restante is None:
             raise HTTPException(status_code=500, detail="No se encontró la otra parte de la cotización.")
+        if de_siigo:
+            siigo_cotizacion.sincronizar(db, restante, usuario)
+            db.commit()
+            restante = db.get(Apartado, restante.id)
         return _con_faltantes(db, [restante])[0]
     apartado = srv.editar_apartado(db, apartado_id, datos.model_copy(update={"items": propias}), usuario)
     _pasar_a_otras_bodegas(db, apartado.numero_cotizacion, apartado.bodega_nombre, por_bodega, datos, usuario)
+    if de_siigo:
+        siigo_cotizacion.sincronizar(db, apartado, usuario)
+        apartado = db.get(Apartado, apartado.id)
     db.commit(); db.refresh(apartado)
     return _con_faltantes(db, [apartado])[0]
 

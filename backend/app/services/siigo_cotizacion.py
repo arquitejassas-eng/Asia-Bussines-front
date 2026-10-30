@@ -142,7 +142,7 @@ def _faltantes(apartado: Apartado, items: list[ApartadoItem], config: dict) -> l
     if apartado.siigo_retefuente and not config["retefuente"]:
         faltan.append("la retención en la fuente de Siigo (configuración del servidor)")
     for numero, item in enumerate(items, start=1):
-        que = [n for n, falta in (("el producto de Siigo", not item.siigo_producto), ("el precio", not (item.precio or 0) > 0),
+        que = [n for n, falta in (("el producto de Siigo", not item.siigo_producto), ("el valor de la venta", not (item.precio or 0) > 0),
                                   ("la cantidad para Siigo", not (item.siigo_cantidad or 0) > 0)) if falta]
         if que:
             faltan.append(f"línea {numero} ({(item.descripcion or '').strip()[:40]}): {', '.join(que)}")
@@ -169,15 +169,20 @@ def cuerpo_para_siigo(apartado: Apartado, items: list[ApartadoItem], config: dic
     }
 
 
-def subir(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apartado], dict]:
-    """Crea en Siigo la cotización completa (todas sus partes) y guarda en
-    cada parte el id, el número y el total que Siigo le dio. Devuelve las
-    partes y lo que respondió Siigo. No hace commit."""
+def es_de_siigo(apartado: Apartado) -> bool:
+    """La cotización va (o ya está) en Siigo: se creó en el programa con la
+    empresa conectada. Las viejas (hechas en Siigo a mano) no se tocan."""
+    return bool(apartado.siigo_id or apartado.siigo_pendiente)
+
+
+def _enviar(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apartado], dict, bool]:
+    """Crea en Siigo la cotización completa (todas sus partes) o, si ya está,
+    la actualiza. Guarda en cada parte el id, el número y el total de Siigo.
+    Devuelve (partes, lo que respondió Siigo, si se creó). No hace commit."""
     if apartado.orden_interna:
         raise HTTPException(status_code=400, detail="Una orden de producción interna no va a Siigo: no tiene cliente.")
     partes = partes_de_la_cotizacion(db, apartado) or [apartado]
-    if any(p.siigo_id for p in partes):
-        raise HTTPException(status_code=400, detail=f"Esta cotización ya está en Siigo ({next(p.siigo_numero for p in partes if p.siigo_id)}).")
+    siigo_id = next((p.siigo_id for p in partes if p.siigo_id), "")
     empresa = apartado.empresa
     try:
         config = siigo._config(empresa)
@@ -185,6 +190,11 @@ def subir(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apart
         raise HTTPException(status_code=400, detail=str(error)) from error
     if not siigo.esta_configurada(empresa):
         raise HTTPException(status_code=400, detail=f"{EMPRESAS_CONOCIDAS[empresa]} todavía no tiene configurado su Siigo.")
+    # Los datos de la cotización (cliente, vendedor, impuestos) son los de esta
+    # parte para todas: una parte nueva de otra bodega no los trae.
+    for parte in partes:
+        parte.cliente_identificacion, parte.siigo_vendedor = apartado.cliente_identificacion, apartado.siigo_vendedor
+        parte.siigo_iva, parte.siigo_retefuente = apartado.siigo_iva, apartado.siigo_retefuente
     items = [item for parte in partes for item in parte.items]
     faltan = _faltantes(apartado, items, config)
     if faltan:
@@ -195,14 +205,22 @@ def subir(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apart
             raise HTTPException(status_code=400, detail=(
                 f"El cliente con NIT/cédula {apartado.cliente_identificacion} no existe en el Siigo de "
                 f"{EMPRESAS_CONOCIDAS[empresa]}: créalo allá primero (o revisa el número)."))
-        ya_ligadas = {p.siigo_id for p in db.query(Apartado.siigo_id).filter(Apartado.siigo_id != "")}
-        creada = siigo.crear_cotizacion(empresa, cuerpo, ya_usadas=ya_ligadas)
+        if siigo_id:
+            respuesta = siigo.actualizar_cotizacion(empresa, siigo_id, cuerpo)
+        else:
+            ya_ligadas = {p.siigo_id for p in db.query(Apartado.siigo_id).filter(Apartado.siigo_id != "")}
+            # Al reintentar, primero se busca si el intento anterior sí la creó
+            # (Siigo a veces no alcanza a responder): así no queda dos veces.
+            reintento = apartado.siigo_error and apartado.fecha_creacion is not None
+            respuesta = (siigo.buscar_creada(empresa, cuerpo, ya_ligadas, desde=apartado.fecha_creacion.date()) if reintento else None) \
+                or siigo.crear_cotizacion(empresa, cuerpo, ya_usadas=ya_ligadas)
     except siigo.ErrorSiigo as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     ahora = datetime.now(timezone.utc)
     for parte in partes:
-        parte.siigo_id, parte.siigo_numero = str(creada.get("id", "")), str(creada.get("name") or creada.get("number") or "")
-        parte.siigo_total, parte.fecha_siigo = creada.get("total"), ahora
+        parte.siigo_id = str(respuesta.get("id") or siigo_id)
+        parte.siigo_numero = str(respuesta.get("name") or respuesta.get("number") or parte.siigo_numero or "")
+        parte.siigo_total, parte.fecha_siigo = respuesta.get("total"), ahora
     # Se recuerda para la próxima: el producto de cada código, el vendedor de
     # este usuario y los impuestos de este cliente.
     for item in items:
@@ -211,4 +229,44 @@ def subir(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apart
     recordar(db, empresa, TIPO_CLIENTE, apartado.cliente_identificacion,
              ",".join(n for n, si in (("iva", apartado.siigo_iva), ("retefuente", apartado.siigo_retefuente)) if si),
              apartado.cliente, usuario)
-    return partes, creada
+    return partes, respuesta, not siigo_id
+
+
+def sincronizar(db: Session, apartado: Apartado, usuario: Usuario) -> str:
+    """Pasa la cotización a Siigo (la crea o la actualiza). Si Siigo falla, la
+    cotización queda guardada en el programa marcada "pendiente de Siigo" con
+    el motivo, para volver a intentarlo. Devuelve ese motivo ("" si quedó bien).
+    La que se crea en Siigo toma su número (la provisional "PEND-..." lo
+    cambia). No hace commit."""
+    from app.services import apartados as srv
+
+    db.flush()
+    db.expire_all()
+    apartado = db.get(Apartado, apartado.id)
+    partes = partes_de_la_cotizacion(db, apartado) or [apartado]
+    try:
+        partes, respuesta, creada = _enviar(db, apartado, usuario)
+        if creada:
+            numero = str(respuesta.get("number") or "").strip()
+            try:
+                if not numero:
+                    raise HTTPException(status_code=502, detail="Siigo creó la cotización pero no devolvió su número.")
+                srv.exigir_numero_libre_en_la_empresa(db, numero, apartado.empresa, excepto=[p.id for p in partes])
+            except HTTPException:
+                # Para no dejar en Siigo una cotización que el programa no tiene ligada.
+                try:
+                    siigo.borrar_cotizacion(apartado.empresa, respuesta["id"])
+                except siigo.ErrorSiigo:
+                    pass
+                for parte in partes:
+                    parte.siigo_id, parte.siigo_numero, parte.siigo_total, parte.fecha_siigo = "", "", None, None
+                raise
+            for parte in partes:
+                parte.numero_cotizacion = numero
+        motivo = ""
+    except HTTPException as error:
+        motivo = str(error.detail)
+    for parte in partes:
+        parte.siigo_pendiente, parte.siigo_error = bool(motivo), motivo
+    db.flush()
+    return motivo

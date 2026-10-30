@@ -15,7 +15,7 @@ import { numeroSinEmpresa, useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
 import { calcularSolicitudesPendientes, calcularStockParaAlistar, metrosDeLinea, pideCorte } from "../Utils/produccion";
 import "../Style/Inventario.css";
-import { CamposSiigoLinea, SeccionSiigoCotizacion } from "../Componentes/SiigoCotizacion";
+import { AvisoSiigoCotizacion, CampoSiigoCliente, CamposSiigoLinea, ImpuestosSiigo, ResumenSiigo } from "../Componentes/SiigoCotizacion";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
 // Mismos estados que backend/app/services/apartados.py::ESTADOS_CANCELABLES:
@@ -409,6 +409,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
   // Al editar una cotización que también está en otra bodega (u otra empresa)
   // se le pueden quitar todas las líneas: se borra solo esta parte.
+  // La cotización que se está editando (para saber cómo está en Siigo).
+  const apartadoEditado = a.editandoId ? a.apartados.find((ap) => ap.id === a.editandoId) : undefined;
+  const camposCliente = {
+    formulario: a.formulario, nombreEmpresa: EMPRESAS[a.formulario.empresa] || a.formulario.empresa,
+    vendedores: a.siigo.vendedores, cliente: a.siigo.cliente, consultarCliente: a.siigo.consultarCliente, actualizar: a.actualizarCampoSiigo,
+  };
   const quitaEstaParte = Boolean(a.editandoId) && a.formulario.items.length === 0 && a.parteEditada.otrasPartes.length > 0;
 
   function guardarFormulario(evento: { preventDefault: () => void }) {
@@ -601,14 +607,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           onClick={() => confirmarEnvioAProduccion(ap)}
         >Enviar a producción</button>
       )}
-      {a.puedeEditarApartados && a.siigo.conectadas[ap.empresa] && !ap.siigoId && !ap.ordenInterna && ESTADOS_CANCELABLES.includes(ap.estado) && (
-        <button disabled={a.subiendoASiigo === ap.id} onClick={() => setConfirmacion({
-          titulo: `¿Subir la cotización ${ap.numeroCotizacion} a Siigo?`,
-          mensaje: "Se crea en Siigo con la cédula/NIT, el vendedor, los impuestos y los productos, cantidades y precios que tiene guardados. "
-            + "Siigo le pone su propio número. Si falta algo, te dice qué es.",
-          textoConfirmar: "Sí, subir a Siigo",
-          ejecutar: () => a.subirApartadoASiigo(ap.id),
-        })}>{a.subiendoASiigo === ap.id ? "Subiendo..." : "Subir a Siigo"}</button>
+      {a.puedeEditarApartados && ap.siigoPendiente && ESTADOS_CANCELABLES.includes(ap.estado) && (
+        <button title={ap.siigoError} disabled={a.subiendoASiigo === ap.id} onClick={() => a.subirApartadoASiigo(ap.id)}>
+          {a.subiendoASiigo === ap.id ? "Enviando a Siigo..." : ap.siigoId ? "Actualizar en Siigo" : "Subir a Siigo"}
+        </button>
       )}
       {a.puedeCancelarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
@@ -793,6 +795,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           </p>
 
           {a.errorAccionApartado && <p className="inventario-error">{a.errorAccionApartado}</p>}
+          {a.avisoSiigo && (
+            <p className={a.avisoSiigo.tipo === "ok" ? "siigo-aviso" : "siigo-aviso siigo-aviso-pendiente"} role="status">
+              {a.avisoSiigo.texto}{" "}
+              <button type="button" className="inventario-boton-cancelar" onClick={() => a.setAvisoSiigo(null)}>Cerrar</button>
+            </p>
+          )}
 
           {a.mostrarFormularioApartado && (
             <form className="inventario-form apartado-form" onSubmit={guardarFormulario} noValidate>
@@ -822,6 +830,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               )}
 
               <h3 className="apartado-form-seccion"><span className="apartado-form-paso">1</span> Datos de la {a.formulario.ordenInterna ? "orden" : "cotización"}</h3>
+              {!a.formulario.ordenInterna && (
+                <AvisoSiigoCotizacion
+                  nombreEmpresa={EMPRESAS[a.formulario.empresa] || a.formulario.empresa} empresaConectada={a.siigo.empresaConectada}
+                  enSiigo={a.siigo.enSiigo} editando={Boolean(a.editandoId)}
+                  numeroEnSiigo={apartadoEditado?.siigoNumero ?? ""} pendiente={Boolean(apartadoEditado?.siigoPendiente)}
+                  motivo={apartadoEditado?.siigoError ?? ""}
+                />
+              )}
               <div className="inventario-form-grid apartado-form-datos">
                 <div>
                   <label>Esta cotización es de *</label>
@@ -832,38 +848,31 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label>Número de cotización *</label>
-                  {a.siigo.enSiigo && !a.editandoId ? (
-                    <input value="" placeholder="Lo pone Siigo al guardar" disabled aria-label="Número de cotización: lo pone Siigo" />
-                  ) : (
+                {/* La que va a Siigo no lleva número aquí: lo pone Siigo. */}
+                {!a.siigo.enSiigo && (
+                  <div>
+                    <label>Número de cotización *</label>
                     <input
                       placeholder={a.formulario.empresa ? "Ej. 3953" : "Se pone solo al elegir la empresa"}
                       value={a.formulario.numeroCotizacion}
                       onChange={(e) => a.actualizarCampoApartado("numeroCotizacion", e.target.value)}
                     />
-                  )}
-                </div>
+                  </div>
+                )}
+                {a.siigo.enSiigo && <CampoSiigoCliente campo="nit" {...camposCliente} />}
                 {!a.formulario.ordenInterna && (
                   <div>
                     <label>Cliente</label>
                     <input
                       value={a.formulario.cliente}
+                      placeholder={a.siigo.enSiigo ? "Sale de Siigo al escribir la cédula/NIT" : undefined}
                       onChange={(e) => a.actualizarCampoApartado("cliente", e.target.value)}
                     />
                   </div>
                 )}
+                {a.siigo.enSiigo && <CampoSiigoCliente campo="vendedor" {...camposCliente} />}
               </div>
-              {!a.formulario.ordenInterna && (
-                <SeccionSiigoCotizacion
-                  formulario={a.formulario} nombreEmpresa={EMPRESAS[a.formulario.empresa] || a.formulario.empresa}
-                  editando={Boolean(a.editandoId)}
-                  numeroEnSiigo={a.editandoId ? (a.apartados.find((ap) => ap.id === a.editandoId)?.siigoNumero ?? "") : ""}
-                  empresaConectada={a.siigo.empresaConectada} enSiigo={a.siigo.enSiigo}
-                  vendedores={a.siigo.vendedores} cliente={a.siigo.cliente} consultarCliente={a.siigo.consultarCliente}
-                  actualizar={a.actualizarCampoSiigo}
-                />
-              )}
+              {a.siigo.enSiigo && <ImpuestosSiigo formulario={a.formulario} porcentajes={a.siigo.impuestos} actualizar={a.actualizarCampoSiigo} />}
 
               <h3 className="apartado-form-seccion">
                 <span className="apartado-form-paso">2</span> Productos
@@ -1221,6 +1230,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       />
                     </div>
                   )}
+                  {a.siigo.enSiigo && (
+                    <CamposSiigoLinea
+                      indice={indice} item={item} unidad={a.siigo.unidadDe(item)} productos={a.siigo.productos[indice]}
+                      buscarProducto={a.siigo.buscarProducto} cerrarBusquedaProducto={a.siigo.cerrarBusquedaProducto}
+                      actualizar={(campo, valor) => a.actualizarItemApartado(indice, campo, valor)}
+                    />
+                  )}
                   <div style={{ gridColumn: "1 / -1" }}>
                     <label>Descripción</label>
                     {/* Ancha y de dos renglones: las descripciones de las cotizaciones son largas. */}
@@ -1237,13 +1253,6 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       </p>
                     )}
                   </div>
-                  {(a.siigo.enSiigo || (a.editandoId && a.siigo.usaSiigo)) && (
-                    <CamposSiigoLinea
-                      indice={indice} item={item} productos={a.siigo.productos[indice]}
-                      buscarProducto={a.siigo.buscarProducto} cerrarBusquedaProducto={a.siigo.cerrarBusquedaProducto}
-                      actualizar={(campo, valor) => a.actualizarItemApartado(indice, campo, valor)}
-                    />
-                  )}
                   </div>
                 </div>
               ))}
@@ -1279,6 +1288,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </p>
               )}
 
+              {a.siigo.enSiigo && <ResumenSiigo formulario={a.formulario} porcentajes={a.siigo.impuestos} />}
+
               {a.errorFormularioApartado && <p className="inventario-error">{a.errorFormularioApartado}</p>}
               {lineasQueSePasan.length > 0 && (
                 <p className="inventario-error">
@@ -1289,7 +1300,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               <div className="inventario-form-botones apartado-form-pie">
                 <div className="apartado-form-resumen">{resumenDelFormulario()}</div>
                 <button type="submit" className="inventario-boton" disabled={a.guardandoApartado || lineasQueSePasan.length > 0}>
-                  {a.guardandoApartado ? "Guardando..." : quitaEstaParte ? `Quitar de ${a.parteEditada.bodega}` : a.editandoId ? "Guardar cambios" : a.formulario.ordenInterna ? "Crear orden" : "Crear apartado"}
+                  {a.guardandoApartado ? (a.siigo.enSiigo ? "Guardando y pasando a Siigo..." : "Guardando...")
+                    : quitaEstaParte ? `Quitar de ${a.parteEditada.bodega}`
+                    : a.siigo.enSiigo ? (apartadoEditado?.siigoId ? "Guardar y actualizar en Siigo" : "Guardar y subir a Siigo")
+                    : a.editandoId ? "Guardar cambios" : a.formulario.ordenInterna ? "Crear orden" : "Crear apartado"}
                 </button>
                 <button type="button" className="inventario-boton-cancelar" onClick={a.cerrarFormularioApartado}>
                   Cancelar
@@ -1433,7 +1447,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             )}
                             <td className="ap-col-cotizacion">
                               {ap.numeroCotizacion}
-                              {ap.siigoNumero && (
+                              {ap.siigoPendiente ? (
+                                <span className="siigo-etiqueta siigo-etiqueta-pendiente" title={ap.siigoError}>
+                                  {ap.siigoId ? "Siigo sin actualizar" : "Pendiente de Siigo"}
+                                </span>
+                              ) : ap.siigoNumero && (
                                 <span className="siigo-etiqueta" title={ap.siigoTotal != null ? `Total en Siigo: ${ap.siigoTotal.toLocaleString("es-CO", { style: "currency", currency: "COP" })}` : undefined}>
                                   Siigo {ap.siigoNumero}
                                 </span>

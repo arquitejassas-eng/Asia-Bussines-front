@@ -95,6 +95,11 @@ class Apartado(Base):
     siigo_retefuente: Mapped[bool] = mapped_column(default=False, server_default=false())
     siigo_vendedor: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fecha_siigo: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # La cotización es de las que van a Siigo pero el último envío falló (Siigo
+    # no respondió, el cliente no existe allá...): se guardó igual y queda
+    # pendiente de subir (sin siigo_id) o de actualizar (con siigo_id).
+    siigo_pendiente: Mapped[bool] = mapped_column(default=False, server_default=false())
+    siigo_error: Mapped[str] = mapped_column(Text, default="", server_default="")
 
     # Siempre en el orden en que se escribieron (Postgres no garantiza ningún
     # orden sin ORDER BY: en línea las líneas salían revueltas al editar).

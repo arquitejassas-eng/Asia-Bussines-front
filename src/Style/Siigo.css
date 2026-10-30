@@ -1,34 +1,22 @@
 /* Siigo en el formulario de cotización (ver Componentes/SiigoCotizacion.tsx). */
 
-.siigo-seccion {
-  margin: 0.75rem 0 0.5rem;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--at-border, #e1d5c0);
-  border-left: 4px solid var(--ap-azul, #2f62a8);
-  border-radius: 10px;
-  background: var(--at-surface, #ffffff);
-}
-
 .siigo-nota { margin: 0.5rem 0; }
 
-.siigo-subir {
-  display: flex;
-  gap: 0.6rem;
-  align-items: flex-start;
-  cursor: pointer;
+/* Qué pasa con Siigo al guardar (arriba del formulario). */
+.siigo-aviso {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-left: 4px solid var(--ap-azul, #2f62a8);
+  border-radius: 8px;
+  background: rgba(47, 98, 168, 0.07);
 }
-.siigo-subir input { width: 1.15rem; height: 1.15rem; margin-top: 0.15rem; flex-shrink: 0; }
-.siigo-subir span { display: flex; flex-direction: column; gap: 0.15rem; }
-.siigo-subir small { color: var(--at-muted, #7c6a56); }
-
-.siigo-ya-subida {
-  margin: 0;
-  color: var(--at-green, #2e7d4f);
+.siigo-aviso-pendiente {
+  border-left-color: var(--at-red, #c23b2c);
+  background: rgba(194, 59, 44, 0.07);
 }
-
-.siigo-datos { margin-top: 0.75rem; align-items: start; }
 
 .siigo-impuestos {
+  margin-top: 0.75rem !important;
   border: 1px solid var(--at-border-soft, #ebe2d2);
   border-radius: 8px;
   padding: 0.4rem 0.75rem 0.55rem;
@@ -45,7 +33,23 @@
 .siigo-ok { color: var(--at-green, #2e7d4f); }
 .siigo-mal { color: var(--at-red, #c23b2c); }
 
-.siigo-subtotal { margin: 0.75rem 0 0; text-align: right; }
+/* Valor de la cotización, como lo calcula Siigo (al final del formulario). */
+.siigo-resumen {
+  margin: 0.75rem 0 0.75rem auto;
+  max-width: 22rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--at-border, #e1d5c0);
+  border-radius: 10px;
+  background: var(--at-surface, #ffffff);
+}
+.siigo-resumen div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.15rem 0; }
+.siigo-resumen dt { color: var(--at-text-2, #4a392c); }
+.siigo-resumen dd { margin: 0; font-variant-numeric: tabular-nums; }
+.siigo-resumen-total { border-top: 1px solid var(--at-border-soft, #ebe2d2); margin-top: 0.25rem; padding-top: 0.35rem !important; font-weight: 700; }
+.siigo-resumen p { margin: 0.35rem 0 0; font-size: 0.8rem; color: var(--at-muted, #7c6a56); }
+
+/* En la lista: pendiente de Siigo. */
+.siigo-etiqueta-pendiente { background: rgba(194, 59, 44, 0.12) !important; color: var(--at-red, #c23b2c) !important; }
 
 /* Campos de Siigo de cada producto. */
 .siigo-linea {
@@ -57,14 +61,6 @@
   padding: 0.6rem 0.75rem;
   border-radius: 8px;
   background: rgba(47, 98, 168, 0.06);
-}
-.siigo-linea-titulo {
-  grid-column: 1 / -1;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ap-azul, #2f62a8);
 }
 .siigo-linea-campo { position: relative; min-width: 0; }
 .siigo-linea-campo input { width: 100%; }

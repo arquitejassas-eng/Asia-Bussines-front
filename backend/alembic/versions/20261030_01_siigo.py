@@ -1,7 +1,8 @@
 """Cotizaciones a Siigo Nube.
 
 - `apartados`: cédula/NIT del cliente y cómo quedó la cotización en Siigo
-  (id, número "C-1-...", total, IVA, retención, vendedor, fecha).
+  (id, número "C-1-...", total, IVA, retención, vendedor, fecha) o si quedó
+  pendiente de subir/actualizar y por qué.
 - `apartado_items`: precio, cantidad en la unidad de Siigo (kilos,
   centímetros o unidades) y producto de Siigo de cada línea.
 - `siigo_preferencias` (tabla nueva): lo que se recuerda por empresa
@@ -31,6 +32,8 @@ def upgrade() -> None:
     op.add_column("apartados", sa.Column("siigo_retefuente", sa.Boolean(), nullable=False, server_default=sa.false()))
     op.add_column("apartados", sa.Column("siigo_vendedor", sa.Integer(), nullable=True))
     op.add_column("apartados", sa.Column("fecha_siigo", sa.DateTime(timezone=True), nullable=True))
+    op.add_column("apartados", sa.Column("siigo_pendiente", sa.Boolean(), nullable=False, server_default=sa.false()))
+    op.add_column("apartados", sa.Column("siigo_error", sa.Text(), nullable=False, server_default=""))
 
     op.add_column("apartado_items", sa.Column("precio", sa.Float(), nullable=True))
     op.add_column("apartado_items", sa.Column("siigo_cantidad", sa.Float(), nullable=True))
@@ -54,6 +57,6 @@ def downgrade() -> None:
     op.drop_table("siigo_preferencias")
     for columna in ("siigo_producto", "siigo_cantidad", "precio"):
         op.drop_column("apartado_items", columna)
-    for columna in ("fecha_siigo", "siigo_vendedor", "siigo_retefuente", "siigo_iva", "siigo_total", "siigo_numero",
+    for columna in ("siigo_error", "siigo_pendiente", "fecha_siigo", "siigo_vendedor", "siigo_retefuente", "siigo_iva", "siigo_total", "siigo_numero",
                     "siigo_id", "cliente_identificacion"):
         op.drop_column("apartados", columna)

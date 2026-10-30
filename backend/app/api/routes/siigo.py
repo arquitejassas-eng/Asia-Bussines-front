@@ -78,6 +78,20 @@ def cliente(empresa: str, identificacion: str, db: Session = Depends(get_db)) ->
     }
 
 
+_impuestos: dict[str, tuple[float, dict]] = {}
+
+
+@router.get("/{empresa}/impuestos")
+def impuestos(empresa: str) -> dict:
+    """Porcentajes del IVA y la retención configurados (para el total aproximado del formulario)."""
+    empresa = _empresa(empresa)
+    guardado = _impuestos.get(empresa)
+    if guardado is None or guardado[0] < time.monotonic():
+        guardado = (time.monotonic() + MINUTOS_PRODUCTOS * 60, _con_errores_de_siigo(siigo.porcentajes_impuestos, empresa))
+        _impuestos[empresa] = guardado
+    return guardado[1]
+
+
 _cargando_productos: set[str] = set()
 
 
@@ -150,10 +164,14 @@ def sugerencias(datos: SugerenciasRequest, db: Session = Depends(get_db)) -> lis
 
 @router.post("/cotizaciones/{apartado_id}", response_model=ApartadoResponse)
 def subir_cotizacion(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
-    """Sube a Siigo una cotización que ya está en el programa (con su número de
-    siempre: Siigo la guarda con el número que Siigo le dé)."""
+    """Vuelve a intentar subir (o actualizar) en Siigo una cotización que quedó
+    pendiente porque Siigo falló. Si vuelve a fallar, queda el motivo nuevo."""
     apartado = srv_apartados.apartado_de_mi_bodega(db, apartado_id, usuario)
-    siigo_cotizacion.subir(db, apartado, usuario)
+    if not siigo_cotizacion.es_de_siigo(apartado):
+        raise HTTPException(status_code=400, detail="Esta cotización no se creó para Siigo (se hizo en Siigo a mano o es una orden interna).")
+    motivo = siigo_cotizacion.sincronizar(db, apartado, usuario)
     db.commit()
+    if motivo:
+        raise HTTPException(status_code=400, detail=motivo)
     return (db.query(Apartado).options(selectinload(Apartado.items).selectinload(ApartadoItem.producciones))
             .filter(Apartado.id == apartado_id).populate_existing().one())
