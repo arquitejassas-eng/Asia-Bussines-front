@@ -615,9 +615,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       {a.puedeCancelarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
           titulo: `¿Anular el apartado ${ap.numeroCotizacion}?`,
-          mensaje: ap.estado === "apartado"
+          mensaje: (ap.estado === "apartado"
             ? "El material que tenía reservado queda libre para otras ventas."
-            : "Ya fue enviado a producción. Al anularlo, el material que faltaba por producir queda libre para otras ventas y los productos de stock que ya se descontaron vuelven a la bodega. La lámina que ya se produjo NO vuelve al inventario.",
+            : "Ya fue enviado a producción. Al anularlo, el material que faltaba por producir queda libre para otras ventas y los productos de stock que ya se descontaron vuelven a la bodega. La lámina que ya se produjo NO vuelve al inventario.")
+            + (ap.siigoId ? ` También se borra en Siigo (${ap.siigoNumero}).` : ""),
           textoConfirmar: "Sí, anular apartado",
           ejecutar: () => a.cancelarApartado(ap.id),
         })}>Anular</button>
@@ -713,7 +714,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
           titulo: `¿Anular la cotización ${numero}?`,
           mensaje: `Se anula completa (${activas.map((p) => p.bodegaNombre).join(" y ")}). El material que tenía reservado queda libre para otras ventas. `
-            + "Los productos de stock que ya se descontaron vuelven a la bodega; la lámina que ya se produjo NO vuelve al inventario.",
+            + "Los productos de stock que ya se descontaron vuelven a la bodega; la lámina que ya se produjo NO vuelve al inventario."
+            + (activas.some((p) => p.siigoId) ? ` También se borra en Siigo (${activas.find((p) => p.siigoId)?.siigoNumero}).` : ""),
           textoConfirmar: "Sí, anular cotización",
           ejecutar: () => a.cancelarVarios(activas.map((p) => p.id)),
         })}>Anular</button>

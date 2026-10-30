@@ -745,10 +745,16 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
   }
 
+  // La anulada que estaba en Siigo se borra allá también; si Siigo falló, se dice.
+  function avisarSiSiigoFallo(respuesta: unknown) {
+    const motivo = (respuesta as { siigo_error?: string } | null)?.siigo_error;
+    if (motivo) setAvisoSiigo({ tipo: "pendiente", texto: motivo });
+  }
+
   async function cancelarApartado(id: number) {
     setErrorAccionApartado("");
     try {
-      await api.patch(`/apartados/${id}/cancelar`);
+      avisarSiSiigoFallo(await api.patch(`/apartados/${id}/cancelar`));
       await cargarApartados();
     } catch (err) {
       setErrorAccionApartado(err instanceof ErrorApi ? err.message : "No se pudo cancelar el apartado.");
@@ -787,7 +793,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
   }
   const cancelarVarios = (ids: number[]) =>
-    enVarios(ids, (id) => api.patch(`/apartados/${id}/cancelar`), "No se pudo cancelar la cotización.");
+    enVarios(ids, async (id) => avisarSiSiigoFallo(await api.patch(`/apartados/${id}/cancelar`)), "No se pudo cancelar la cotización.");
   const enviarVariosAProduccion = (ids: number[]) =>
     enVarios(ids, (id) => api.patch(`/apartados/${id}/enviar-a-produccion`), "No se pudo enviar la cotización a producción.");
   const eliminarVarios = (ids: number[]) =>
