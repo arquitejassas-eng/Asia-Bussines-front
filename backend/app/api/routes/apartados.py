@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -20,6 +22,7 @@ from app.schemas.apartados import (
 )
 from app.schemas.inventario import ProductoResponse
 from app.services import apartados as srv
+from app.services import siigo, siigo_cotizacion
 from app.services import importar_cotizaciones
 from app.services.salida_apartado import registrar_salida
 
@@ -273,6 +276,11 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
     # producción interna (para stock), solo Admin Inventario.
     if usuario.rol == RolUsuario.VENDEDOR and datos.orden_interna:
         raise HTTPException(status_code=403, detail="Las órdenes de producción interna las crea Admin Inventario.")
+    if datos.subir_a_siigo:
+        if datos.orden_interna:
+            raise HTTPException(status_code=400, detail="Una orden de producción interna no va a Siigo: no tiene cliente.")
+        # El número lo pone Siigo: mientras tanto, uno provisional que no choca con nada.
+        datos = datos.model_copy(update={"numero_cotizacion": f"SIIGO-{secrets.token_hex(6)}"})
     # El número no se repite en la misma empresa (las partes de esta cotización
     # en varias bodegas se crean aquí mismo, juntas).
     srv.exigir_numero_libre_en_la_empresa(db, datos.numero_cotizacion, datos.empresa)
@@ -308,6 +316,8 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
             raise
     if len(creados) > 1:
         _en_el_orden_escrito(db, creados, [posiciones[parte.bodega_id] for parte in partes])
+    if datos.subir_a_siigo:
+        _subir_recien_creada_a_siigo(db, creados, usuario)
     db.commit()
     # Recargadas con sus líneas y producciones de una vez (con refresh, la
     # respuesta pedía las producciones línea por línea).
@@ -317,6 +327,31 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
         selectinload(Apartado.items).selectinload(ApartadoItem.rollo),
     ).filter(Apartado.id.in_(ids)).populate_existing()}
     return _con_faltantes(db, [por_id[i] for i in ids])[0]
+
+
+def _subir_recien_creada_a_siigo(db: Session, creados: list[Apartado], usuario: Usuario) -> None:
+    """La cotización recién creada (todas sus partes) va a Siigo y queda con
+    el número que Siigo le dio. Si Siigo la rechaza, la excepción deshace todo:
+    no se guarda nada en el programa."""
+    db.flush()
+    db.expire_all()
+    primera = db.get(Apartado, creados[0].id)
+    partes, creada = siigo_cotizacion.subir(db, primera, usuario)
+    numero = str(creada.get("number") or "").strip()
+    try:
+        if not numero:
+            raise HTTPException(status_code=502, detail="Siigo creó la cotización pero no devolvió su número.")
+        srv.exigir_numero_libre_en_la_empresa(db, numero, primera.empresa, excepto=[p.id for p in partes])
+    except HTTPException:
+        # Para no dejar en Siigo una cotización que el programa no guarda.
+        try:
+            siigo.borrar_cotizacion(primera.empresa, creada["id"])
+        except siigo.ErrorSiigo:
+            pass
+        raise
+    for parte in partes:
+        parte.numero_cotizacion = numero
+    db.flush()
 
 
 def _en_el_orden_escrito(db: Session, creados: list[Apartado], posiciones: list[list[int]]) -> None:

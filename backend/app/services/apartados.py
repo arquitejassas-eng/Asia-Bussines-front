@@ -1027,6 +1027,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         fecha_creacion=ahora,
         estado=EstadoApartado.APARTADO,
         observaciones=datos.observaciones,
+        **datos_siigo_cotizacion(datos),
         # Aunque solo tenga rollos completos va a Planta: allá alistan y mueven
         # el rollo, lo marcan terminado y entonces queda por dar salida.
     )
@@ -1040,6 +1041,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 producto_id=item.producto_id, descripcion=item.descripcion, cantidad=item.cantidad,
                 medida=item.medida,  # opcional: cortar cada unidad a esta medida (m)
                 empresa_material=_empresa_material_linea(db, item, datos.empresa), hay_fisico=item.hay_fisico,
+                **datos_siigo_linea(item),
             ))
         else:
             db.add(ApartadoItem(
@@ -1050,9 +1052,21 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 rollo_id=item.rollo_id,
                 empresa_material=_empresa_material_linea(db, item, datos.empresa),
                 convertir_en=item.convertir_en, bodega_conversion_id=item.bodega_conversion_id,
+                **datos_siigo_linea(item),
             ))
 
     return apartado
+
+
+def datos_siigo_cotizacion(datos: ApartadoCrear) -> dict:
+    """Lo de Siigo que trae el formulario para la cotización (ver siigo_cotizacion)."""
+    return {"cliente_identificacion": (datos.cliente_identificacion or "").strip(), "siigo_iva": datos.siigo_iva,
+            "siigo_retefuente": datos.siigo_retefuente, "siigo_vendedor": datos.siigo_vendedor}
+
+
+def datos_siigo_linea(linea) -> dict:
+    return {"precio": linea.precio, "siigo_cantidad": linea.siigo_cantidad,
+            "siigo_producto": (linea.siigo_producto or "").strip()}
 
 
 def exigir_numero_libre_en_la_empresa(db: Session, numero: str, empresa: str, excepto: list[int] | None = None) -> None:
@@ -1223,6 +1237,8 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     apartado.empresa = datos.empresa
     apartado.cliente = datos.cliente
     apartado.observaciones = datos.observaciones
+    for campo, valor in datos_siigo_cotizacion(datos).items():
+        setattr(apartado, campo, valor)
     for item in list(apartado.items):
         if item.id not in ids_nuevos:
             apartado.items.remove(item)
@@ -1233,6 +1249,8 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             item = actuales[linea.id]
             item.descripcion = linea.descripcion
             item.empresa_material = empresa_material
+            for campo, valor in datos_siigo_linea(linea).items():
+                setattr(item, campo, valor)
             if item.modalidad == ModalidadApartado.POR_STOCK:
                 item.producto_id, item.cantidad, item.medida = linea.producto_id, linea.cantidad, linea.medida
                 if not item.stock_descontado:
@@ -1246,7 +1264,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             apartado.items.append(ApartadoItem(
                 modalidad=ModalidadApartado.POR_STOCK, producto_id=linea.producto_id,
                 descripcion=linea.descripcion, cantidad=linea.cantidad, medida=linea.medida,
-                empresa_material=empresa_material, hay_fisico=linea.hay_fisico,
+                empresa_material=empresa_material, hay_fisico=linea.hay_fisico, **datos_siigo_linea(linea),
             ))
         else:
             apartado.items.append(ApartadoItem(
@@ -1256,6 +1274,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
                 rollo_id=linea.rollo_id,
                 empresa_material=empresa_material,
                 convertir_en=linea.convertir_en, bodega_conversion_id=linea.bodega_conversion_id,
+                **datos_siigo_linea(linea),
             ))
     if apartado.estado == EstadoApartado.APARTADO:
         apartado.salida_pendiente = False

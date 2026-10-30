@@ -3,6 +3,7 @@ import { api, ErrorApi } from "../Componentes/Api";
 import { useActualizacionAutomatica } from "./useActualizacionAutomatica";
 import { apartadoDesdeApi, disponibilidadCodigoDesdeApi, disponibilidadProductoDesdeApi, productoDesdeApi } from "../Componentes/Mapeo";
 import { AMBAS_EMPRESAS } from "../Utils/empresas";
+import { useSiigoCotizacion } from "./useSiigoCotizacion";
 
 // Cada línea del formulario declara su propia modalidad -- un mismo apartado
 // puede mezclar líneas POR_ROLLO y POR_STOCK (ver backend/app/models/apartado.py::ModalidadApartado).
@@ -27,8 +28,16 @@ const ITEM_VACIO = {
   hayFisico: false,
   // Orden interna, lámina lisa: en qué se convierte y qué bodega la convierte ("" = la misma).
   convertirEn: "caballete", bodegaConversionId: "",
+  // Siigo: producto de Siigo, cantidad en su unidad (kilos / centímetros /
+  // unidades; el programa la sugiere y no la toca si se escribió a mano) y precio.
+  siigoProducto: "", siigoCantidad: "", siigoCantidadManual: false, siigoUnidad: "", siigoAviso: "", precio: "",
 };
-const FORMULARIO_VACIO = { bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", ordenInterna: false, items: [{ ...ITEM_VACIO }] };
+const FORMULARIO_VACIO = {
+  bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", ordenInterna: false,
+  // Siigo: subirla al guardar (el número lo pone Siigo), cédula/NIT, vendedor e impuestos.
+  subirASiigo: false, clienteIdentificacion: "", siigoVendedor: "", siigoIva: true, siigoRetefuente: false,
+  items: [{ ...ITEM_VACIO }],
+};
 
 type ItemFormulario = {
   modalidad: string;
@@ -47,11 +56,13 @@ type ItemFormulario = {
   convertirEn?: string; bodegaConversionId?: string; laminasConvertidas?: number;
   // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
   id?: number; metrosConsumidos?: number; stockDescontado?: boolean;
+  siigoProducto: string; siigoCantidad: string; siigoCantidadManual?: boolean; siigoUnidad?: string; siigoAviso?: string; precio: string;
 };
 type FormularioApartado = {
   bodegaId: string; empresa: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string;
   // Orden de producción interna (Admin Inventario): solo lámina por producir, todo va al stock.
   ordenInterna: boolean;
+  subirASiigo: boolean; clienteIdentificacion: string; siigoVendedor: string; siigoIva: boolean; siigoRetefuente: boolean;
   items: ItemFormulario[];
 };
 type ApartadoItem = {
@@ -63,6 +74,7 @@ type ApartadoItem = {
   empresaMaterial: string; // "" = la de la cotización
   hayFisico: boolean;
   convertirEn: string; bodegaConversionId: number | null; laminasConvertidas: number;
+  precio: number | null; siigoCantidad: number | null; siigoProducto: string;
 };
 export type RolloParaApartar = {
   id: number; identificadorRollo: string; codigoInterno: string; descripcion: string;
@@ -75,7 +87,19 @@ type Apartado = {
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;
   faltantes: string[]; otrasPartes: string[]; items: ApartadoItem[];
+  clienteIdentificacion: string; siigoId: string; siigoNumero: string; siigoTotal: number | null;
+  siigoIva: boolean; siigoRetefuente: boolean; siigoVendedor: number | null;
 };
+
+/** Número escrito a la colombiana o no: "4.266,32", "4266,32", "1.000" y
+ * "1.000.000" (puntos de miles), "4266.32" (punto decimal). 0 si no es un número. */
+export function numeroDe(valor: string | number) {
+  const texto = String(valor ?? "").trim().replace(/\s|\$/g, "");
+  let normal = texto;
+  if (texto.includes(",")) normal = texto.replace(/\./g, "").replace(",", ".");
+  else if (/^\d{1,3}(\.\d{3})+$/.test(texto)) normal = texto.replace(/\./g, "");
+  return Number(normal) || 0;
+}
 
 /** "3811-AR" / "3811-ABG" -> "3811" (ver backend numero_sin_empresa). */
 export function numeroSinEmpresa(numero: string) {
@@ -152,6 +176,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   useActualizacionAutomatica(() => consultarApartados(true));
 
   const [formulario, setFormulario] = useState<FormularioApartado>(FORMULARIO_VACIO);
+  const siigo = useSiigoCotizacion(puedeCrearApartados, formulario, setFormulario);
   const [mostrarFormularioApartado, setMostrarFormularioApartado] = useState(false);
   const [guardandoApartado, setGuardandoApartado] = useState(false);
   const [errorFormularioApartado, setErrorFormularioApartado] = useState("");
@@ -200,6 +225,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       ordenInterna: ap.ordenInterna,
       bodegaId: String(ap.bodegaId), empresa: empresaCotizacion, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
       numeroCotizacion: numeroSinEmpresa(ap.numeroCotizacion), cliente: ap.cliente, observaciones: ap.observaciones,
+      subirASiigo: false, clienteIdentificacion: ap.clienteIdentificacion || "", siigoVendedor: ap.siigoVendedor ? String(ap.siigoVendedor) : "",
+      siigoIva: ap.siigoIva, siigoRetefuente: ap.siigoRetefuente,
       // Todas las partes juntas, en el orden en que se escribieron las líneas (su id).
       items: partes.flatMap((parte) => parte.items.map((it) => ({ parte, it })))
         .sort((x, y) => x.it.id - y.it.id)
@@ -218,6 +245,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         hayFisico: it.hayFisico, hayFisicoOriginal: it.hayFisico,
         convertirEn: it.convertirEn || "caballete", bodegaConversionId: it.bodegaConversionId ? String(it.bodegaConversionId) : "",
         laminasConvertidas: it.laminasConvertidas,
+        siigoProducto: it.siigoProducto || "", precio: it.precio == null ? "" : String(it.precio),
+        siigoCantidad: it.siigoCantidad == null ? "" : String(it.siigoCantidad), siigoCantidadManual: it.siigoCantidad != null,
         };
       }),
     });
@@ -281,6 +310,11 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       }
     });
     if (!editandoId) ponerSiguienteNumero(valor);
+  }
+
+  // Datos de Siigo de la cotización (casillas y textos).
+  function actualizarCampoSiigo(campo: "subirASiigo" | "clienteIdentificacion" | "siigoVendedor" | "siigoIva" | "siigoRetefuente", valor: string | boolean) {
+    setFormulario((actual) => ({ ...actual, [campo]: valor }));
   }
 
   // Empresa de la que sale el material de UNA línea.
@@ -559,9 +593,20 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       setErrorFormularioApartado("Elige de qué bodega sale cada producto.");
       return;
     }
-    if (!formulario.numeroCotizacion.trim()) {
+    const subirASiigo = siigo.enSiigo && !editandoId;
+    if (!subirASiigo && !formulario.numeroCotizacion.trim()) {
       setErrorFormularioApartado("Indica el número de cotización.");
       return;
+    }
+    if (subirASiigo) {
+      const numeroLinea = formulario.items.findIndex((i) => !i.siigoProducto.trim() || !(numeroDe(i.precio) > 0) || !(numeroDe(i.siigoCantidad) > 0));
+      const falta = !formulario.clienteIdentificacion.replace(/[^0-9A-Za-z]/g, "") ? "Escribe la cédula o NIT del cliente para subirla a Siigo."
+        : !formulario.siigoVendedor ? "Elige el vendedor de Siigo."
+        : numeroLinea >= 0 ? `Producto ${numeroLinea + 1}: falta el producto de Siigo, la cantidad para Siigo o el precio.` : "";
+      if (falta) {
+        setErrorFormularioApartado(falta);
+        return;
+      }
     }
     if (formulario.items.length === 0 && !(editandoId && parteEditada.otrasPartes.length > 0)) {
       setErrorFormularioApartado("Agrega al menos un producto solicitado.");
@@ -596,28 +641,38 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       await enviar({
         bodega_id: Number(bodegaDeItem(0) || formulario.bodegaId),
         material_en_camino: formulario.materialEnCamino,
-        numero_cotizacion: formulario.numeroCotizacion.trim(),
+        // Con "Subir a Siigo" el número lo pone Siigo (el backend ignora este).
+        numero_cotizacion: subirASiigo ? "SIIGO" : formulario.numeroCotizacion.trim(),
         empresa: formulario.empresa,
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
         orden_interna: formulario.ordenInterna,
+        cliente_identificacion: formulario.ordenInterna ? "" : formulario.clienteIdentificacion.trim(),
+        siigo_iva: formulario.siigoIva, siigo_retefuente: formulario.siigoRetefuente,
+        siigo_vendedor: formulario.siigoVendedor ? Number(formulario.siigoVendedor) : null,
+        subir_a_siigo: subirASiigo,
         ...(editandoId && otrasPartesIds.length ? { otras_partes_ids: otrasPartesIds } : {}),
         items: formulario.items.map((i) => {
           // Cada línea dice de qué bodega y de qué empresa sale: el backend
           // guarda una parte por (bodega, empresa) con el mismo número.
           const bodega_id = Number(i.bodegaId || formulario.bodegaId);
           const empresa = i.empresa || formulario.empresa;
+          const datosSiigo = {
+            siigo_producto: i.siigoProducto.trim(),
+            precio: numeroDe(i.precio) > 0 ? numeroDe(i.precio) : null,
+            siigo_cantidad: numeroDe(i.siigoCantidad) > 0 ? numeroDe(i.siigoCantidad) : null,
+          };
           if (i.modalidad === "rollo_completo") {
             return { id: i.id, bodega_id, empresa, modalidad: "por_rollo", rollo_id: i.rolloId, descripcion: i.descripcion, cantidad: 1,
-              codigo_interno: i.codigoInterno || undefined, medida: Number(i.medida) || undefined };
+              codigo_interno: i.codigoInterno || undefined, medida: Number(i.medida) || undefined, ...datosSiigo };
           }
           return i.modalidad === "por_stock"
             // "Cortar a (m)" es opcional en una línea de stock (ej. teja UPVC de 11,80 cortada a 7).
-            ? { id: i.id, bodega_id, empresa, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad),
+            ? { id: i.id, bodega_id, empresa, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad), ...datosSiigo,
                 hay_fisico: Boolean(i.hayFisico),
                 medida: Number(String(i.medida).replace(",", ".")) > 0 ? Number(String(i.medida).replace(",", ".")) : undefined }
             : { id: i.id, bodega_id, empresa, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida),
-                tipo_producto: i.tipoProducto || "",
+                tipo_producto: i.tipoProducto || "", ...datosSiigo,
                 ...(i.tipoProducto === "lamina_lisa" ? {
                   convertir_en: i.convertirEn || "caballete",
                   bodega_conversion_id: i.bodegaConversionId ? Number(i.bodegaConversionId) : null,
@@ -652,6 +707,21 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       await cargarApartados();
     } catch (err) {
       setErrorFormularioApartado(err instanceof ErrorApi ? err.message : "No se pudo devolver la línea a la bodega.");
+    }
+  }
+
+  // Cotización que ya estaba en el programa: se sube a Siigo con lo que tiene guardado.
+  const [subiendoASiigo, setSubiendoASiigo] = useState<number | null>(null);
+  async function subirApartadoASiigo(id: number) {
+    setErrorAccionApartado("");
+    setSubiendoASiigo(id);
+    try {
+      await api.post(`/siigo/cotizaciones/${id}`, {});
+      await cargarApartados();
+    } catch (err) {
+      setErrorAccionApartado(err instanceof ErrorApi ? err.message : "No se pudo subir la cotización a Siigo.");
+    } finally {
+      setSubiendoASiigo(null);
     }
   }
 
@@ -730,12 +800,13 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
     editandoId, abrirEdicionApartado, parteEditada, otrasPartesIds,
-    actualizarCampoApartado, cambiarBodegaItem, cambiarEmpresaItem, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
+    actualizarCampoApartado, actualizarCampoSiigo, cambiarBodegaItem, cambiarEmpresaItem, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
     cambiarModalidadItem, rollosParaApartar, cargarRollosParaApartar, seleccionarRolloCompleto,
     guardandoApartado, errorFormularioApartado, crearApartado,
     disponibilidadItems, consultarDisponibilidadItem,
     resultadosBusquedaProducto, buscarProductoParaItem, seleccionarProductoParaItem,
 
+    siigo, subirApartadoASiigo, subiendoASiigo,
     errorAccionApartado, cancelarApartado, eliminarApartado, enviarApartadoAProduccion, devolverLineaABodega,
     cancelarVarios, enviarVariosAProduccion, eliminarVarios,
     marcarApartadoProduccionTerminada, marcarApartadoEntregado,

@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     admin_inventario, apartados, auth, bodegas, envios, ia, inventario, material_en_camino, prestamos, produccion,
-    recepcion, rollos, usuarios,
+    recepcion, rollos, siigo, usuarios,
 )
 
 router_api = APIRouter()
@@ -19,3 +19,4 @@ router_api.include_router(envios.router)
 router_api.include_router(admin_inventario.router)
 router_api.include_router(material_en_camino.router)
 router_api.include_router(prestamos.router)
+router_api.include_router(siigo.router)

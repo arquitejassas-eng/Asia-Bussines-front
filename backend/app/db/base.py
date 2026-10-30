@@ -27,6 +27,7 @@ from app.models import (  # noqa: E402,F401
     producto,
     recepcion,
     rollo,
+    siigo,
     solicitud,
     unidad_familia,
     usuario,

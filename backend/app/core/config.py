@@ -49,6 +49,24 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str | None = None
     GROQ_MODEL: str = "openai/gpt-oss-120b"
 
+    # Siigo Nube: cada empresa tiene su propio Siigo (usuario API + access
+    # key de "Alianzas > Mi Credencial API"). Sin credenciales de una
+    # empresa, sus cotizaciones no se suben a Siigo. Los id (tipo de
+    # cotización, IVA, retención) son de cada Siigo: se consultan en
+    # /siigo/catalogos de esa empresa.
+    SIIGO_URL: str = "https://api.siigo.com"
+    SIIGO_PARTNER_ID: str = "InventarioArquitejas"
+    SIIGO_AR_USUARIO: str | None = None
+    SIIGO_AR_LLAVE: str | None = None
+    SIIGO_AR_DOCUMENTO_COTIZACION: int | None = None
+    SIIGO_AR_IVA: int | None = None
+    SIIGO_AR_RETEFUENTE: int | None = None
+    SIIGO_ABG_USUARIO: str | None = None
+    SIIGO_ABG_LLAVE: str | None = None
+    SIIGO_ABG_DOCUMENTO_COTIZACION: int | None = None
+    SIIGO_ABG_IVA: int | None = None
+    SIIGO_ABG_RETEFUENTE: int | None = None
+
     @property
     def lista_origenes_permitidos(self) -> list[str]:
         return [o.strip() for o in self.ORIGENES_PERMITIDOS.split(",") if o.strip()]

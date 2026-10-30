@@ -1,0 +1,158 @@
+import { useEffect, useRef, useState } from "react";
+import { api, ErrorApi } from "../Componentes/Api";
+
+// Lo de Siigo en el formulario de cotización: qué empresas están conectadas,
+// vendedores, buscar el cliente por cédula/NIT, buscar el producto de Siigo
+// de cada línea y la cantidad sugerida (kilos para Asia Business,
+// centímetros para Arquitejas; ver backend services/siigo_cotizacion.py).
+
+export type VendedorSiigo = { id: number; nombre: string; correo: string };
+export type ProductoSiigo = { codigo: string; nombre: string; unidad: string };
+export type ClienteSiigo = { estado: "buscando" | "existe" | "no_existe" | "error"; nombre: string; mensaje?: string };
+
+type LineaParaSiigo = {
+  modalidad: string; codigoInterno: string; descripcion: string; cantidad: string | number; medida: string | number;
+  tipoProducto: string; productoId: number | null;
+  siigoCantidad: string; siigoCantidadManual?: boolean; siigoProducto: string; siigoUnidad?: string; siigoAviso?: string;
+};
+type FormularioParaSiigo = {
+  empresa: string; ordenInterna: boolean; subirASiigo: boolean; cliente: string; clienteIdentificacion: string;
+  siigoVendedor: string; siigoIva: boolean; siigoRetefuente: boolean;
+  items: LineaParaSiigo[];
+};
+type Sugerencia = { cantidad: number | null; unidad: string; aviso: string; siigo_producto: string };
+
+export const NOMBRE_UNIDAD: Record<string, string> = { kg: "kilo", cm: "centímetro", und: "unidad" };
+
+export function useSiigoCotizacion<F extends FormularioParaSiigo>(
+  activo: boolean, formulario: F, setFormulario: (cambio: (actual: F) => F) => void,
+) {
+  // Empresas con su Siigo conectado ({ AR: true, ABG: false }).
+  const [conectadas, setConectadas] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!activo) return;
+    api.get<Record<string, boolean>>("/siigo/estado").then((datos) => setConectadas(datos || {})).catch(() => setConectadas({}));
+  }, [activo]);
+  const empresaConectada = Boolean(conectadas[formulario.empresa]);
+  const usaSiigo = activo && empresaConectada && !formulario.ordenInterna;
+  const enSiigo = usaSiigo && formulario.subirASiigo;
+
+  // Vendedores del Siigo de la empresa (y el que este usuario usó la última vez).
+  const [vendedores, setVendedores] = useState<Record<string, VendedorSiigo[] | "cargando" | "error">>({});
+  useEffect(() => {
+    const empresa = formulario.empresa;
+    if (!enSiigo || vendedores[empresa]) return;
+    setVendedores((actual) => ({ ...actual, [empresa]: "cargando" }));
+    api.get<{ vendedores: VendedorSiigo[]; recordado: number | null }>(`/siigo/${empresa}/vendedores`)
+      .then((datos) => {
+        setVendedores((actual) => ({ ...actual, [empresa]: datos?.vendedores || [] }));
+        if (datos?.recordado) {
+          setFormulario((actual) => (actual.siigoVendedor ? actual : { ...actual, siigoVendedor: String(datos.recordado) }));
+        }
+      })
+      .catch(() => setVendedores((actual) => ({ ...actual, [empresa]: "error" })));
+  }, [enSiigo, formulario.empresa, vendedores, setFormulario]);
+
+  // Cliente por cédula/NIT: si existe en Siigo, su nombre y los impuestos que
+  // se le pusieron la última vez.
+  const [cliente, setCliente] = useState<ClienteSiigo | null>(null);
+  const ultimoCliente = useRef("");
+  async function consultarCliente(identificacion: string) {
+    const nit = identificacion.replace(/[^0-9A-Za-z]/g, "");
+    ultimoCliente.current = nit;
+    if (!nit || !empresaConectada) {
+      setCliente(null);
+      return;
+    }
+    setCliente({ estado: "buscando", nombre: "" });
+    try {
+      const datos = await api.get<{ existe: boolean; nombre: string; impuestos_recordados: string[] | null }>(
+        `/siigo/${formulario.empresa}/clientes/${encodeURIComponent(nit)}`);
+      if (ultimoCliente.current !== nit || !datos) return;
+      setCliente({ estado: datos.existe ? "existe" : "no_existe", nombre: datos.nombre });
+      setFormulario((actual) => ({
+        ...actual,
+        cliente: actual.cliente.trim() ? actual.cliente : datos.nombre,
+        ...(datos.impuestos_recordados ? {
+          siigoIva: datos.impuestos_recordados.includes("iva"), siigoRetefuente: datos.impuestos_recordados.includes("retefuente"),
+        } : {}),
+      }));
+    } catch (err) {
+      if (ultimoCliente.current === nit) setCliente({ estado: "error", nombre: "", mensaje: err instanceof ErrorApi ? err.message : "" });
+    }
+  }
+  useEffect(() => { setCliente(null); ultimoCliente.current = ""; }, [formulario.empresa]);
+
+  // Productos de Siigo: búsqueda por línea (espera a que dejen de escribir).
+  const [productos, setProductos] = useState<Record<number, ProductoSiigo[] | "buscando" | "error">>({});
+  const busquedas = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const ultimaBusqueda = useRef<Record<number, string>>({});
+  function buscarProducto(indice: number, texto: string) {
+    const consulta = texto.trim();
+    ultimaBusqueda.current[indice] = consulta;
+    clearTimeout(busquedas.current[indice]);
+    if (consulta.length < 2) {
+      setProductos((actual) => { const { [indice]: _q, ...resto } = actual; return resto; });
+      return;
+    }
+    busquedas.current[indice] = setTimeout(async () => {
+      setProductos((actual) => ({ ...actual, [indice]: "buscando" }));
+      try {
+        const datos = await api.get<ProductoSiigo[]>(`/siigo/${formulario.empresa}/productos?buscar=${encodeURIComponent(consulta)}`);
+        if (ultimaBusqueda.current[indice] === consulta) setProductos((actual) => ({ ...actual, [indice]: datos || [] }));
+      } catch {
+        if (ultimaBusqueda.current[indice] === consulta) setProductos((actual) => ({ ...actual, [indice]: "error" }));
+      }
+    }, 350);
+  }
+  function cerrarBusquedaProducto(indice: number) {
+    clearTimeout(busquedas.current[indice]);
+    ultimaBusqueda.current[indice] = "";
+    setProductos((actual) => { const { [indice]: _q, ...resto } = actual; return resto; });
+  }
+
+  // Cantidad sugerida y producto recordado de cada línea: se piden de nuevo
+  // cuando cambian el código, la cantidad, la medida o el producto. La
+  // cantidad que el vendedor escribió a mano no se toca.
+  const clave = enSiigo ? JSON.stringify([formulario.empresa, formulario.items.map((i) => [
+    i.modalidad, i.codigoInterno, i.cantidad, i.medida, i.tipoProducto, i.productoId, i.descripcion])]) : "";
+  useEffect(() => {
+    if (!clave) return;
+    const items = formulario.items;
+    const espera = setTimeout(async () => {
+      try {
+        const datos = await api.post<Sugerencia[]>("/siigo/sugerencias", {
+          empresa: formulario.empresa,
+          lineas: items.map((i) => ({
+            modalidad: i.modalidad === "rollo_completo" ? "por_rollo" : i.modalidad, codigo_interno: i.codigoInterno || null,
+            descripcion: i.descripcion, cantidad: Number(String(i.cantidad).replace(",", ".")) || 0,
+            medida: Number(String(i.medida).replace(",", ".")) || null, tipo_producto: i.tipoProducto || "", producto_id: i.productoId,
+          })),
+        });
+        if (!datos) return;
+        setFormulario((actual) => ({
+          ...actual,
+          items: actual.items.map((item, indice) => {
+            const sugerida = datos[indice];
+            if (!sugerida) return item;
+            return {
+              ...item, siigoUnidad: sugerida.unidad, siigoAviso: sugerida.aviso,
+              siigoCantidad: item.siigoCantidadManual ? item.siigoCantidad : (sugerida.cantidad == null ? "" : String(sugerida.cantidad)),
+              siigoProducto: item.siigoProducto || sugerida.siigo_producto,
+            };
+          }),
+        }));
+      } catch {
+        // Sin sugerencia: el vendedor escribe la cantidad.
+      }
+    }, 600);
+    return () => clearTimeout(espera);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clave]);
+
+  return {
+    conectadas, empresaConectada, usaSiigo, enSiigo,
+    vendedores: vendedores[formulario.empresa], cliente, consultarCliente,
+    productos, buscarProducto, cerrarBusquedaProducto,
+  };
+}

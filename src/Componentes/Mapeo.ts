@@ -130,7 +130,10 @@ export function apartadoItemDesdeApi(i: RegistroApi) {
     hayFisico: Boolean(i.hay_fisico),
     // Orden interna, lámina lisa: en qué se convierte, en qué bodega y cuántas van.
     convertirEn: texto(i.convertir_en), bodegaConversionId: i.bodega_conversion_id == null ? null : numero(i.bodega_conversion_id),
-    laminasConvertidas: numero(i.laminas_convertidas || 0) };
+    laminasConvertidas: numero(i.laminas_convertidas || 0),
+    // Siigo: precio por unidad de Siigo, cantidad en esa unidad y producto de Siigo.
+    precio: i.precio == null ? null : numero(i.precio),
+    siigoCantidad: i.siigo_cantidad == null ? null : numero(i.siigo_cantidad), siigoProducto: texto(i.siigo_producto) };
 }
 
 export function apartadoDesdeApi(a: RegistroApi) {
@@ -151,6 +154,10 @@ export function apartadoDesdeApi(a: RegistroApi) {
     faltantes: Array.isArray(a.faltantes) ? a.faltantes.map(texto) : [],
     // Otras partes activas de la misma cotización ("SANTANDER", "3811-AR (RICAURTE)").
     otrasPartes: Array.isArray(a.otras_partes) ? a.otras_partes.map(texto) : [],
+    // Siigo: cédula/NIT del cliente y, si ya se subió, su número y total allá.
+    clienteIdentificacion: texto(a.cliente_identificacion), siigoId: texto(a.siigo_id), siigoNumero: texto(a.siigo_numero),
+    siigoTotal: a.siigo_total == null ? null : numero(a.siigo_total), siigoIva: a.siigo_iva == null ? true : Boolean(a.siigo_iva),
+    siigoRetefuente: Boolean(a.siigo_retefuente), siigoVendedor: a.siigo_vendedor == null ? null : numero(a.siigo_vendedor),
     items: items.map(apartadoItemDesdeApi) };
 }
 

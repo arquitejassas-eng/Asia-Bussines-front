@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, Text, text, false
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, text, false, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -84,6 +84,18 @@ class Apartado(Base):
     stock_separado_por: Mapped[str] = mapped_column(String(150), default="")
     stock_separado_en: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Siigo Nube (ver services/siigo_cotizacion.py): cédula/NIT del cliente y,
+    # si la cotización se subió a Siigo, cómo quedó allá. Todas las partes de
+    # una cotización repartida en varias bodegas apuntan a la MISMA de Siigo.
+    cliente_identificacion: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    siigo_id: Mapped[str] = mapped_column(String(60), default="", server_default="")
+    siigo_numero: Mapped[str] = mapped_column(String(30), default="", server_default="")  # ej. "C-1-3966"
+    siigo_total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    siigo_iva: Mapped[bool] = mapped_column(default=True, server_default=true())
+    siigo_retefuente: Mapped[bool] = mapped_column(default=False, server_default=false())
+    siigo_vendedor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fecha_siigo: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Siempre en el orden en que se escribieron (Postgres no garantiza ningún
     # orden sin ORDER BY: en línea las líneas salían revueltas al editar).
     items = relationship("ApartadoItem", back_populates="apartado", cascade="all, delete-orphan", order_by="ApartadoItem.id")
@@ -164,6 +176,13 @@ class ApartadoItem(Base):
     convertir_en: Mapped[str] = mapped_column(String(20), default="", server_default="")
     bodega_conversion_id: Mapped[int | None] = mapped_column(ForeignKey("bodegas.id"), nullable=True)
     laminas_convertidas: Mapped[float] = mapped_column(Float, default=0, server_default="0")
+
+    # Siigo Nube: precio por unidad de Siigo (kilo, centímetro o unidad), la
+    # cantidad en esa unidad (el programa la sugiere desde los metros) y el
+    # producto de Siigo de esta línea.
+    precio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    siigo_cantidad: Mapped[float | None] = mapped_column(Float, nullable=True)
+    siigo_producto: Mapped[str] = mapped_column(String(60), default="", server_default="")
 
     @property
     def bodega_conversion(self) -> int | None:

@@ -15,6 +15,7 @@ import { numeroSinEmpresa, useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
 import { calcularSolicitudesPendientes, calcularStockParaAlistar, metrosDeLinea, pideCorte } from "../Utils/produccion";
 import "../Style/Inventario.css";
+import { CamposSiigoLinea, SeccionSiigoCotizacion } from "../Componentes/SiigoCotizacion";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
 // Mismos estados que backend/app/services/apartados.py::ESTADOS_CANCELABLES:
@@ -600,6 +601,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           onClick={() => confirmarEnvioAProduccion(ap)}
         >Enviar a producción</button>
       )}
+      {a.puedeEditarApartados && a.siigo.conectadas[ap.empresa] && !ap.siigoId && !ap.ordenInterna && ESTADOS_CANCELABLES.includes(ap.estado) && (
+        <button disabled={a.subiendoASiigo === ap.id} onClick={() => setConfirmacion({
+          titulo: `¿Subir la cotización ${ap.numeroCotizacion} a Siigo?`,
+          mensaje: "Se crea en Siigo con la cédula/NIT, el vendedor, los impuestos y los productos, cantidades y precios que tiene guardados. "
+            + "Siigo le pone su propio número. Si falta algo, te dice qué es.",
+          textoConfirmar: "Sí, subir a Siigo",
+          ejecutar: () => a.subirApartadoASiigo(ap.id),
+        })}>{a.subiendoASiigo === ap.id ? "Subiendo..." : "Subir a Siigo"}</button>
+      )}
       {a.puedeCancelarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
           titulo: `¿Anular el apartado ${ap.numeroCotizacion}?`,
@@ -824,11 +834,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </div>
                 <div>
                   <label>Número de cotización *</label>
-                  <input
-                    placeholder={a.formulario.empresa ? "Ej. 3953" : "Se pone solo al elegir la empresa"}
-                    value={a.formulario.numeroCotizacion}
-                    onChange={(e) => a.actualizarCampoApartado("numeroCotizacion", e.target.value)}
-                  />
+                  {a.siigo.enSiigo && !a.editandoId ? (
+                    <input value="" placeholder="Lo pone Siigo al guardar" disabled aria-label="Número de cotización: lo pone Siigo" />
+                  ) : (
+                    <input
+                      placeholder={a.formulario.empresa ? "Ej. 3953" : "Se pone solo al elegir la empresa"}
+                      value={a.formulario.numeroCotizacion}
+                      onChange={(e) => a.actualizarCampoApartado("numeroCotizacion", e.target.value)}
+                    />
+                  )}
                 </div>
                 {!a.formulario.ordenInterna && (
                   <div>
@@ -840,6 +854,16 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   </div>
                 )}
               </div>
+              {!a.formulario.ordenInterna && (
+                <SeccionSiigoCotizacion
+                  formulario={a.formulario} nombreEmpresa={EMPRESAS[a.formulario.empresa] || a.formulario.empresa}
+                  editando={Boolean(a.editandoId)}
+                  numeroEnSiigo={a.editandoId ? (a.apartados.find((ap) => ap.id === a.editandoId)?.siigoNumero ?? "") : ""}
+                  empresaConectada={a.siigo.empresaConectada} enSiigo={a.siigo.enSiigo}
+                  vendedores={a.siigo.vendedores} cliente={a.siigo.cliente} consultarCliente={a.siigo.consultarCliente}
+                  actualizar={a.actualizarCampoSiigo}
+                />
+              )}
 
               <h3 className="apartado-form-seccion">
                 <span className="apartado-form-paso">2</span> Productos
@@ -1213,6 +1237,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       </p>
                     )}
                   </div>
+                  {(a.siigo.enSiigo || (a.editandoId && a.siigo.usaSiigo)) && (
+                    <CamposSiigoLinea
+                      indice={indice} item={item} productos={a.siigo.productos[indice]}
+                      buscarProducto={a.siigo.buscarProducto} cerrarBusquedaProducto={a.siigo.cerrarBusquedaProducto}
+                      actualizar={(campo, valor) => a.actualizarItemApartado(indice, campo, valor)}
+                    />
+                  )}
                   </div>
                 </div>
               ))}
@@ -1402,6 +1433,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             )}
                             <td className="ap-col-cotizacion">
                               {ap.numeroCotizacion}
+                              {ap.siigoNumero && (
+                                <span className="siigo-etiqueta" title={ap.siigoTotal != null ? `Total en Siigo: ${ap.siigoTotal.toLocaleString("es-CO", { style: "currency", currency: "COP" })}` : undefined}>
+                                  Siigo {ap.siigoNumero}
+                                </span>
+                              )}
                               {ap.ordenInterna && (
                                 <span style={{ display: "block", fontSize: "0.75rem", fontWeight: 600 }}>Orden interna</span>
                               )}

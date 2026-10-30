@@ -48,6 +48,13 @@ class ApartadoItemCrear(BaseModel):
     # sí está en la bodega; se aparta igual (ver ApartadoItem.hay_fisico).
     hay_fisico: bool = False
 
+    # Siigo Nube (opcionales hasta que la cotización se sube a Siigo): precio
+    # por unidad de Siigo, cantidad en esa unidad (kilos, centímetros o
+    # unidades) y código del producto en Siigo.
+    precio: float | None = Field(default=None, ge=0)
+    siigo_cantidad: float | None = Field(default=None, ge=0)
+    siigo_producto: str = Field(default="", max_length=60)
+
     @model_validator(mode="after")
     def _exigir_campos_segun_modalidad(self) -> "ApartadoItemCrear":
         self.empresa = (self.empresa or "").strip().upper()
@@ -104,6 +111,14 @@ class ApartadoCrear(BaseModel):
     # por producir; lo producido entra al stock.
     orden_interna: bool = False
     items: list[ApartadoItemCrear]
+    # Siigo Nube: cédula/NIT del cliente, impuestos que lleva y vendedor de Siigo.
+    cliente_identificacion: str = Field(default="", max_length=20)
+    siigo_iva: bool = True
+    siigo_retefuente: bool = False
+    siigo_vendedor: int | None = None
+    # Al crearla, subirla de una vez a Siigo: el número lo pone Siigo (el que
+    # venga en numero_cotizacion se ignora) y si Siigo la rechaza no se guarda.
+    subir_a_siigo: bool = False
 
     @model_validator(mode="after")
     def _empresa_valida(self) -> "ApartadoCrear":
@@ -211,6 +226,9 @@ class ApartadoItemResponse(BaseModel):
     convertir_en: str = ""
     bodega_conversion_id: int | None = None
     laminas_convertidas: float = 0
+    precio: float | None = None
+    siigo_cantidad: float | None = None
+    siigo_producto: str = ""
 
 
 class RolloParaApartarResponse(BaseModel):
@@ -321,8 +339,16 @@ class ApartadoResponse(ModeloConFechasUtc):
     faltantes: list[str] = []
     # Otras partes activas de la misma cotización: "SANTANDER", "3811-AR (RICAURTE)".
     otras_partes: list[str] = []
+    cliente_identificacion: str = ""
+    siigo_id: str = ""
+    siigo_numero: str = ""
+    siigo_total: float | None = None
+    siigo_iva: bool = True
+    siigo_retefuente: bool = False
+    siigo_vendedor: int | None = None
+    fecha_siigo: datetime | None = None
 
-    @field_serializer("fecha_creacion", "fecha_enviado_a_produccion", "fecha_cancelado", "fecha_entregado", "stock_separado_en", when_used="json")
+    @field_serializer("fecha_creacion", "fecha_enviado_a_produccion", "fecha_cancelado", "fecha_entregado", "stock_separado_en", "fecha_siigo", when_used="json")
     def _serializar_fechas_opcionales(self, valor: datetime | None) -> str | None:
         if valor is None:
             return None
