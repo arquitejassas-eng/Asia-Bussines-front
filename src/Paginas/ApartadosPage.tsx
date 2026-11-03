@@ -449,7 +449,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const lista = it.modalidad === "por_stock" ? it.stockDescontado && !stockPorAlistar : (it.metrosPendientes ?? 0) <= 0;
     const codigo = it.modalidad === "por_stock" ? "" : it.codigoInterno;
     // Solo la descripción (como en el otro aplicativo); sin ella, la cantidad y el código.
-    const texto = it.descripcion || (it.modalidad === "por_stock" ? `producto #${it.productoId}` : `${cantidadLinea(it)} ${codigo || ""}`);
+    const texto = it.descripcion || (it.modalidad === "por_stock" ? `${cantidadLinea(it)} ${it.productoDescripcion || `producto #${it.productoId}`}` : `${cantidadLinea(it)} ${codigo || ""}`);
     return {
       lista, codigo,
       descripcion: descripcionResaltada(texto, codigo ? colorDeCodigo(codigo) : "otro"),
@@ -508,7 +508,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   <tr key={it.id} className={linea.lista ? "apartado-linea-lista" : undefined}>
                     <td className="apartado-detalle-num">{posicion + 1}</td>
                     <td className="apartado-detalle-desc">{linea.descripcion}</td>
-                    <td className="apartado-detalle-codigo">{linea.codigo || "Stock"}</td>
+                    <td className="apartado-detalle-codigo">
+                      {linea.codigo || (it.productoCodigo ? (
+                        <>
+                          {it.productoCodigo}
+                          {it.productoDescripcion && <span className="apartado-detalle-producto">{it.productoDescripcion}</span>}
+                        </>
+                      ) : "Stock")}
+                    </td>
                     <td className="apartado-detalle-cantidad">{cantidadLinea(it)}</td>
                     <td><div className="apartado-linea-cabeza">{linea.marcas}</div></td>
                   </tr>

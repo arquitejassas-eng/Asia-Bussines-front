@@ -187,6 +187,16 @@ class ApartadoItem(Base):
     def rollo_referencia(self) -> str | None:
         return self.rollo.identificador_rollo if self.rollo is not None else None
 
+    # Producto de stock que se apartó: la descripción escrita puede ser igual en
+    # dos líneas (ej. tornillo y capuchón), el código dice cuál es cuál.
+    @property
+    def producto_codigo(self) -> str | None:
+        return self.producto.codigo if self.producto is not None else None
+
+    @property
+    def producto_descripcion(self) -> str | None:
+        return self.producto.descripcion if self.producto is not None else None
+
     @property
     def metros_pendientes(self) -> float | None:
         """Solo tiene sentido para POR_ROLLO -- None para POR_STOCK."""

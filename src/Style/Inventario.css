@@ -1429,6 +1429,16 @@
 .apartado-detalle-tabla td.apartado-detalle-desc { width: 100%; color: var(--at-text, #251C14); }
 .apartado-detalle-tabla td.apartado-detalle-codigo,
 .apartado-detalle-tabla td.apartado-detalle-cantidad { white-space: nowrap; font-weight: 700; }
+/* Nombre del producto de stock debajo de su código (tornillo / capuchón...). */
+.apartado-detalle-producto {
+  display: block;
+  min-width: 9rem;
+  max-width: 14rem;
+  white-space: normal;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--at-muted, #7C6A56);
+}
 
 /* En el celular la tabla de cotizaciones se vuelve tarjetas: el detalle
    sigue siendo una tabla normal (con su propio scroll si no cabe). */
