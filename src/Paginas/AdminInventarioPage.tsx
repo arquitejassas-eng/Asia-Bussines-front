@@ -21,6 +21,8 @@ import "../Style/Inventario.css";
 import "../Style/Rollos.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
+const formatoNumero = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
+
 const ETIQUETAS_ESTADO_ENVIO: Record<string, string> = {
   pendiente_confirmacion: "Pendiente de confirmar",
   recibido: "Recibido",
@@ -45,6 +47,11 @@ function CeldaEmpresa({ metros }: { metros?: { fisico: number; reservado: number
 
 function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const c = useControladorAdminInventario(sesion, almacen);
+  const marcados = c.formularioEnvio.rollosSeleccionados.length;
+  // En el orden en que se fueron marcando.
+  const rollosMarcados = c.formularioEnvio.rollosSeleccionados
+    .map((id) => c.misRollos.find((r) => r.id === id))
+    .filter((r): r is (typeof c.misRollos)[number] => r !== undefined);
   // "Ver historial" de cada rollo del resumen por código (Admin Inventario).
   const historial = useHistorialRollo<(typeof c.rollosDelCodigoExpandido)[number]>();
   const bodegas = c.comparativo.bodegas;
@@ -164,51 +171,110 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 </div>
               </div>
 
-              <h3 className="inventario-form-subtitulo">Rollos disponibles (marca los que envías)</h3>
+              <h3 className="inventario-form-subtitulo envio-seccion">Rollos que envías</h3>
               {c.cargandoPropio ? (
                 <p className="inventario-cargando">Cargando...</p>
               ) : c.misRollos.length === 0 ? (
                 <p className="inventario-carga-ayuda">No tienes rollos sin repartir en este momento.</p>
               ) : (
                 <>
-                  <div className="inventario-buscador">
-                    <input
-                      type="text"
-                      placeholder="Buscar por código..."
-                      value={c.busquedaRollosEnvio}
-                      onChange={(e) => c.setBusquedaRollosEnvio(e.target.value)}
-                    />
+                  <div className="envio-busqueda">
+                    <label htmlFor="envio-buscar-rollo">Buscar rollo</label>
+                    <div className="inventario-buscador">
+                      <input
+                        id="envio-buscar-rollo"
+                        type="search"
+                        autoComplete="off"
+                        placeholder="Referencia, código, color o kilos (ej. 4558)"
+                        value={c.busquedaRollosEnvio}
+                        onChange={(e) => c.setBusquedaRollosEnvio(e.target.value)}
+                      />
+                    </div>
+                    <p className="envio-busqueda-ayuda" aria-live="polite">
+                      {c.busquedaRollosEnvio
+                        ? `${c.misRollosFiltrados.length} de ${c.misRollos.length} rollos`
+                        : `${c.misRollos.length} rollos sin repartir`}
+                      {c.busquedaRollosEnvio && (
+                        <button type="button" className="envio-limpiar" onClick={() => c.setBusquedaRollosEnvio("")}>Limpiar búsqueda</button>
+                      )}
+                    </p>
                   </div>
+
+                  {/* Los marcados se ven siempre, busques lo que busques (como en Producción). */}
+                  <div className={`envio-seleccion${marcados ? " activa" : ""}`} aria-live="polite">
+                    {marcados === 0 ? (
+                      <span>Toca un rollo para marcarlo. Puedes buscar otro y marcarlo también: se van sumando aquí.</span>
+                    ) : (
+                      <>
+                        <div className="envio-seleccion-cabeza">
+                          <strong>{marcados} rollo{marcados === 1 ? "" : "s"} marcado{marcados === 1 ? "" : "s"} para enviar</strong>
+                          <button type="button" className="envio-limpiar" onClick={() => c.marcarRollosEnvio(c.formularioEnvio.rollosSeleccionados, false)}>
+                            Desmarcar todos
+                          </button>
+                        </div>
+                        <ul className="envio-marcados">
+                          {rollosMarcados.map((r) => (
+                            <li key={r.id}>
+                              <span className="envio-ref">{r.identificadorRollo}</span>
+                              <span className="envio-kilos">{r.pesoNeto != null ? `${formatoNumero.format(r.pesoNeto)} kg` : "—"}</span>
+                              <span>{r.codigoInterno}</span>
+                              <span>{formatoNumero.format(r.metrosDisponibles)} m</span>
+                              <button type="button" className="envio-quitar" aria-label={`Quitar el rollo ${r.identificadorRollo}`}
+                                onClick={() => c.alternarRolloEnvio(r.id)}>Quitar</button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+
                   {c.misRollosFiltrados.length === 0 ? (
-                    <p className="inventario-carga-ayuda">No hay rollos que coincidan con tu búsqueda.</p>
+                    <p className="envio-sin-resultados">
+                      Ningún rollo coincide con «{c.busquedaRollosEnvio}». Revisa el número o escribe solo una parte
+                      de la referencia o de los kilos.
+                    </p>
                   ) : (
-                    <div className="inventario-tabla-contenedor">
+                    <div className="inventario-tabla-contenedor envio-tabla">
                       <table className="inventario-tabla">
                         <thead>
                           <tr>
-                            <th></th>
-                            <th>Código interno</th>
+                            <th className="envio-col-marca">
+                              <input
+                                type="checkbox"
+                                aria-label="Marcar todos los rollos de la lista"
+                                checked={c.misRollosFiltrados.every((r) => c.formularioEnvio.rollosSeleccionados.includes(r.id))}
+                                onChange={(e) => c.marcarRollosEnvio(c.misRollosFiltrados.map((r) => r.id), e.target.checked)}
+                              />
+                            </th>
                             <th>Referencia</th>
+                            <th className="envio-num">Kilos</th>
+                            <th>Código interno</th>
                             <th>Color</th>
-                            <th>Metros disponibles</th>
+                            <th className="envio-num">Metros</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {c.misRollosFiltrados.map((r) => (
-                            <tr key={r.id}>
-                              <td>
-                                <input
-                                  type="checkbox"
-                                  checked={c.formularioEnvio.rollosSeleccionados.includes(r.id)}
-                                  onChange={() => c.alternarRolloEnvio(r.id)}
-                                />
-                              </td>
-                              <td>{r.codigoInterno}</td>
-                              <td>{r.identificadorRollo}</td>
-                              <td>{r.colorMaterial || "—"}</td>
-                              <td>{r.metrosDisponibles}</td>
-                            </tr>
-                          ))}
+                          {c.misRollosFiltrados.map((r) => {
+                            const marcado = c.formularioEnvio.rollosSeleccionados.includes(r.id);
+                            return (
+                              <tr key={r.id} className={`envio-fila${marcado ? " marcada" : ""}`} onClick={() => c.alternarRolloEnvio(r.id)}>
+                                <td className="envio-col-marca">
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Enviar el rollo ${r.identificadorRollo}`}
+                                    checked={marcado}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={() => c.alternarRolloEnvio(r.id)}
+                                  />
+                                </td>
+                                <td className="envio-ref">{r.identificadorRollo}</td>
+                                <td className="envio-num envio-kilos">{r.pesoNeto != null ? `${formatoNumero.format(r.pesoNeto)} kg` : "—"}</td>
+                                <td>{r.codigoInterno}</td>
+                                <td>{r.colorMaterial || "—"}</td>
+                                <td className="envio-num">{formatoNumero.format(r.metrosDisponibles)} m</td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -216,7 +282,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 </>
               )}
 
-              <h3 className="inventario-form-subtitulo">Productos disponibles (indica cuánto envías)</h3>
+              <h3 className="inventario-form-subtitulo envio-seccion">Productos que envías (escribe la cantidad)</h3>
               {c.cargandoPropio ? (
                 <p className="inventario-cargando">Cargando...</p>
               ) : c.misProductos.filter((p) => Number(p.stock) > 0).length === 0 ? (
@@ -257,13 +323,17 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 </div>
               )}
 
-              <div>
-                <label>Observaciones</label>
-                <textarea
-                  rows={2}
-                  value={c.formularioEnvio.observaciones}
-                  onChange={(e) => c.actualizarCampoEnvio("observaciones", e.target.value)}
-                />
+              <div className="inventario-form-grid envio-observaciones">
+                <div>
+                  <label htmlFor="envio-observaciones">Observaciones</label>
+                  <textarea
+                    id="envio-observaciones"
+                    rows={2}
+                    placeholder="Ej. va en la mula de la tarde"
+                    value={c.formularioEnvio.observaciones}
+                    onChange={(e) => c.actualizarCampoEnvio("observaciones", e.target.value)}
+                  />
+                </div>
               </div>
 
               {c.errorFormularioEnvio && <p className="inventario-error">{c.errorFormularioEnvio}</p>}

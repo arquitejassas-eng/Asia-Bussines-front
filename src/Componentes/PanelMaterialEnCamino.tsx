@@ -5,7 +5,7 @@ import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica"
 import { formatearFechaColombia } from "../Utils/fechas";
 
 type RolloEnCamino = {
-  id: number; identificador_rollo: string; codigo_interno: string; descripcion: string; metros: number;
+  id: number; identificador_rollo: string; codigo_interno: string; descripcion: string; metros: number; peso_neto: number | null;
   llego: boolean; llego_por: string; fecha_llegada: string | null; ya_tiene_ingreso: boolean;
 };
 type Cargamento = {
@@ -88,8 +88,11 @@ export default function PanelMaterialEnCamino({ puedeGestionar, recargar }: { pu
         <tbody>
           {cargamentos.map((cg) => {
             const texto = minusculas(busqueda);
+            // Los kilos se escriben con coma o punto: "2035,5" encuentra el de 2035.5 kg.
+            const kilos = texto.replace(",", ".");
             const visibles = cg.rollos.filter((r) => !texto
-              || minusculas(r.identificador_rollo).includes(texto) || minusculas(r.codigo_interno).includes(texto));
+              || minusculas(r.identificador_rollo).includes(texto) || minusculas(r.codigo_interno).includes(texto)
+              || (r.peso_neto != null && String(r.peso_neto).includes(kilos)));
             const conIngreso = cg.rollos.filter((r) => r.ya_tiene_ingreso).map((r) => r.id);
             return (
               <Fragment key={cg.id}>
@@ -116,7 +119,7 @@ export default function PanelMaterialEnCamino({ puedeGestionar, recargar }: { pu
                     <td colSpan={5}>
                       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center", margin: "0.5rem 0" }}>
                         <input
-                          placeholder="Buscar referencia o código..."
+                          placeholder="Buscar referencia, código o kilos..."
                           value={busqueda}
                           onChange={(e) => setBusqueda(e.target.value)}
                           style={{ maxWidth: 260 }}
@@ -162,6 +165,7 @@ export default function PanelMaterialEnCamino({ puedeGestionar, recargar }: { pu
                             {puedeGestionar && <th></th>}
                             <th>Referencia</th>
                             <th>Código</th>
+                            <th>Kilos</th>
                             <th>Metros</th>
                             <th>Estado</th>
                           </tr>
@@ -183,6 +187,7 @@ export default function PanelMaterialEnCamino({ puedeGestionar, recargar }: { pu
                               )}
                               <td>{r.identificador_rollo}</td>
                               <td>{r.codigo_interno}</td>
+                              <td>{r.peso_neto ?? "—"}</td>
                               <td>{r.metros}</td>
                               <td>
                                 {r.llego

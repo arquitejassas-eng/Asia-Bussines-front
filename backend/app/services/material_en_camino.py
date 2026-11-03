@@ -130,7 +130,7 @@ def resumen_cargamento(db: Session, cargamento: Cargamento) -> dict:
     rollos = [
         {
             "id": r.id, "identificador_rollo": r.identificador_rollo, "codigo_interno": r.codigo_interno,
-            "descripcion": r.descripcion, "metros": r.metros, "llego": r.llego, "llego_por": r.llego_por,
+            "descripcion": r.descripcion, "metros": r.metros, "peso_neto": r.peso_neto, "llego": r.llego, "llego_por": r.llego_por,
             "fecha_llegada": r.fecha_llegada,
             "ya_tiene_ingreso": not r.llego and r.identificador_rollo in ya_ingresaron,
         }

@@ -26,6 +26,7 @@ class RolloEnCamino(BaseModel):
     codigo_interno: str
     descripcion: str
     metros: float
+    peso_neto: float | None = None  # kilos del proveedor: con ellos se reconoce el rollo al llegar
     llego: bool
     llego_por: str
     fecha_llegada: datetime | None
