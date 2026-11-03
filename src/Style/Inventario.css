@@ -698,6 +698,13 @@
 .apartado-linea-lista {
   opacity: 0.6;
 }
+/* "Filtrar por código": la línea que usa el código buscado. */
+.apartado-linea-coincide {
+  opacity: 1;
+  background: var(--at-amber-soft, #FDF0D5);
+  box-shadow: inset 3px 0 0 var(--at-terra, #B7451F);
+}
+li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
 /* Línea de stock con corte (ej. UPVC de 11,80 m cortada a 7 m): la hace Planta. */
 .apartado-linea-cortar {
   white-space: nowrap;
@@ -847,6 +854,8 @@
   max-width: 360px;
   margin-bottom: 0;
 }
+.apartados-buscador-codigo { flex-basis: 200px; max-width: 280px; }
+.apartados-buscador-codigo.activo input { border-color: var(--at-terra, #B7451F); box-shadow: 0 0 0 1px var(--at-terra, #B7451F); }
 .apartados-buscador input { border-radius: var(--at-r-pill, 999px); padding-top: 0.55rem; padding-bottom: 0.55rem; font-size: 0.85rem; }
 .apartados-select {
   --chip: var(--at-terra, #B7451F);
