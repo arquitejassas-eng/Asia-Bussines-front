@@ -169,8 +169,9 @@ def subir_cotizacion(apartado_id: int, db: Session = Depends(get_db), usuario: U
     apartado = srv_apartados.apartado_de_mi_bodega(db, apartado_id, usuario)
     if not siigo_cotizacion.es_de_siigo(apartado):
         raise HTTPException(status_code=400, detail="Esta cotización no se creó para Siigo (se hizo en Siigo a mano o es una orden interna).")
+    siigo_id_antes = apartado.siigo_id
     motivo = siigo_cotizacion.sincronizar(db, apartado, usuario)
-    db.commit()
+    siigo_cotizacion.guardar_o_deshacer_en_siigo(db, apartado, siigo_id_antes)
     if motivo:
         raise HTTPException(status_code=400, detail=motivo)
     return (db.query(Apartado).options(selectinload(Apartado.items).selectinload(ApartadoItem.producciones))

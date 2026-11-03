@@ -318,7 +318,9 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
         _en_el_orden_escrito(db, creados, [posiciones[parte.bodega_id] for parte in partes])
     if a_siigo:
         _subir_recien_creada_a_siigo(db, creados, usuario)
-    db.commit()
+        siigo_cotizacion.guardar_o_deshacer_en_siigo(db, creados[0], "")
+    else:
+        db.commit()
     # Recargadas con sus líneas y producciones de una vez (con refresh, la
     # respuesta pedía las producciones línea por línea).
     ids = [a.id for a in creados]
@@ -415,6 +417,7 @@ def editar_apartado(
     # La que va a Siigo conserva el número que le dio Siigo (o el provisional)
     # y su empresa: los cambios se pasan a esa misma cotización de Siigo.
     de_siigo = siigo_cotizacion.es_de_siigo(original)
+    siigo_id_antes = original.siigo_id
     if de_siigo:
         if datos.empresa != original.empresa:
             raise HTTPException(status_code=400, detail="Esta cotización ya es del Siigo de su empresa: no se le puede cambiar la empresa.")
@@ -428,7 +431,10 @@ def editar_apartado(
         if de_siigo:
             siigo_cotizacion.sincronizar(db, apartado, usuario)
             apartado = db.get(Apartado, apartado.id)
-        db.commit(); db.refresh(apartado)
+            siigo_cotizacion.guardar_o_deshacer_en_siigo(db, apartado, siigo_id_antes)
+        else:
+            db.commit()
+        db.refresh(apartado)
         return _con_faltantes(db, [apartado])[0]
     bodega = srv.bodega_de_consulta(db, usuario, datos.bodega_id)
     propias = [linea for linea in datos.items if not linea.bodega_id or linea.bodega_id == bodega]
@@ -458,7 +464,7 @@ def editar_apartado(
             raise HTTPException(status_code=500, detail="No se encontró la otra parte de la cotización.")
         if de_siigo:
             siigo_cotizacion.sincronizar(db, restante, usuario)
-            db.commit()
+            siigo_cotizacion.guardar_o_deshacer_en_siigo(db, restante, siigo_id_antes)
             restante = db.get(Apartado, restante.id)
         return _con_faltantes(db, [restante])[0]
     apartado = srv.editar_apartado(db, apartado_id, datos.model_copy(update={"items": propias}), usuario)
@@ -466,7 +472,10 @@ def editar_apartado(
     if de_siigo:
         siigo_cotizacion.sincronizar(db, apartado, usuario)
         apartado = db.get(Apartado, apartado.id)
-    db.commit(); db.refresh(apartado)
+        siigo_cotizacion.guardar_o_deshacer_en_siigo(db, apartado, siigo_id_antes)
+    else:
+        db.commit()
+    db.refresh(apartado)
     return _con_faltantes(db, [apartado])[0]
 
 

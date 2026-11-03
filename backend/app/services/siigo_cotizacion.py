@@ -16,6 +16,7 @@ impuestos que se marquen; el ReteICA se pone en la factura, no aquí.
 """
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -30,6 +31,8 @@ from app.models.usuario import Usuario
 from app.services import siigo
 from app.services.empresas import EMPRESAS_CONOCIDAS
 from app.services.seccionados import metros_de_linea
+
+logger = logging.getLogger("arquitejas.siigo")
 
 UNIDAD_POR_EMPRESA = {"ABG": "kg", "AR": "cm"}
 ESPESOR_EN_CODIGO = re.compile(r",(\d{2})$")
@@ -263,15 +266,45 @@ def _enviar(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apa
         parte.siigo_id = str(respuesta.get("id") or siigo_id)
         parte.siigo_numero = str(respuesta.get("name") or respuesta.get("number") or parte.siigo_numero or "")
         parte.siigo_total, parte.fecha_siigo = respuesta.get("total"), ahora
-    # Se recuerda para la próxima: el producto de cada código, el vendedor de
-    # este usuario y los impuestos de este cliente.
-    for item in items:
-        recordar(db, empresa, TIPO_PRODUCTO, clave_de_linea(item), item.siigo_producto, "", usuario)
-    recordar(db, empresa, TIPO_VENDEDOR, usuario.correo, str(apartado.siigo_vendedor), "", usuario)
-    recordar(db, empresa, TIPO_CLIENTE, apartado.cliente_identificacion,
-             ",".join(n for n, si in (("iva", apartado.siigo_iva), ("retefuente", apartado.siigo_retefuente)) if si),
-             apartado.cliente, usuario)
+    _recordar_para_la_proxima(db, apartado, items, usuario)
     return partes, respuesta, not siigo_id
+
+
+def _recordar_para_la_proxima(db: Session, apartado: Apartado, items: list[ApartadoItem], usuario: Usuario) -> None:
+    """Se recuerda el producto de cada código (una vez por código, aunque se
+    repita en varias líneas: gana la última), el vendedor de este usuario y
+    los impuestos de este cliente. Es solo una ayuda: si falla, la cotización
+    se guarda igual."""
+    empresa = apartado.empresa
+    productos = {clave_de_linea(item).strip().upper(): item.siigo_producto for item in items}
+    try:
+        with db.begin_nested():
+            for clave, producto in productos.items():
+                recordar(db, empresa, TIPO_PRODUCTO, clave, producto, "", usuario)
+            recordar(db, empresa, TIPO_VENDEDOR, usuario.correo, str(apartado.siigo_vendedor), "", usuario)
+            recordar(db, empresa, TIPO_CLIENTE, apartado.cliente_identificacion,
+                     ",".join(n for n, si in (("iva", apartado.siigo_iva), ("retefuente", apartado.siigo_retefuente)) if si),
+                     apartado.cliente, usuario)
+    except Exception:  # noqa: BLE001 - la cotización no se cae por la ayuda
+        logger.exception("Siigo: no se pudo recordar lo de la cotización %s para la próxima.", apartado.id)
+
+
+def guardar_o_deshacer_en_siigo(db: Session, apartado: Apartado, siigo_id_antes: str) -> None:
+    """Hace commit. Si falla y la cotización se acaba de crear en Siigo (su id
+    cambió), se borra allá: que no quede en Siigo una que el programa no tiene."""
+    nueva = apartado.siigo_id if apartado.siigo_id and apartado.siigo_id != siigo_id_antes else ""
+    empresa = apartado.empresa
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        if nueva:
+            try:
+                siigo.borrar_cotizacion(empresa, nueva)
+            except siigo.ErrorSiigo as error:
+                logger.error("Siigo: la cotización %s quedó en Siigo sin guardarse en el programa y no se pudo borrar: %s",
+                             nueva, error)
+        raise
 
 
 def sincronizar(db: Session, apartado: Apartado, usuario: Usuario) -> str:
