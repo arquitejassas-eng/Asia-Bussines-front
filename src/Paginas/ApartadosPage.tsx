@@ -1245,7 +1245,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     <textarea
                       className="apartado-descripcion-linea"
                       rows={2}
-                      placeholder="Ej. Teja de 6 metros"
+                      placeholder={a.siigo.enSiigo ? "Lo que se pidió, como sale en Siigo. Si la dejas vacía se arma sola (ej. 100 TEJAS DE 5 MTS - código)" : "Ej. Teja de 6 metros"}
                       value={item.descripcion}
                       onChange={(e) => a.actualizarItemApartado(indice, "descripcion", e.target.value)}
                     />

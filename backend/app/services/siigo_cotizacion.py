@@ -9,8 +9,9 @@ Los productos de stock que no son lámina (tornillos, siliconas...) van por
 unidad. El programa SUGIERE esa cantidad; el vendedor la puede cambiar.
 
 El detalle de cada línea (ej. "20 TEJAS COLONIAL ... (142 MTS - 515,2 KG)")
-va en la descripción de la línea en Siigo: la cotización de la API no tiene
-observaciones. El IVA y la retención en la fuente los calcula Siigo con los
+va en la descripción de la línea en Siigo, con la bodega de donde sale; la
+primera línea lleva también el vendedor: la cotización de la API no tiene
+observaciones y Siigo no imprime el vendedor. El IVA y la retención en la fuente los calcula Siigo con los
 impuestos que se marquen; el ReteICA se pone en la factura, no aquí.
 """
 from __future__ import annotations
@@ -149,7 +150,44 @@ def _faltantes(apartado: Apartado, items: list[ApartadoItem], config: dict) -> l
     return faltan
 
 
-def cuerpo_para_siigo(apartado: Apartado, items: list[ApartadoItem], config: dict) -> dict:
+def _numero(valor: float) -> str:
+    """1193.5 -> "1.193,5" (como se escribe en las cotizaciones)."""
+    texto = f"{valor:,.2f}".rstrip("0").rstrip(".")
+    return texto.replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+NOMBRE_TIPO = {"caballete": "CABALLETES", "flanche": "FLANCHES", "lamina_lisa": "LAMINAS LISAS"}
+
+
+def descripcion_para_siigo(item: ApartadoItem) -> str:
+    """Lo que se pidió en la línea, para que se lea en Siigo. Si el vendedor
+    no escribió descripción, se arma sola: "100 TEJAS DE 5 MTS - LR30020,25
+    (500 MTS - 1.193,5 KG)"; una de stock: "20 TORNILLO 2\"..."."""
+    escrita = (item.descripcion or "").strip()
+    if escrita:
+        return escrita[:500]
+    cantidad = _numero(item.cantidad or 0)
+    if item.modalidad == ModalidadApartado.POR_STOCK:
+        producto = getattr(item, "producto", None)
+        nombre = (producto.descripcion if producto is not None else "") or (producto.codigo if producto is not None else "")
+        corte = f" CORTADO A {_numero(item.medida)} MTS" if item.medida else ""
+        return f"{cantidad} {nombre}{corte}".strip()[:500]
+    tipo = NOMBRE_TIPO.get(item.tipo_producto or "", "TEJAS")
+    metros = metros_de_linea(item.cantidad or 0, item.medida, item.tipo_producto)
+    unidad = UNIDAD_POR_EMPRESA.get(item.apartado.empresa if item.apartado is not None else "", "kg")
+    peso = f" - {_numero(item.siigo_cantidad)} KG" if unidad == "kg" and item.siigo_cantidad else ""
+    return f"{cantidad} {tipo} DE {_numero(item.medida or 0)} MTS - {item.codigo_interno} ({_numero(metros)} MTS{peso})"[:500]
+
+
+def _con_agregados(descripcion: str, agregados: list[str]) -> str:
+    """La descripción con " - BODEGA X - VENDEDOR: Y" al final (sin repetir lo
+    que ya diga), recortada para que lo agregado no se pierda en los 500 de Siigo."""
+    nuevos = [a for a in agregados if a and a.split(" ", 1)[-1].upper() not in descripcion.upper()]
+    cola = "".join(f" - {a}" for a in nuevos)
+    return descripcion[:500 - len(cola)] + cola
+
+
+def cuerpo_para_siigo(apartado: Apartado, items: list[ApartadoItem], config: dict, vendedor: str = "") -> dict:
     impuestos = [{"id": config["iva"]}] if apartado.siigo_iva else []
     if apartado.siigo_retefuente:
         impuestos.append({"id": config["retefuente"]})
@@ -161,11 +199,13 @@ def cuerpo_para_siigo(apartado: Apartado, items: list[ApartadoItem], config: dic
         "seller": apartado.siigo_vendedor,
         "items": [{
             "code": item.siigo_producto,
-            "description": (item.descripcion or "").strip()[:500],
+            "description": _con_agregados(descripcion_para_siigo(item), [
+                f"BODEGA {item.apartado.bodega_nombre}".upper() if item.apartado is not None and item.apartado.bodega_nombre else "",
+                f"VENDEDOR: {vendedor}".upper() if vendedor and numero == 0 else ""]),
             "quantity": round(float(item.siigo_cantidad), 2),
             "price": round(float(item.precio), 6),
             "taxes": impuestos,
-        } for item in items],
+        } for numero, item in enumerate(items)],
     }
 
 
@@ -199,12 +239,14 @@ def _enviar(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apa
     faltan = _faltantes(apartado, items, config)
     if faltan:
         raise HTTPException(status_code=400, detail="Para subirla a Siigo falta: " + "; ".join(faltan) + ".")
-    cuerpo = cuerpo_para_siigo(apartado, items, config)
+    cuerpo = cuerpo_para_siigo(apartado, items, config, siigo.nombre_vendedor(empresa, apartado.siigo_vendedor))
     try:
-        if siigo.buscar_cliente(empresa, cuerpo["customer"]["identification"]) is None:
+        cliente = siigo.buscar_cliente(empresa, cuerpo["customer"]["identification"])
+        if cliente is None:
             raise HTTPException(status_code=400, detail=(
                 f"El cliente con NIT/cédula {apartado.cliente_identificacion} no existe en el Siigo de "
                 f"{EMPRESAS_CONOCIDAS[empresa]}: créalo allá primero (o revisa el número)."))
+        cuerpo["customer"]["branch_office"] = cliente["sucursal"]
         if siigo_id:
             respuesta = siigo.actualizar_cotizacion(empresa, siigo_id, cuerpo)
         else:

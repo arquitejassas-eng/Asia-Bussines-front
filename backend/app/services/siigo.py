@@ -29,6 +29,9 @@ ESPERA_MAXIMA_LIMITE = 30  # segundos máximos de cada espera
 _tokens: dict[str, tuple[str, float]] = {}  # empresa -> (token, vence en time.monotonic())
 _candado_tokens = threading.Lock()
 
+MINUTOS_VENDEDORES = 30
+_vendedores: dict[str, tuple[float, dict[int, str]]] = {}  # empresa -> (vence, {id: nombre})
+
 
 class ErrorSiigo(Exception):
     """Siigo rechazó la petición, no respondió o la empresa no está configurada.
@@ -164,6 +167,25 @@ def catalogos(empresa: str) -> dict:
     }
 
 
+def nombre_vendedor(empresa: str, vendedor_id: int | None) -> str:
+    """El nombre del vendedor de Siigo (para escribirlo en la cotización: Siigo
+    no lo imprime). Si Siigo no responde, "" y la cotización sube igual."""
+    if not vendedor_id:
+        return ""
+    guardado = _vendedores.get(empresa)
+    if guardado is None or guardado[0] < time.monotonic() or vendedor_id not in guardado[1]:
+        try:
+            usuarios = _todas_las_paginas(empresa, "/v1/users")
+        except ErrorSiigo as error:
+            logger.warning("Siigo: no se pudo leer el nombre del vendedor %s: %s", vendedor_id, error)
+            return ""
+        nombres = {u["id"]: " ".join(filter(None, [u.get("first_name"), u.get("last_name")])).strip() or u.get("username", "")
+                   for u in usuarios}
+        guardado = (time.monotonic() + MINUTOS_VENDEDORES * 60, nombres)
+        _vendedores[empresa] = guardado
+    return guardado[1].get(vendedor_id, "")
+
+
 def buscar_cliente(empresa: str, identificacion: str) -> dict | None:
     """El cliente (tercero) de Siigo con esa cédula/NIT, o None si no existe."""
     identificacion = re.sub(r"[^0-9A-Za-z]", "", identificacion or "")
@@ -173,12 +195,16 @@ def buscar_cliente(empresa: str, identificacion: str) -> dict | None:
     resultados = respuesta.get("results") if isinstance(respuesta, dict) else respuesta
     if not resultados:
         return None
-    cliente = resultados[0]
+    # Un cliente puede tener varias sucursales (cada una es un registro): la
+    # principal (0) si la tiene, si no la primera. La cotización debe llevar
+    # una sucursal que exista, o Siigo dice que el cliente no existe.
+    cliente = next((c for c in resultados if not c.get("branch_office")), resultados[0])
     nombre = cliente.get("name")
     return {
         "identificacion": cliente.get("identification", identificacion),
         "nombre": " ".join(nombre) if isinstance(nombre, list) else (nombre or cliente.get("commercial_name") or ""),
         "activo": cliente.get("active", True),
+        "sucursal": int(cliente.get("branch_office") or 0),
     }
 
 
