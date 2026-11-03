@@ -1,8 +1,8 @@
 export const CAMPOS_REQUERIDOS_RECEPCION = ["rollo", "espesor", "net_weight", "coil_meters"];
 export const ETIQUETAS_CAMPOS_RECEPCION = {
   rollo: "Identificador único del rollo", espesor: "Espesor", ancho: "Ancho",
-  net_weight: "Net Weight (MT)", gross_weight: "Gross Weight (MT)",
-  coil_meters: "Coil Meters (reportado)", color_top: "Color TOP", color_back: "Color BACK",
+  net_weight: "Net Weight (MT)",
+  coil_meters: "Coil Meters (reportado)", color_top: "Color TOP",
   codigo_proveedor: "Código del proveedor", tipo_material: "Información del material / Tipo (opcional si solo manejas Lámina)",
   proveedor: "Proveedor", lote: "Lote",
   empresa: "Empresa receptora — dueña del material (recomendado; si no, se deduce de la referencia)",
