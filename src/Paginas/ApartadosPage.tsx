@@ -874,7 +874,6 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 )}
                 {a.siigo.enSiigo && <CampoSiigoCliente campo="vendedor" {...camposCliente} />}
               </div>
-              {a.siigo.enSiigo && <ImpuestosSiigo formulario={a.formulario} porcentajes={a.siigo.impuestos} actualizar={a.actualizarCampoSiigo} />}
 
               <h3 className="apartado-form-seccion">
                 <span className="apartado-form-paso">2</span> Productos
@@ -1290,6 +1289,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </p>
               )}
 
+              {a.siigo.enSiigo && <ImpuestosSiigo formulario={a.formulario} porcentajes={a.siigo.impuestos} actualizar={a.actualizarCampoSiigo} />}
               {a.siigo.enSiigo && <ResumenSiigo formulario={a.formulario} porcentajes={a.siigo.impuestos} />}
 
               {a.errorFormularioApartado && <p className="inventario-error">{a.errorFormularioApartado}</p>}
