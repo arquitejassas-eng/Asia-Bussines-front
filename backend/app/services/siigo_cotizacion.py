@@ -35,6 +35,16 @@ from app.services.seccionados import metros_de_linea
 logger = logging.getLogger("arquitejas.siigo")
 
 UNIDAD_POR_EMPRESA = {"ABG": "kg", "AR": "cm"}
+# Caballetes y flanches YA HECHOS (de stock) se venden por unidad aunque
+# guarden su largo; los que se mandan a producir van como la teja (por rollo).
+TIPOS_DE_STOCK_POR_UNIDAD = ("caballete", "flanche")
+
+
+def es_porcelanato(producto: Producto | None) -> bool:
+    """Se vende por cajas pero en Siigo se cobra por METRO CUADRADO."""
+    if producto is None:
+        return False
+    return producto.tipo_producto == "conversion" or "PORCELANATO" in (producto.familia or "").upper()
 ESPESOR_EN_CODIGO = re.compile(r",(\d{2})$")
 ESPESOR_EN_TEXTO = re.compile(r"\b0\s*[.,]\s*(\d{2})\b")
 
@@ -74,7 +84,11 @@ def cantidad_sugerida(db: Session, empresa: str, *, modalidad: str, codigo_inter
         espesor = _espesor(codigo_interno, descripcion)
     else:
         producto = db.get(Producto, producto_id) if producto_id else None
-        if producto is not None and producto.metros_por_unidad:
+        if es_porcelanato(producto):
+            if not producto.metros_por_unidad:
+                return {"cantidad": None, "unidad": "m2", "aviso": "Este porcelanato no tiene m² por caja en Inventario: escribe los m²."}
+            return {"cantidad": round(cantidad * float(producto.metros_por_unidad), 2), "unidad": "m2", "aviso": ""}
+        if producto is not None and producto.metros_por_unidad and producto.tipo_producto not in TIPOS_DE_STOCK_POR_UNIDAD:
             # Teja o lámina de stock: también se cobra por kilo / centímetro.
             metros = round(cantidad * float(producto.metros_por_unidad), 2)
             espesor = _espesor(None, producto.calibre, producto.descripcion, descripcion)
@@ -173,6 +187,9 @@ def descripcion_para_siigo(item: ApartadoItem) -> str:
     if item.modalidad == ModalidadApartado.POR_STOCK:
         producto = getattr(item, "producto", None)
         nombre = (producto.descripcion if producto is not None else "") or (producto.codigo if producto is not None else "")
+        if es_porcelanato(producto):
+            area = f" ({_numero(item.siigo_cantidad)} M2)" if item.siigo_cantidad else ""
+            return f"{cantidad} CAJAS {nombre}{area}".strip()[:500]
         corte = f" CORTADO A {_numero(item.medida)} MTS" if item.medida else ""
         return f"{cantidad} {nombre}{corte}".strip()[:500]
     tipo = NOMBRE_TIPO.get(item.tipo_producto or "", "TEJAS")

@@ -22,7 +22,7 @@ type FormularioParaSiigo = {
 };
 type Sugerencia = { cantidad: number | null; unidad: string; aviso: string; siigo_producto: string };
 
-export const NOMBRE_UNIDAD: Record<string, string> = { kg: "kilo", cm: "centímetro", und: "unidad" };
+export const NOMBRE_UNIDAD: Record<string, string> = { kg: "kilo", cm: "centímetro", und: "unidad", m2: "metro cuadrado" };
 
 export function useSiigoCotizacion<F extends FormularioParaSiigo>(
   activo: boolean, formulario: F, setFormulario: (cambio: (actual: F) => F) => void,
@@ -162,7 +162,7 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clave]);
 
-  // "kg", "cm" o "und": la unidad de Siigo de una línea (la de la lámina de la empresa mientras no hay sugerencia).
+  // "kg", "cm", "und" o "m2": la unidad de Siigo de una línea (la de la lámina de la empresa mientras no hay sugerencia).
   function unidadDe(item: { siigoUnidad?: string }) {
     return item.siigoUnidad || (formulario.empresa === "AR" ? "cm" : "kg");
   }
