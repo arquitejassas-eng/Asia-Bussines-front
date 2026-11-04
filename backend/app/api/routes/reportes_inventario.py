@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, requiere_rol
 from app.models.apartado import Apartado, ApartadoItem, ModalidadApartado
 from app.models.bodega import Bodega
+from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.material_en_camino import Cargamento, CargamentoRollo
 from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario
+from app.services.clasificacion import peso_actual_toneladas
 from app.services.apartados import ESTADOS_RESERVA_ACTIVA
 from app.services.material_en_camino import EN_CAMINO
 
@@ -37,6 +39,10 @@ def importacion_de(lote: str | None, referencia: str | None) -> str:
         return lote.strip().upper()
     encontrado = _PREFIJO_IMPORTACION.match(referencia or "")
     return f"{int(encontrado.group(1))}{encontrado.group(2).upper()}" if encontrado else ""
+
+
+def _kilos(toneladas: float | None) -> float | None:
+    return None if toneladas is None else round(toneladas * 1000, 1)
 
 
 def _nombres_bodegas(db: Session) -> dict[int, str]:
@@ -78,6 +84,7 @@ def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
     """Todos los rollos (también los agotados) y los que vienen en camino,
     cada uno con su importación."""
     bodegas = _nombres_bodegas(db)
+    espesores = {e.espesor: e for e in db.query(TablaEspesorEquivalencia).all()}
     filas = []
     for r in db.query(Rollo).order_by(Rollo.identificador_rollo):
         disponibles = float(r.metros_disponibles or 0)
@@ -87,6 +94,9 @@ def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
             "referencia": r.identificador_rollo, "codigo": r.codigo_interno, "descripcion": r.descripcion,
             "empresa": r.empresa or "", "color": r.color_material or "", "calibre": float(r.calibre or 0),
             "kilos": r.peso_neto, "metros_llegada": round(float(r.metros_proveedor or 0) or (disponibles + consumidos), 2),
+            # Lo que pesa HOY según los metros que le quedan (None si su calibre
+            # no está en la tabla de equivalencias).
+            "kilos_actuales": _kilos(peso_actual_toneladas(r.calibre, disponibles, espesores)),
             "metros_disponibles": round(disponibles, 2),
             "bodega": bodegas.get(r.bodega_id, SIN_BODEGA) if r.bodega_id else SIN_BODEGA,
             "estado": r.estado.value if hasattr(r.estado, "value") else str(r.estado),
@@ -103,6 +113,7 @@ def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
             "referencia": r.identificador_rollo, "codigo": r.codigo_interno, "descripcion": r.descripcion,
             "empresa": r.empresa or "", "color": r.color_material or "", "calibre": float(r.calibre or 0),
             "kilos": r.peso_neto, "metros_llegada": round(float(r.metros or 0), 2), "metros_disponibles": round(float(r.metros or 0), 2),
+            "kilos_actuales": r.peso_neto,
             "bodega": "En camino", "estado": "en_camino", "fecha_ingreso": cargamento.fecha_creacion,
             "proveedor": r.proveedor or cargamento.proveedor or "",
         })

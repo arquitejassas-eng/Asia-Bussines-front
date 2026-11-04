@@ -15,7 +15,7 @@ type FilaProducto = {
 };
 type FilaRollo = {
   importacion: string; referencia: string; codigo: string; descripcion: string; empresa: string; color: string;
-  calibre: number; kilos: number | null; metros_llegada: number; metros_disponibles: number; bodega: string;
+  calibre: number; kilos: number | null; kilos_actuales: number | null; metros_llegada: number; metros_disponibles: number; bodega: string;
   estado: string; fecha_ingreso: string | null; proveedor: string;
 };
 
@@ -67,6 +67,7 @@ export function ReporteInventarioPorTipo() {
   const [empresa, setEmpresa] = useState("");
   const [bodega, setBodega] = useState("");
   const [buscar, setBuscar] = useState("");
+  const [codigoAbierto, setCodigoAbierto] = useState<string | null>(null);
 
   const familias = useMemo(() => [...new Set(productos.map((p) => p.familia))].sort(), [productos]);
   const esRollos = tipo === ROLLOS;
@@ -107,14 +108,15 @@ export function ReporteInventarioPorTipo() {
   }, [productosFiltrados]);
 
   const filasRollos = useMemo(() => {
-    const grupos = new Map<string, { codigo: string; descripcion: string; empresa: string; porBodega: Record<string, { rollos: number; metros: number }>; rollos: number; metros: number }>();
+    const grupos = new Map<string, { codigo: string; descripcion: string; empresa: string; porBodega: Record<string, { rollos: number; metros: number; kilos: number }>; rollos: number; metros: number; kilos: number; lista: FilaRollo[] }>();
     for (const r of rollosFiltrados) {
       const clave = `${r.codigo}|${r.empresa}`;
-      const g = grupos.get(clave) || { codigo: r.codigo, descripcion: r.descripcion, empresa: r.empresa, porBodega: {}, rollos: 0, metros: 0 };
-      const celda = g.porBodega[r.bodega] || { rollos: 0, metros: 0 };
-      celda.rollos += 1; celda.metros += r.metros_disponibles;
+      const g = grupos.get(clave) || { codigo: r.codigo, descripcion: r.descripcion, empresa: r.empresa, porBodega: {}, rollos: 0, metros: 0, kilos: 0, lista: [] };
+      const celda = g.porBodega[r.bodega] || { rollos: 0, metros: 0, kilos: 0 };
+      celda.rollos += 1; celda.metros += r.metros_disponibles; celda.kilos += r.kilos_actuales ?? 0;
       g.porBodega[r.bodega] = celda;
-      g.rollos += 1; g.metros += r.metros_disponibles;
+      g.rollos += 1; g.metros += r.metros_disponibles; g.kilos += r.kilos_actuales ?? 0;
+      g.lista.push(r);
       grupos.set(clave, g);
     }
     return [...grupos.values()].sort((a, b) => a.codigo.localeCompare(b.codigo));
@@ -128,12 +130,15 @@ export function ReporteInventarioPorTipo() {
       exportarHojasAExcel([
         { nombre: "Resumen por código", filas: filasRollos.map((g) => ({
           "Código": g.codigo, "Descripción": g.descripcion, "Empresa": nombreEmpresa(g.empresa),
-          ...Object.fromEntries(columnasBodega.map((b) => [`${b} (metros)`, g.porBodega[b] ? Math.round(g.porBodega[b].metros * 100) / 100 : 0])),
-          "Rollos": g.rollos, "Metros": Math.round(g.metros * 100) / 100,
+          ...Object.fromEntries(columnasBodega.flatMap((b) => [
+            [`${b} (metros)`, g.porBodega[b] ? Math.round(g.porBodega[b].metros * 100) / 100 : 0],
+            [`${b} (kg)`, g.porBodega[b] ? Math.round(g.porBodega[b].kilos) : 0],
+          ])),
+          "Rollos": g.rollos, "Metros": Math.round(g.metros * 100) / 100, "Kilos": Math.round(g.kilos),
         })) },
         { nombre: "Detalle por rollo", filas: rollosFiltrados.map((r) => ({
           "Referencia": r.referencia, "Código": r.codigo, "Descripción": r.descripcion, "Empresa": nombreEmpresa(r.empresa),
-          "Bodega": r.bodega, "Kilos": r.kilos ?? "", "Metros disponibles": r.metros_disponibles,
+          "Bodega": r.bodega, "Kilos al llegar": r.kilos ?? "", "Kilos hoy": r.kilos_actuales ?? "", "Metros disponibles": r.metros_disponibles,
           "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado, "Importación": nombreImportacion(r.importacion),
         })) },
       ], `Inventario ${sufijo}.xlsx`);
@@ -150,6 +155,7 @@ export function ReporteInventarioPorTipo() {
 
   const totalUnidades = filasProductos.reduce((s, g) => s + g.total, 0);
   const totalMetros = filasRollos.reduce((s, g) => s + g.metros, 0);
+  const totalKilos = filasRollos.reduce((s, g) => s + g.kilos, 0);
   const hayFiltros = Boolean(tipo || empresa || bodega || buscar);
 
   return (
@@ -209,7 +215,8 @@ export function ReporteInventarioPorTipo() {
             <>
               <p className="reportes-texto-ayuda" style={{ marginBottom: "0.75rem" }}>
                 {esRollos
-                  ? `${filasRollos.length} códigos · ${rollosFiltrados.length} rollos · ${numero.format(totalMetros)} metros. Solo rollos con material (sin agotados ni lo que viene en camino).`
+                  ? `${filasRollos.length} códigos · ${rollosFiltrados.length} rollos · ${numero.format(totalMetros)} metros · ${numero.format(Math.round(totalKilos))} kg. `
+                    + "Solo rollos con material (sin agotados ni lo que viene en camino). Toca un código para ver cada rollo con sus kilos."
                   : `${filasProductos.length} productos · ${numero.format(totalUnidades)} unidades en total.`}
               </p>
               <div className="reportes-tabla-wrap">
@@ -221,25 +228,64 @@ export function ReporteInventarioPorTipo() {
                       {!esRollos && <th>Tipo</th>}
                       <th>Empresa</th>
                       {columnasBodega.map((b) => <th key={b} className="reportes-num">{b}</th>)}
-                      {esRollos ? <><th className="reportes-num">Rollos</th><th className="reportes-num">Metros</th></>
+                      {esRollos ? <><th className="reportes-num">Rollos</th><th className="reportes-num">Metros</th><th className="reportes-num">Kilos</th></>
                         : <><th className="reportes-num">Total</th><th className="reportes-num">Apartado</th><th className="reportes-num">Libre</th></>}
                     </tr>
                   </thead>
                   <tbody>
-                    {esRollos ? filasRollos.map((g) => (
-                      <tr key={`${g.codigo}|${g.empresa}`}>
-                        <td className="reportes-codigo">{g.codigo}</td>
-                        <td>{g.descripcion}</td>
-                        <td>{nombreEmpresa(g.empresa)}</td>
-                        {columnasBodega.map((b) => (
-                          <td key={b} className="reportes-num">
-                            {g.porBodega[b] ? <>{numero.format(g.porBodega[b].metros)} m<span className="reportes-sub">{g.porBodega[b].rollos} rollo{g.porBodega[b].rollos === 1 ? "" : "s"}</span></> : "—"}
-                          </td>
-                        ))}
-                        <td className="reportes-num"><strong>{g.rollos}</strong></td>
-                        <td className="reportes-num"><strong>{numero.format(g.metros)}</strong></td>
-                      </tr>
-                    )) : filasProductos.map((g) => (
+                    {esRollos ? filasRollos.map((g) => {
+                      const clave = `${g.codigo}|${g.empresa}`;
+                      const abierto = codigoAbierto === clave;
+                      return (
+                        <Fragment key={clave}>
+                          <tr className={`reportes-fila-importacion${abierto ? " abierta" : ""}`} onClick={() => setCodigoAbierto(abierto ? null : clave)}>
+                            <td className="reportes-codigo">
+                              <button type="button" className="reportes-importacion-boton" aria-expanded={abierto}>
+                                {abierto ? "▲" : "▼"} {g.codigo}
+                              </button>
+                            </td>
+                            <td>{g.descripcion}</td>
+                            <td>{nombreEmpresa(g.empresa)}</td>
+                            {columnasBodega.map((b) => (
+                              <td key={b} className="reportes-num">
+                                {g.porBodega[b] ? <>{numero.format(g.porBodega[b].metros)} m
+                                  <span className="reportes-sub">{numero.format(Math.round(g.porBodega[b].kilos))} kg · {g.porBodega[b].rollos} rollo{g.porBodega[b].rollos === 1 ? "" : "s"}</span></> : "—"}
+                              </td>
+                            ))}
+                            <td className="reportes-num"><strong>{g.rollos}</strong></td>
+                            <td className="reportes-num"><strong>{numero.format(g.metros)}</strong></td>
+                            <td className="reportes-num"><strong>{numero.format(Math.round(g.kilos))}</strong></td>
+                          </tr>
+                          {abierto && (
+                            <tr className="reportes-detalle-importacion">
+                              <td colSpan={columnasBodega.length + 6}>
+                                <table className="reportes-tabla reportes-tabla-interna">
+                                  <thead>
+                                    <tr>
+                                      <th>Referencia</th><th>Bodega</th><th className="reportes-num">Kilos al llegar</th>
+                                      <th className="reportes-num">Kilos hoy</th><th className="reportes-num">Metros</th><th>Estado</th><th>Importación</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {g.lista.map((r) => (
+                                      <tr key={r.referencia}>
+                                        <td className="reportes-codigo">{r.referencia}</td>
+                                        <td>{r.bodega}</td>
+                                        <td className="reportes-num">{r.kilos != null ? numero.format(r.kilos) : "—"}</td>
+                                        <td className="reportes-num"><strong>{r.kilos_actuales != null ? numero.format(r.kilos_actuales) : "—"}</strong></td>
+                                        <td className="reportes-num">{numero.format(r.metros_disponibles)}</td>
+                                        <td><span className={`reportes-estado-rollo estado-${r.estado}`}>{ETIQUETAS_ESTADO[r.estado] || r.estado}</span></td>
+                                        <td>{nombreImportacion(r.importacion)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    }) : filasProductos.map((g) => (
                       <tr key={`${g.codigo}|${g.empresa}`}>
                         <td className="reportes-codigo">{g.codigo}</td>
                         <td>{g.descripcion}</td>
@@ -311,7 +357,8 @@ export function ReporteImportaciones() {
       })) },
       { nombre: "Rollos", filas: lista.flatMap((g) => rollosDe(g).map((r) => ({
         "Importación": nombreImportacion(g.clave), "Referencia": r.referencia, "Código": r.codigo, "Descripción": r.descripcion,
-        "Empresa": nombreEmpresa(r.empresa), "Kilos": r.kilos ?? "", "Metros que llegaron": r.metros_llegada,
+        "Empresa": nombreEmpresa(r.empresa), "Kilos al llegar": r.kilos ?? "", "Kilos hoy": r.estado === EN_CAMINO ? "" : r.kilos_actuales ?? "",
+        "Metros que llegaron": r.metros_llegada,
         "Metros que quedan": r.estado === EN_CAMINO ? "" : r.metros_disponibles, "Bodega": r.bodega,
         "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado,
         "Ingreso": r.fecha_ingreso ? formatearFechaColombia(r.fecha_ingreso, false) : "", "Proveedor": r.proveedor,
@@ -396,7 +443,7 @@ export function ReporteImportaciones() {
                               <table className="reportes-tabla reportes-tabla-interna">
                                 <thead>
                                   <tr>
-                                    <th>Referencia</th><th>Código</th><th className="reportes-num">Kilos</th>
+                                    <th>Referencia</th><th>Código</th><th className="reportes-num">Kilos al llegar</th><th className="reportes-num">Kilos hoy</th>
                                     <th className="reportes-num">Metros que llegaron</th><th className="reportes-num">Metros que quedan</th>
                                     <th>Bodega</th><th>Estado</th>
                                   </tr>
@@ -407,6 +454,7 @@ export function ReporteImportaciones() {
                                       <td className="reportes-codigo">{r.referencia}</td>
                                       <td>{r.codigo}</td>
                                       <td className="reportes-num">{r.kilos != null ? numero.format(r.kilos) : "—"}</td>
+                                      <td className="reportes-num">{r.estado === EN_CAMINO || r.kilos_actuales == null ? "—" : numero.format(r.kilos_actuales)}</td>
                                       <td className="reportes-num">{numero.format(r.metros_llegada)}</td>
                                       <td className="reportes-num">{r.estado === EN_CAMINO ? "—" : numero.format(r.metros_disponibles)}</td>
                                       <td>{r.bodega}</td>

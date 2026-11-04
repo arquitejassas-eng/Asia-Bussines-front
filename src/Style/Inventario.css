@@ -698,50 +698,108 @@
 .apartado-linea-lista {
   opacity: 0.6;
 }
-/* Inventario total: rollos pedidos entre bodegas que todavía no llegan. */
-.traslados-rollos {
-  margin: 0 0 1.25rem;
-  border: 1px solid var(--at-amber, #D99A2B);
-  border-left-width: 4px;
+/* Inventario total: rollos pedidos entre bodegas que todavía no llegan.
+   Tarjeta blanca con franja ámbar; cada rollo es una fila de dos líneas
+   (referencia + paso arriba, ruta y datos abajo) que nunca se sale del ancho. */
+.traslados {
+  --paso-pendiente-bg: #FFF1C9; --paso-pendiente-tx: #7A4E00; --paso-pendiente-bd: #E2B33C;
+  --paso-aceptada-bg: #FFE3CF;  --paso-aceptada-tx: #8F340E;  --paso-aceptada-bd: #E07B3F;
+  --paso-despachada-bg: #DDEBF8; --paso-despachada-tx: #1B4A75; --paso-despachada-bd: #4F86BD;
+  margin: 0 0 1.5rem;
+  background: var(--at-surface, #FFFFFF);
+  border: 1px solid var(--at-border-soft, #EBE2D2);
+  border-left: 4px solid var(--at-amber, #B8720A);
   border-radius: var(--at-r-md, 12px);
-  background: var(--at-amber-soft, #FDF0D5);
+  box-shadow: var(--at-shadow-sm, 0 3px 10px rgba(37, 28, 20, 0.08));
+  overflow: hidden;
 }
-.traslados-rollos-cabeza {
-  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 1rem;
-  min-height: 44px; padding: 0.6rem 1rem; border: none; background: none; font: inherit; font-weight: 700;
-  color: var(--at-text, #251C14); cursor: pointer; text-align: left;
+.traslados-cabeza {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+  padding: 0.9rem 1.1rem 0.6rem;
 }
-.traslados-rollos-cabeza:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: -2px; }
-.traslados-rollos-titulo { display: flex; align-items: center; gap: 0.5rem; }
-.traslados-rollos-cuenta {
-  min-width: 1.6rem; padding: 0.05rem 0.45rem; border-radius: 999px; text-align: center;
-  background: var(--at-terra, #B7451F); color: #FFFFFF; font-size: 0.8rem;
+.traslados-cabeza-texto { display: grid; gap: 0.45rem; min-width: 0; }
+.traslados-titulo {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  margin: 0; font-size: 1rem; font-weight: 700; color: var(--at-text, #251C14);
 }
-.traslados-rollos-ayuda { margin: 0 1rem 0.6rem; font-size: 0.85rem; color: var(--at-text-2, #4A392C); }
-.traslados-rollos-lista { list-style: none; margin: 0; padding: 0 0.75rem 0.75rem; display: grid; gap: 0.4rem; }
-.traslados-rollos-item {
-  display: grid; width: 100%; align-items: center; gap: 0.25rem 1rem; text-align: left;
-  grid-template-columns: minmax(10rem, 1.3fr) minmax(8rem, 1fr) minmax(7rem, 0.9fr) minmax(9rem, 1fr) minmax(12rem, 1.6fr) minmax(9rem, 1fr);
-  padding: 0.5rem 0.75rem; min-height: 44px; border: 1px solid var(--at-border-soft, #EBE2D2); border-radius: var(--at-r-sm, 8px);
-  background: var(--at-surface, #FFFFFF); font: inherit; font-size: 0.85rem; color: inherit; cursor: pointer;
+.traslados-icono { color: var(--at-amber, #B8720A); flex: none; }
+.traslados-cuenta {
+  min-width: 1.6rem; padding: 0.1rem 0.5rem; border-radius: 999px; text-align: center;
+  background: var(--at-terra, #B7451F); color: #FFFFFF; font-size: 0.8rem; font-weight: 700;
 }
-.traslados-rollos-item:hover { border-color: var(--at-terra-light, #D9642F); }
-.traslados-rollos-item:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 2px; }
-.traslados-rollos-ref { font-weight: 700; }
-.traslados-rollos-dato { color: var(--at-text-2, #4A392C); }
-.traslados-rollos-paso {
-  display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700; line-height: 1.35;
+.traslados-resumen { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.traslados-alternar {
+  flex: none; min-height: 40px; padding: 0.4rem 0.9rem;
+  border: 1px solid var(--at-border, #E1D5C0); border-radius: var(--at-r-sm, 8px);
+  background: var(--at-surface, #FFFFFF); color: var(--at-text-2, #4A392C);
+  font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  transition: border-color 150ms var(--at-ease, ease), color 150ms var(--at-ease, ease);
 }
-td .traslados-rollos-paso { display: block; margin-top: 0.3rem; width: fit-content; }
-.traslados-rollos-paso.paso-pendiente { background: #FFF4C2; color: #7A5A00; }
-.traslados-rollos-paso.paso-aceptada { background: #FFE2C7; color: #8A3D0A; }
-.traslados-rollos-paso.paso-despachada { background: #DCEBFA; color: #1F4E7A; }
+.traslados-alternar:hover { border-color: var(--at-terra-light, #D9642F); color: var(--at-terra, #B7451F); }
+.traslados-alternar:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 2px; }
+.traslados-ayuda { margin: 0 1.1rem 0.75rem; font-size: 0.85rem; line-height: 1.5; color: var(--at-muted, #7C6A56); }
+.traslados-lista {
+  display: grid; gap: 0.5rem; margin: 0; padding: 0.75rem 1.1rem 1rem; list-style: none;
+  background: var(--at-surface-2, #F1E9DC);
+  border-top: 1px solid var(--at-border-soft, #EBE2D2);
+}
+.traslados-item {
+  display: grid; width: 100%; min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "ref paso" "ruta fecha" "datos datos";
+  align-items: center; gap: 0.3rem 1rem;
+  padding: 0.7rem 0.9rem; text-align: left;
+  background: var(--at-surface, #FFFFFF);
+  border: 1px solid var(--at-border-soft, #EBE2D2);
+  border-left: 4px solid var(--paso-bd, var(--at-border, #E1D5C0));
+  border-radius: var(--at-r-sm, 8px);
+  font: inherit; font-size: 0.86rem; color: var(--at-text, #251C14); cursor: pointer;
+  transition: border-color 150ms var(--at-ease, ease), box-shadow 150ms var(--at-ease, ease);
+}
+.traslados-item:hover { box-shadow: var(--at-shadow-sm, 0 3px 10px rgba(37, 28, 20, 0.08)); border-color: var(--at-terra-light, #D9642F); }
+.traslados-item:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 2px; }
+.traslados-item.paso-pendiente { --paso-bd: var(--paso-pendiente-bd); }
+.traslados-item.paso-aceptada { --paso-bd: var(--paso-aceptada-bd); }
+.traslados-item.paso-despachada { --paso-bd: var(--paso-despachada-bd); }
+.traslados-item-ref {
+  grid-area: ref; min-width: 0; overflow-wrap: anywhere;
+  font-family: var(--at-font-mono, Consolas, monospace); font-size: 0.92rem; font-weight: 700;
+}
+.traslados-item > .traslados-paso { grid-area: paso; justify-self: end; }
+.traslados-ruta { grid-area: ruta; color: var(--at-text-2, #4A392C); }
+.traslados-ruta strong { color: var(--at-text, #251C14); }
+.traslados-fecha { grid-area: fecha; justify-self: end; font-size: 0.78rem; color: var(--at-muted, #7C6A56); white-space: nowrap; }
+.traslados-datos { grid-area: datos; display: flex; flex-wrap: wrap; gap: 0.25rem 0; color: var(--at-muted, #7C6A56); font-size: 0.82rem; }
+.traslados-datos > span:not(:last-child)::after { content: "·"; margin: 0 0.5rem; color: var(--at-border, #E1D5C0); }
+
+/* Paso del traslado: color + texto (nunca solo color). Lo usan la tarjeta,
+   el resumen de la cabeza y la etiqueta del rollo en la tabla. */
+.traslados-paso, .traslados-rollos-paso {
+  display: inline-flex; align-items: center; gap: 0.35rem; width: fit-content;
+  padding: 0.18rem 0.6rem; border-radius: 999px;
+  font-size: 0.78rem; font-weight: 700; line-height: 1.35; white-space: nowrap;
+  background: var(--paso-bg, var(--at-surface-2, #F1E9DC)); color: var(--paso-tx, var(--at-text-2, #4A392C));
+}
+.traslados-paso::before, .traslados-rollos-paso::before {
+  content: ""; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; flex: none;
+}
+.paso-pendiente { --paso-bg: var(--paso-pendiente-bg, #FFF1C9); --paso-tx: var(--paso-pendiente-tx, #7A4E00); }
+.paso-aceptada { --paso-bg: var(--paso-aceptada-bg, #FFE3CF); --paso-tx: var(--paso-aceptada-tx, #8F340E); }
+.paso-despachada { --paso-bg: var(--paso-despachada-bg, #DDEBF8); --paso-tx: var(--paso-despachada-tx, #1B4A75); }
+td .traslados-rollos-paso { display: flex; margin-top: 0.35rem; white-space: normal; }
 .traslados-rollos-marca {
-  display: block; width: fit-content; margin-top: 0.2rem; padding: 0.05rem 0.45rem; border-radius: 999px;
-  background: var(--at-amber-soft, #FDF0D5); color: #8A3D0A; font-size: 0.74rem; font-weight: 700; white-space: nowrap;
+  display: block; width: fit-content; margin-top: 0.25rem; padding: 0.05rem 0.5rem; border-radius: 999px;
+  background: var(--at-amber-dim, rgba(184, 114, 10, 0.12)); color: #7A4E00; font-size: 0.74rem; font-weight: 700; white-space: nowrap;
 }
-@media (max-width: 900px) {
-  .traslados-rollos-item { grid-template-columns: 1fr; }
+
+@media (max-width: 640px) {
+  .traslados-cabeza { flex-direction: column; }
+  .traslados-alternar { align-self: stretch; }
+  .traslados-item { grid-template-columns: minmax(0, 1fr); grid-template-areas: "ref" "paso" "ruta" "datos" "fecha"; }
+  .traslados-item > .traslados-paso, .traslados-fecha { justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .traslados-item, .traslados-alternar { transition: none; }
 }
 
 /* "Filtrar por código": la línea que usa el código buscado. */

@@ -1,9 +1,24 @@
 import { useState } from "react";
 import { formatearFechaColombia } from "../Utils/fechas";
-import { nombreEmpresa } from "../Utils/empresas";
-import { pasoDelTraslado, type TrasladoRollo } from "./AvisosTrasladosRollos";
+import { EMPRESAS } from "../Utils/empresas";
+import type { TrasladoRollo } from "./AvisosTrasladosRollos";
 
 const numero = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
+
+// Etiqueta corta del paso (el detalle va en la línea de la ruta).
+const PASO: Record<TrasladoRollo["estado"], string> = {
+  pendiente: "Falta aceptarlo",
+  aceptada: "Por despachar",
+  despachada: "En camino",
+};
+
+function IconoTraslado() {
+  return (
+    <svg className="traslados-icono" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+      <path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 /** Aviso de Inventario total: los rollos que una bodega le pidió a otra y
  * todavía no llegan. Tocar uno filtra el resumen por su código. */
@@ -12,35 +27,54 @@ export default function PanelTrasladosRollos({ traslados, verCodigo }: {
 }) {
   const [abierto, setAbierto] = useState(true);
   if (traslados.length === 0) return null;
+  const cuantos = (estado: TrasladoRollo["estado"]) => traslados.filter((t) => t.estado === estado).length;
+  const resumen = (["pendiente", "aceptada", "despachada"] as const)
+    .filter((estado) => cuantos(estado) > 0)
+    .map((estado) => ({ estado, texto: `${cuantos(estado)} ${PASO[estado].toLowerCase()}` }));
+
   return (
-    <section className="traslados-rollos" aria-live="polite">
-      <button type="button" className="traslados-rollos-cabeza" aria-expanded={abierto} onClick={() => setAbierto((a) => !a)}>
-        <span className="traslados-rollos-titulo">
-          Rollos solicitados entre bodegas <span className="traslados-rollos-cuenta">{traslados.length}</span>
-        </span>
-        <span aria-hidden="true">{abierto ? "Ocultar ▲" : "Ver ▼"}</span>
-      </button>
+    <section className="traslados" aria-labelledby="traslados-titulo">
+      <header className="traslados-cabeza">
+        <div className="traslados-cabeza-texto">
+          <h2 id="traslados-titulo" className="traslados-titulo">
+            <IconoTraslado />
+            Rollos pedidos entre bodegas
+            <span className="traslados-cuenta" role="status" aria-label={`${traslados.length} rollos en traslado`}>{traslados.length}</span>
+          </h2>
+          <ul className="traslados-resumen" aria-label="Por paso">
+            {resumen.map((r) => <li key={r.estado} className={`traslados-paso paso-${r.estado}`}>{r.texto}</li>)}
+          </ul>
+        </div>
+        <button type="button" className="traslados-alternar" aria-expanded={abierto} aria-controls="traslados-lista"
+          onClick={() => setAbierto((a) => !a)}>
+          {abierto ? "Ocultar" : "Ver rollos"}
+        </button>
+      </header>
+
       {abierto && (
         <>
-          <p className="traslados-rollos-ayuda">
-            Estos rollos ya están comprometidos: las bodegas los aceptan, despachan y reciben desde Bodegas.
-            Toca un rollo para ver su código en el resumen.
+          <p className="traslados-ayuda">
+            Ya están comprometidos: las bodegas los aceptan, despachan y reciben desde <strong>Bodegas</strong>.
+            Toca un rollo para verlo en el resumen.
           </p>
-          <ul className="traslados-rollos-lista">
+          <ul id="traslados-lista" className="traslados-lista">
             {traslados.map((t) => (
               <li key={t.id}>
-                <button type="button" className={`traslados-rollos-item paso-${t.estado}`} onClick={() => verCodigo(t.codigo)}
-                  title={`Ver los rollos de ${t.codigo}`}>
-                  <span className="traslados-rollos-ref">{t.referencia}</span>
-                  <span className="traslados-rollos-dato">{t.codigo} · {nombreEmpresa(t.empresa)}</span>
-                  <span className="traslados-rollos-dato">
-                    {numero.format(t.metros)} m{t.kilos != null ? ` · ${numero.format(t.kilos)} kg` : ""}
+                <button type="button" className={`traslados-item paso-${t.estado}`} onClick={() => verCodigo(t.codigo)}
+                  aria-label={`Rollo ${t.referencia}, ${PASO[t.estado]}, de ${t.desde} a ${t.hacia}. Ver en el resumen`}>
+                  <span className="traslados-item-ref">{t.referencia}</span>
+                  <span className={`traslados-paso paso-${t.estado}`}>{PASO[t.estado]}</span>
+                  <span className="traslados-ruta">
+                    {t.desde} <span aria-hidden="true">→</span> <strong>{t.hacia}</strong>
                   </span>
-                  <span className="traslados-rollos-dato">{t.desde} → {t.hacia}</span>
-                  <span className={`traslados-rollos-paso paso-${t.estado}`}>{pasoDelTraslado(t)}</span>
-                  <span className="traslados-rollos-dato">
-                    {t.cotizacion ? `Cotización ${t.cotizacion} · ` : ""}{t.fecha ? formatearFechaColombia(t.fecha) : ""}
+                  <span className="traslados-datos">
+                    <span>{t.codigo}</span>
+                    <span>{EMPRESAS[t.empresa] || t.empresa || "Sin empresa"}</span>
+                    <span>{numero.format(t.metros)} m</span>
+                    {t.kilos != null && <span>{numero.format(t.kilos)} kg</span>}
+                    {t.cotizacion && <span>Cotización {t.cotizacion}</span>}
                   </span>
+                  <span className="traslados-fecha">Pedido {t.fecha ? formatearFechaColombia(t.fecha) : ""}</span>
                 </button>
               </li>
             ))}
