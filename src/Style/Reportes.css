@@ -127,6 +127,30 @@
 /* ── Tabla ────────────────────────────────────────────────────────────────── */
 .reportes-tabla-wrap { overflow-x: auto; }
 
+/* ── Inventario por tipo e Importaciones ─────────────────────────────────── */
+.reportes-pestanas { flex-wrap: wrap; }
+.reportes-tabla .reportes-num { text-align: right; white-space: nowrap; }
+.reportes-tabla .reportes-codigo { font-weight: 700; white-space: nowrap; }
+.reportes-sub { display: block; font-size: 0.74rem; color: var(--at-muted, #7C6A56); }
+.reportes-negativo { color: var(--at-red, #C23B2C); font-weight: 700; }
+.reportes-check { display: flex; align-items: center; gap: 0.5rem; font-size: 0.87rem; align-self: end; min-height: 44px; cursor: pointer; }
+.reportes-fila-importacion { cursor: pointer; }
+.reportes-fila-importacion:hover td,
+.reportes-fila-importacion.abierta td { background: var(--at-surface-2, #F1E9DC); }
+.reportes-importacion-boton {
+  border: none; background: none; padding: 0.25rem 0; font: inherit; font-weight: 700;
+  color: var(--at-terra, #B7451F); cursor: pointer; text-align: left; min-height: 32px;
+}
+.reportes-importacion-boton:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 2px; }
+.reportes-detalle-importacion > td { background: var(--at-bg, #F7F2EA); padding: 0.75rem 1rem 1rem; }
+.reportes-detalle-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+.reportes-tabla-interna { background: var(--at-surface, #FFFFFF); }
+.reportes-estado-rollo { font-size: 0.78rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--at-surface-2, #F1E9DC); white-space: nowrap; }
+.reportes-estado-rollo.estado-cerrado { color: var(--at-green, #2E7D4F); }
+.reportes-estado-rollo.estado-abierto { color: var(--at-terra, #B7451F); }
+.reportes-estado-rollo.estado-agotado { color: var(--at-muted, #7C6A56); }
+.reportes-estado-rollo.estado-en_camino { color: var(--at-blue, #2F5D8A); }
+
 .reportes-tabla {
   width: 100%;
   min-width: 800px;
