@@ -4,6 +4,7 @@ import { apartadoDesdeApi, envioDesdeApi, solicitudDesdeApi } from "./Mapeo";
 import { useUnidadesFamilia } from "../Hooks/useUnidadesFamilia";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import { cotizacionesParaPlanta } from "../Utils/produccion";
+import { trasladoRolloDesdeApi, type TrasladoRollo } from "./AvisosTrasladosRollos";
 import type { Bodega, Envio, EnvioApi, Sesion, Solicitud, SolicitudApi } from "../types/dominio";
 
 // Notificaciones de solicitudes/envíos entre bodegas: no hay push del
@@ -134,6 +135,20 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     }
   }, [sesion?.rol]);
 
+  // Rollos pedidos entre bodegas que todavía no llegan: Admin Inventario los
+  // ve en Inventario total y en el número del menú, desde cualquier pantalla.
+  const [trasladosRollos, setTrasladosRollos] = useState<TrasladoRollo[]>([]);
+
+  const refrescarTrasladosRollos = useCallback(async () => {
+    if (sesion?.rol !== "admin_inventario") return setTrasladosRollos([]);
+    try {
+      const datos = await api.get<Record<string, unknown>[]>("/admin-inventario/traslados-rollos") || [];
+      setTrasladosRollos(datos.map(trasladoRolloDesdeApi));
+    } catch {
+      /* Sin conexión un momento: se conserva lo que había (antes se vaciaba y los avisos desaparecían). */
+    }
+  }, [sesion?.rol]);
+
   const [apartadosPorEnviarCount, setApartadosPorEnviarCount] = useState(0);
 
   const refrescarApartadosPorEnviar = useCallback(async () => {
@@ -153,19 +168,21 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     refrescarProduccionPendiente();
     refrescarApartadosPorEnviar();
     refrescarTrasladosPendientes();
+    refrescarTrasladosRollos();
     if (sesion?.correo) cargarUnidadesFamilia();
   }, [cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente, refrescarApartadosPorEnviar,
-    refrescarTrasladosPendientes, cargarUnidadesFamilia, sesion?.correo]);
+    refrescarTrasladosPendientes, refrescarTrasladosRollos, cargarUnidadesFamilia, sesion?.correo]);
 
   useActualizacionAutomatica(
     () => Promise.all([refrescarSolicitudesPendientes(), refrescarEnviosPendientes(), refrescarProduccionPendiente(), refrescarApartadosPorEnviar(),
-      refrescarTrasladosPendientes()]),
+      refrescarTrasladosPendientes(), refrescarTrasladosRollos()]),
     { activa: Boolean(sesion?.correo) },
   );
 
   return {
     bodegas, solicitudes, envios, cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes,
     trasladosPendientes, refrescarTrasladosPendientes,
+    trasladosRollos, refrescarTrasladosRollos,
     produccionPendienteCount, refrescarProduccionPendiente,
     apartadosPorEnviarCount, refrescarApartadosPorEnviar,
     unidadesFamilia, unidadPorFamilia, decimalesPorFamilia, cargarUnidadesFamilia, guardarUnidadFamilia,

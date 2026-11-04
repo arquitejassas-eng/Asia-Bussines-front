@@ -14,6 +14,8 @@ import PanelResumenProductos from "../Componentes/PanelResumenProductos";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
 import PanelNuevoProducto from "../Componentes/PanelNuevoProducto";
 import PanelEliminarProducto from "../Componentes/PanelEliminarProducto";
+import PanelTrasladosRollos from "../Componentes/PanelTrasladosRollos";
+import { pasoDelTraslado } from "../Componentes/AvisosTrasladosRollos";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
 import { formatearCalibre } from "../Utils/calibre";
@@ -47,6 +49,18 @@ function CeldaEmpresa({ metros }: { metros?: { fisico: number; reservado: number
 
 function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const c = useControladorAdminInventario(sesion, almacen);
+  // Rollos pedidos entre bodegas (solo llegan para Admin Inventario).
+  const trasladosRollos = almacen?.trasladosRollos || [];
+  const trasladoDelRollo = new Map(trasladosRollos.map((t) => [t.rolloId, t]));
+  const enTrasladoPorCodigo = trasladosRollos.reduce<Record<string, number>>((cuenta, t) => {
+    cuenta[t.codigo] = (cuenta[t.codigo] || 0) + 1;
+    return cuenta;
+  }, {});
+  function verCodigoEnResumen(codigo: string) {
+    c.buscarResumenRollos(codigo);
+    if (c.codigoRolloExpandido !== codigo) c.alternarExpandirCodigoRollo(codigo);
+    document.getElementById("resumen-rollos")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   const marcados = c.formularioEnvio.rollosSeleccionados.length;
   // En el orden en que se fueron marcando.
   const rollosMarcados = c.formularioEnvio.rollosSeleccionados
@@ -351,8 +365,10 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
 
           {!c.mostrarFormularioEnvio && (
             <>
+              <PanelTrasladosRollos traslados={trasladosRollos} verCodigo={verCodigoEnResumen} />
+
               {/* ================== RESUMEN: TOTAL POR CÓDIGO EN TODA LA EMPRESA ================== */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div id="resumen-rollos" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Resumen — total por código en toda la empresa — Rollos</h2>
                 {c.comparativo.rollos.length > 0 && (
                   <button className="inventario-boton-cancelar" onClick={exportarResumenRollos}>
@@ -413,7 +429,14 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                       {expandido ? "▲" : "▼"}
                                     </button>
                                   </td>
-                                  <td>{f.codigo}</td>
+                                  <td>
+                                    {f.codigo}
+                                    {enTrasladoPorCodigo[f.codigo] > 0 && (
+                                      <span className="traslados-rollos-marca" title="Rollos de este código pedidos entre bodegas">
+                                        ⇄ {enTrasladoPorCodigo[f.codigo]} en traslado
+                                      </span>
+                                    )}
+                                  </td>
                                   <td>{f.descripcion || "—"}</td>
                                   <td>
                                     <span className={`rollos-color-etiqueta color-${colorClase}`}>
@@ -500,6 +523,14 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                                   <span className={`rollos-estado-badge estado-${rollo.estado}`}>
                                                     {(ESTADOS_ROLLO as Record<string, string>)[rollo.estado]}
                                                   </span>
+                                                  {trasladoDelRollo.has(rollo.id) && (() => {
+                                                    const t = trasladoDelRollo.get(rollo.id)!;
+                                                    return (
+                                                      <span className={`traslados-rollos-paso paso-${t.estado}`}>
+                                                        {pasoDelTraslado(t)}{t.cotizacion ? ` · Cotización ${t.cotizacion}` : ""}
+                                                      </span>
+                                                    );
+                                                  })()}
                                                   {!c.soloLectura && (
                                                     <button type="button" className="rollos-boton-secundario buscar-rollos-historial"
                                                       onClick={() => historial.abrirHistorial(rollo)}>

@@ -6,6 +6,7 @@ import { borrarToken } from "./Utils/auth";
 import RutaProtegida from "./Componentes/RutaProtegida";
 import ErrorDePantalla from "./Componentes/ErrorDePantalla";
 import { ApartadosPorEnviarContexto } from "./Componentes/AvisosApartados";
+import { TrasladosRollosContexto } from "./Componentes/AvisosTrasladosRollos";
 
 // Cada módulo se descarga solo al abrir su ruta. Al crecer la aplicación, una
 // pantalla nueva no penaliza el primer acceso de los demás usuarios.
@@ -96,6 +97,7 @@ export default function App() {
 
   return (
     <ApartadosPorEnviarContexto.Provider value={almacen.apartadosPorEnviarCount}>
+    <TrasladosRollosContexto.Provider value={almacen.trasladosRollos.length}>
     <ErrorDePantalla key={pathname}>
     <Suspense fallback={<main aria-live="polite">Cargando módulo...</main>}>
       <Routes>
@@ -169,6 +171,7 @@ export default function App() {
       </Routes>
     </Suspense>
     </ErrorDePantalla>
+    </TrasladosRollosContexto.Provider>
     </ApartadosPorEnviarContexto.Provider>
   );
 }
