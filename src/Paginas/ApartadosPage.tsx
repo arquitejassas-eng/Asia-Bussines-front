@@ -27,6 +27,20 @@ const APARTADOS_POR_PAGINA = 15;
 // la cotización el detalle completo, de lado a lado (ver detalleDeLineas).
 const LINEAS_VISIBLES = 3;
 
+// "LR30020,27 LA50170,25" → ["LR30020,27", "LA50170,25"]: varios códigos
+// separados por espacio (el código ya trae coma, por eso no se separa con coma).
+function codigosDelFiltro(texto: string): string[] {
+  return texto.trim().toUpperCase().split(/\s+/).filter(Boolean);
+}
+
+// La línea usa alguno de los códigos: el de la lámina o el del producto de
+// stock. Basta con una parte ("LR30020" encuentra todos los calibres).
+function lineaUsaCodigo(it: { codigoInterno: string | null; productoCodigo: string }, codigos: string[]): boolean {
+  if (codigos.length === 0) return false;
+  const suyos = [it.codigoInterno, it.productoCodigo].map((c) => (c || "").trim().toUpperCase()).filter(Boolean);
+  return codigos.some((c) => suyos.some((s) => s.includes(c)));
+}
+
 type ApartadoDeLista = ReturnType<typeof useApartados>["apartados"][number];
 
 /** Cantidad legible de una línea: metros para rollo (con la cuenta si son
@@ -346,6 +360,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
   // Filtros de la lista (en el navegador: la lista ya viene completa).
   const [filtroTexto, setFiltroTexto] = useState("");
+  const [filtroCodigo, setFiltroCodigo] = useState("");
+  const codigosBuscados = useMemo(() => codigosDelFiltro(filtroCodigo), [filtroCodigo]);
   const [filtroBodega, setFiltroBodega] = useState("");
   const [filtroEmpresa, setFiltroEmpresa] = useState("");
   const [soloPendientesSalida, setSoloPendientesSalida] = useState(false);
@@ -368,17 +384,18 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     }).filter((ap) =>
       vaEnPestana(ap, pestana)
       && (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
+      && (codigosBuscados.length === 0 || ap.items.some((it) => lineaUsaCodigo(it, codigosBuscados)))
       && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
       && (!filtroEmpresa || ap.empresa === filtroEmpresa)
       && (!soloPendientesSalida || ESTADOS_CANCELABLES.includes(ap.estado)));
-  }, [a.apartados, filtroTexto, filtroBodega, filtroEmpresa, soloPendientesSalida, pestana]);
+  }, [a.apartados, filtroTexto, codigosBuscados, filtroBodega, filtroEmpresa, soloPendientesSalida, pestana]);
 
   // Paginación en el navegador: con cientos de cotizaciones la tabla era eterna.
   const [paginaApartados, setPaginaApartados] = useState(1);
-  useEffect(() => { setPaginaApartados(1); }, [filtroTexto, filtroBodega, filtroEmpresa, soloPendientesSalida, a.filtroEstado, pestana]);
-  const hayFiltros = Boolean(filtroTexto || filtroBodega || filtroEmpresa || soloPendientesSalida || a.filtroEstado);
+  useEffect(() => { setPaginaApartados(1); }, [filtroTexto, filtroCodigo, filtroBodega, filtroEmpresa, soloPendientesSalida, a.filtroEstado, pestana]);
+  const hayFiltros = Boolean(filtroTexto || filtroCodigo || filtroBodega || filtroEmpresa || soloPendientesSalida || a.filtroEstado);
   function limpiarFiltros() {
-    setFiltroTexto(""); setFiltroBodega(""); setFiltroEmpresa(""); setSoloPendientesSalida(false); a.setFiltroEstado("");
+    setFiltroTexto(""); setFiltroCodigo(""); setFiltroBodega(""); setFiltroEmpresa(""); setSoloPendientesSalida(false); a.setFiltroEstado("");
   }
   // Admin Inventario y el vendedor ven cada cotización en UNA fila aunque salga de varias
   // bodegas (en el backend es una parte por bodega, con el mismo número).
@@ -456,7 +473,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const lista = it.modalidad === "por_stock" ? it.stockDescontado && !stockPorAlistar : (it.metrosPendientes ?? 0) <= 0;
     const codigo = it.modalidad === "por_stock" ? "" : it.codigoInterno;
     // Solo la descripción (como en el otro aplicativo); sin ella, la cantidad y el código.
-    const texto = it.descripcion || (it.modalidad === "por_stock" ? `producto #${it.productoId}` : `${cantidadLinea(it)} ${codigo || ""}`);
+    const texto = it.descripcion || (it.modalidad === "por_stock" ? `${cantidadLinea(it)} ${it.productoDescripcion || `producto #${it.productoId}`}` : `${cantidadLinea(it)} ${codigo || ""}`);
     return {
       lista, codigo,
       descripcion: descripcionResaltada(texto, codigo ? colorDeCodigo(codigo) : "otro"),
@@ -494,6 +511,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     };
   }
 
+  // Con "Filtrar por código", la línea que lo usa queda resaltada.
+  function claseDeLinea(it: ApartadoDeLista["items"][number], lista: boolean): string | undefined {
+    const clases = [lista && "apartado-linea-lista", lineaUsaCodigo(it, codigosBuscados) && "apartado-linea-coincide"].filter(Boolean);
+    return clases.length ? clases.join(" ") : undefined;
+  }
+
   // Todas las líneas de la cotización, de lado a lado debajo de su fila, en el
   // orden en que se escribieron: número, descripción, código, cantidad y avisos.
   function detalleDeLineas(ap: ApartadoDeLista, parteDe?: Map<number, ApartadoDeLista>) {
@@ -512,10 +535,17 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               {ap.items.map((it, posicion) => {
                 const linea = datosDeLinea(it, ap, parteDe);
                 return (
-                  <tr key={it.id} className={linea.lista ? "apartado-linea-lista" : undefined}>
+                  <tr key={it.id} className={claseDeLinea(it, linea.lista)}>
                     <td className="apartado-detalle-num">{posicion + 1}</td>
                     <td className="apartado-detalle-desc">{linea.descripcion}</td>
-                    <td className="apartado-detalle-codigo">{linea.codigo || "Stock"}</td>
+                    <td className="apartado-detalle-codigo">
+                      {linea.codigo || (it.productoCodigo ? (
+                        <>
+                          {it.productoCodigo}
+                          {it.productoDescripcion && <span className="apartado-detalle-producto">{it.productoDescripcion}</span>}
+                        </>
+                      ) : "Stock")}
+                    </td>
                     <td className="apartado-detalle-cantidad">{cantidadLinea(it)}</td>
                     <td><div className="apartado-linea-cabeza">{linea.marcas}</div></td>
                   </tr>
@@ -540,10 +570,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     return (
       <>
       <ul className="apartado-lineas">
-        {ap.items.slice(0, LINEAS_VISIBLES).map((it) => {
+        {ap.items.filter((it, i) => i < LINEAS_VISIBLES || (!lineasExpandidas.has(ap.id) && lineaUsaCodigo(it, codigosBuscados))).map((it) => {
           const linea = datosDeLinea(it, ap, parteDe);
           return (
-            <li key={it.id} className={linea.lista ? "apartado-linea-lista" : undefined}>
+            <li key={it.id} className={claseDeLinea(it, linea.lista)}>
               <div className="apartado-linea-texto">{linea.descripcion}</div>
               <div className="apartado-linea-cabeza">{linea.marcas}</div>
             </li>
@@ -1339,6 +1369,16 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     placeholder="Buscar cotización o cliente..."
                     value={filtroTexto}
                     onChange={(e) => setFiltroTexto(e.target.value)}
+                  />
+                </div>
+                <div className={`inventario-buscador apartados-buscador apartados-buscador-codigo${filtroCodigo ? " activo" : ""}`}>
+                  <input
+                    type="text"
+                    placeholder="Filtrar por código (ej. LR30020,27)..."
+                    aria-label="Filtrar por código de producto; varios códigos separados por espacio"
+                    title="Varios códigos separados por espacio: LR30020,27 LA50170,25"
+                    value={filtroCodigo}
+                    onChange={(e) => setFiltroCodigo(e.target.value)}
                   />
                 </div>
                 {pestana === "cotizaciones" && (

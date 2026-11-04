@@ -122,6 +122,8 @@ export function apartadoItemDesdeApi(i: RegistroApi) {
     metrosPendientes: i.metros_pendientes == null ? null : numero(i.metros_pendientes),
     tieneProduccionRegistrada: Boolean(i.tiene_produccion_registrada),
     rolloId: i.rollo_id == null ? null : numero(i.rollo_id), rolloReferencia: texto(i.rollo_referencia),
+    // Solo por stock: el producto que se apartó (código y nombre).
+    productoCodigo: texto(i.producto_codigo), productoDescripcion: texto(i.producto_descripcion),
     // Solo por rollo: "" = teja; "caballete" / "flanche" (apartan cortes × medida).
     tipoProducto: texto(i.tipo_producto),
     // Empresa del material de la línea cuando no es la de la cotización ("" = la misma).

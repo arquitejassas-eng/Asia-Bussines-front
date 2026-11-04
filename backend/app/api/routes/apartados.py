@@ -327,6 +327,7 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
     por_id = {a.id: a for a in db.query(Apartado).options(
         selectinload(Apartado.items).selectinload(ApartadoItem.producciones),
         selectinload(Apartado.items).selectinload(ApartadoItem.rollo),
+        selectinload(Apartado.items).selectinload(ApartadoItem.producto),
     ).filter(Apartado.id.in_(ids)).populate_existing()}
     return _con_faltantes(db, [por_id[i] for i in ids])[0]
 
@@ -376,7 +377,7 @@ def listar_apartados(
     consulta = (
         db.query(Apartado)
         .options(joinedload(Apartado.items).joinedload(ApartadoItem.producciones), joinedload(Apartado.items).joinedload(ApartadoItem.rollo),
-                 joinedload(Apartado.bodega))
+                 joinedload(Apartado.items).joinedload(ApartadoItem.producto), joinedload(Apartado.bodega))
     )
     # Admin Inventario ve los de todas las bodegas (puede filtrar por una);
     # el vendedor, solo los que creó; los demás roles, solo los de su bodega.

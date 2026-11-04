@@ -1,4 +1,6 @@
+import { useState } from "react";
 import BarraLateral from "../Componentes/BarraLateral";
+import { ReporteImportaciones, ReporteInventarioPorTipo } from "../Componentes/PanelReportesInventario";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { useControladorReportes } from "../Componentes/Reportes";
 import Paginacion from "../Componentes/Paginacion";
@@ -24,6 +26,9 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
     const origen = nombreBodega(m.bodegaOrigenId), destino = nombreBodega(m.bodegaDestinoId);
     return origen && destino ? `${origen} → ${destino}` : origen || destino || "—";
   };
+  // Inventario por tipo e importaciones: solo quien ve todas las bodegas.
+  const [vista, setVista] = useState<"movimientos" | "inventario" | "importaciones">("movimientos");
+  const enMovimientos = vista === "movimientos";
   const traslados = r.filtros.grupo === "traslados";
 
   const notificaciones = contarNotificaciones(almacen, sesion);
@@ -52,17 +57,35 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
 
           {/* Dos partes: lo de la bodega (producción, entradas, salidas…) y los traslados. */}
           <div className="reportes-pestanas" role="tablist" aria-label="Parte del reporte">
-            <button type="button" role="tab" aria-selected={!traslados}
-              className={`reportes-pestana ${!traslados ? "reportes-pestana-activa" : ""}`}
-              onClick={() => r.actualizarFiltro("grupo", "movimientos")}>
+            <button type="button" role="tab" aria-selected={enMovimientos && !traslados}
+              className={`reportes-pestana ${enMovimientos && !traslados ? "reportes-pestana-activa" : ""}`}
+              onClick={() => { setVista("movimientos"); r.actualizarFiltro("grupo", "movimientos"); }}>
               Producción y movimientos
             </button>
-            <button type="button" role="tab" aria-selected={traslados}
-              className={`reportes-pestana ${traslados ? "reportes-pestana-activa" : ""}`}
-              onClick={() => r.actualizarFiltro("grupo", "traslados")}>
+            <button type="button" role="tab" aria-selected={enMovimientos && traslados}
+              className={`reportes-pestana ${enMovimientos && traslados ? "reportes-pestana-activa" : ""}`}
+              onClick={() => { setVista("movimientos"); r.actualizarFiltro("grupo", "traslados"); }}>
               Traslados entre bodegas
             </button>
+            {todasLasBodegas && (
+              <>
+                <button type="button" role="tab" aria-selected={vista === "inventario"}
+                  className={`reportes-pestana ${vista === "inventario" ? "reportes-pestana-activa" : ""}`}
+                  onClick={() => setVista("inventario")}>
+                  Inventario por tipo
+                </button>
+                <button type="button" role="tab" aria-selected={vista === "importaciones"}
+                  className={`reportes-pestana ${vista === "importaciones" ? "reportes-pestana-activa" : ""}`}
+                  onClick={() => setVista("importaciones")}>
+                  Importaciones
+                </button>
+              </>
+            )}
           </div>
+
+          {vista === "inventario" && <ReporteInventarioPorTipo />}
+          {vista === "importaciones" && <ReporteImportaciones />}
+          {enMovimientos && (<>
 
           {/* ================== RESUMEN ================== */}
           <section className="reportes-resumen-grid">
@@ -241,6 +264,7 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
               </>
             )}
           </section>
+          </>)}
         </div>
       </div>
     </div>

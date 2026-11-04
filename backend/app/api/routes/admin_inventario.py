@@ -9,6 +9,7 @@ from app.models.bodega import Bodega
 from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.producto import Producto
 from app.models.rollo import EstadoRollo, Rollo
+from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, EstadoSolicitud, Solicitud
 from app.models.usuario import RolUsuario
 from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComparativoResponse
 from app.schemas.rollos import RolloResponse
@@ -354,3 +355,27 @@ def rollos_por_codigo(
     asignar_peso_actual(db, rollos)
     asignar_merma_y_sobrante(db, rollos)
     return rollos
+
+
+@router.get("/traslados-rollos", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def traslados_de_rollos_en_curso(db: Session = Depends(get_db)) -> list[dict]:
+    """Rollos que una bodega le pidió a otra y todavía no llegan (pedido sin
+    responder, aceptado o en camino): Admin Inventario no participa en el
+    traslado, pero debe saber que ese rollo ya está comprometido."""
+    bodegas = {b.id: b.nombre for b in db.query(Bodega).all()}
+    solicitudes = (
+        db.query(Solicitud, Rollo)
+        .join(Rollo, Rollo.id == Solicitud.rollo_id)
+        .filter(Solicitud.estado.in_((EstadoSolicitud.PENDIENTE, *ESTADOS_TRASLADO_EN_CURSO)))
+        .order_by(Solicitud.fecha.desc())
+        .all()
+    )
+    return [
+        {
+            "id": s.id, "estado": s.estado.value, "rollo_id": r.id, "referencia": r.identificador_rollo,
+            "codigo": r.codigo_interno, "empresa": r.empresa or "", "metros": round(float(r.metros_disponibles or 0), 2),
+            "kilos": r.peso_neto, "desde": bodegas.get(s.bodega_propietaria_id, ""), "hacia": bodegas.get(s.bodega_solicitante_id, ""),
+            "cotizacion": s.numero_cotizacion or "", "fecha": s.fecha, "solicitado_por": s.solicitado_por or "",
+        }
+        for s, r in solicitudes
+    ]

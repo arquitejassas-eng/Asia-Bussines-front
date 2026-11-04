@@ -73,6 +73,7 @@ type ApartadoItem = {
   productoId: number | null; stockDescontado: boolean;
   metrosPendientes: number | null; tieneProduccionRegistrada: boolean;
   rolloId: number | null; rolloReferencia: string; tipoProducto: string;
+  productoCodigo: string; productoDescripcion: string;
   empresaMaterial: string; // "" = la de la cotización
   hayFisico: boolean;
   convertirEn: string; bodegaConversionId: number | null; laminasConvertidas: number;

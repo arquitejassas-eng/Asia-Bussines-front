@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ApartadosPorEnviarContexto } from "./AvisosApartados";
+import { TrasladosRollosContexto } from "./AvisosTrasladosRollos";
 import "../Style/Barralateral.css";
 
 type Sesion = { rol?: string; bodegaNombre?: string } | null | undefined;
@@ -29,6 +30,7 @@ const MODULOS = [
 export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 0 }: Props) {
   const location = useLocation();
   const apartadosPorEnviar = useContext(ApartadosPorEnviarContexto);
+  const trasladosRollos = useContext(TrasladosRollosContexto);
   const modulosVisibles = MODULOS.filter((modulo) => !modulo.roles || modulo.roles.includes(sesion?.rol ?? ""));
 
   return (
@@ -43,6 +45,9 @@ export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 
               {modulo.notificable && notificaciones > 0 && <span className="barra-notificacion">{notificaciones}</span>}
               {modulo.clave === "apartados" && sesion?.rol === "administrativo" && apartadosPorEnviar > 0 && (
                 <span className="barra-notificacion" title="Cotizaciones aprobadas por enviar a producción">{apartadosPorEnviar}</span>
+              )}
+              {modulo.clave === "admin_inventario" && sesion?.rol === "admin_inventario" && trasladosRollos > 0 && (
+                <span className="barra-notificacion" title="Rollos pedidos entre bodegas que todavía no llegan">{trasladosRollos}</span>
               )}
             </Link>
             {modulo.clave === "inventario" && <p className="barra-item-nota">Productos · Movimientos · Historial</p>}

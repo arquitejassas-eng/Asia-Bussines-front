@@ -216,6 +216,8 @@ class ApartadoItemResponse(BaseModel):
     tiene_produccion_registrada: bool = False
     rollo_id: int | None = None
     rollo_referencia: str | None = None
+    producto_codigo: str | None = None
+    producto_descripcion: str | None = None
     tipo_producto: str = ""
     # "" = material de la empresa de la cotización.
     empresa_material: str = ""

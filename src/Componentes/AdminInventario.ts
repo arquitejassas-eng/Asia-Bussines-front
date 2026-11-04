@@ -276,11 +276,16 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   }
 
+  // Se busca por referencia, código, color o kilos. Los kilos se escriben como
+  // se ven en la tabla o sin puntos: "4.558", "4558" y "4558,5" sirven.
   const misRollosFiltrados = useMemo(() => {
     const termino = normalizarTexto(busquedaRollosEnvio);
     if (!termino) return misRollos;
+    const kilos = termino.replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
     return misRollos.filter((r) =>
       normalizarTexto(r.codigoInterno).includes(termino) || normalizarTexto(r.identificadorRollo).includes(termino)
+      || normalizarTexto(r.colorMaterial || "").includes(termino)
+      || (r.pesoNeto != null && String(r.pesoNeto).includes(kilos))
     );
   }, [misRollos, busquedaRollosEnvio]);
 
@@ -294,6 +299,16 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
       rollosSeleccionados: actual.rollosSeleccionados.includes(rolloId)
         ? actual.rollosSeleccionados.filter((id) => id !== rolloId)
         : [...actual.rollosSeleccionados, rolloId],
+    }));
+  }
+
+  // Marca (o desmarca) de una vez los rollos que se ven con la búsqueda.
+  function marcarRollosEnvio(ids: number[], marcar: boolean) {
+    setFormularioEnvio((actual) => ({
+      ...actual,
+      rollosSeleccionados: marcar
+        ? [...new Set([...actual.rollosSeleccionados, ...ids])]
+        : actual.rollosSeleccionados.filter((id) => !ids.includes(id)),
     }));
   }
 
@@ -380,7 +395,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     mostrarFormularioEnvio, formularioEnvio, guardandoEnvio, errorFormularioEnvio,
     abrirFormularioEnvio, cerrarFormularioEnvio, actualizarCampoEnvio,
     busquedaRollosEnvio, setBusquedaRollosEnvio, misRollosFiltrados,
-    alternarRolloEnvio, actualizarCantidadProductoEnvio, crearEnvio,
+    alternarRolloEnvio, marcarRollosEnvio, actualizarCantidadProductoEnvio, crearEnvio,
 
     enviosEnviados, cargandoEnvios,
   };
