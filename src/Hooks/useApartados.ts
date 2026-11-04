@@ -578,7 +578,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         // Si no escribió una descripción propia, se autocompleta con el
         // código del producto -- así la lista de apartados (que no vuelve a
         // consultar el Producto) puede seguir mostrando qué es cada línea.
-        descripcion: item.descripcion.trim() ? item.descripcion : producto.codigo,
+        // Si la que hay es el código del producto anterior, se cambia por el nuevo.
+        descripcion: item.descripcion.trim() && item.descripcion.trim() !== item.productoCodigo ? item.descripcion : producto.codigo,
       } : item)),
     }));
     setResultadosBusquedaProducto((actual) => {

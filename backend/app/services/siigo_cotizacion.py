@@ -179,19 +179,22 @@ NOMBRE_TIPO = {"caballete": "CABALLETES", "flanche": "FLANCHES", "lamina_lisa": 
 def descripcion_para_siigo(item: ApartadoItem) -> str:
     """Lo que se pidió en la línea, para que se lea en Siigo. Si el vendedor
     no escribió descripción, se arma sola: "100 TEJAS DE 5 MTS - LR30020,25
-    (500 MTS - 1.193,5 KG)"; una de stock: "20 TORNILLO 2\"..."."""
+    (500 MTS - 1.193,5 KG)"; una de stock: "20 TORNILLO 2\"... (T2-12)"."""
     escrita = (item.descripcion or "").strip()
-    if escrita:
+    producto = getattr(item, "producto", None) if item.modalidad == ModalidadApartado.POR_STOCK else None
+    # En una línea de stock el formulario llena la descripción con el código
+    # del producto: eso solo no dice qué es, así que se arma la completa.
+    if escrita and not (producto is not None and escrita.upper() == (producto.codigo or "").upper()):
         return escrita[:500]
     cantidad = _numero(item.cantidad or 0)
     if item.modalidad == ModalidadApartado.POR_STOCK:
-        producto = getattr(item, "producto", None)
         nombre = (producto.descripcion if producto is not None else "") or (producto.codigo if producto is not None else "")
+        codigo = f" ({producto.codigo})" if producto is not None and producto.codigo and producto.codigo != nombre else ""
         if es_porcelanato(producto):
-            area = f" ({_numero(item.siigo_cantidad)} M2)" if item.siigo_cantidad else ""
-            return f"{cantidad} CAJAS {nombre}{area}".strip()[:500]
+            area = f" - {_numero(item.siigo_cantidad)} M2" if item.siigo_cantidad else ""
+            return f"{cantidad} CAJAS {nombre}{codigo}{area}".strip()[:500]
         corte = f" CORTADO A {_numero(item.medida)} MTS" if item.medida else ""
-        return f"{cantidad} {nombre}{corte}".strip()[:500]
+        return f"{cantidad} {nombre}{codigo}{corte}".strip()[:500]
     tipo = NOMBRE_TIPO.get(item.tipo_producto or "", "TEJAS")
     metros = metros_de_linea(item.cantidad or 0, item.medida, item.tipo_producto)
     unidad = UNIDAD_POR_EMPRESA.get(item.apartado.empresa if item.apartado is not None else "", "kg")
