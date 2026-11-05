@@ -11,7 +11,7 @@ import PanelRegistrarSalida from "../Componentes/PanelRegistrarSalida";
 import PanelSepararCotizacion from "../Componentes/PanelSepararCotizacion";
 import PanelUnirCotizacion from "../Componentes/PanelUnirCotizacion";
 import Paginacion from "../Componentes/Paginacion";
-import { numeroSinEmpresa, useApartados } from "../Hooks/useApartados";
+import { factorIva, numeroSinEmpresa, useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
 import { calcularSolicitudesPendientes, calcularStockParaAlistar, metrosDeLinea, pideCorte } from "../Utils/produccion";
 import "../Style/Inventario.css";
@@ -1264,6 +1264,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   {a.siigo.enSiigo && (
                     <CamposSiigoLinea
                       indice={indice} item={item} unidad={a.siigo.unidadDe(item)} productos={a.siigo.productos[indice]}
+                      factor={factorIva(a.siigo.impuestos?.iva)}
                       buscarProducto={a.siigo.buscarProducto} cerrarBusquedaProducto={a.siigo.cerrarBusquedaProducto}
                       actualizar={(campo, valor) => a.actualizarItemApartado(indice, campo, valor)}
                     />

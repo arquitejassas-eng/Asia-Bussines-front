@@ -1,5 +1,5 @@
 import { NOMBRE_UNIDAD, type ClienteSiigo, type ProductoSiigo, type VendedorSiigo } from "../Hooks/useSiigoCotizacion";
-import { numeroDe } from "../Hooks/useApartados";
+import { factorIva, numeroDe } from "../Hooks/useApartados";
 import "../Style/Siigo.css";
 
 // Lo de Siigo dentro del formulario de cotización: el aviso de qué pasa al
@@ -119,11 +119,14 @@ export function ImpuestosSiigo({ formulario, porcentajes, actualizar }: {
 export function ResumenSiigo({ formulario, porcentajes }: {
   formulario: FormularioSiigo; porcentajes: { iva: number | null; retefuente: number | null } | undefined;
 }) {
-  const subtotal = formulario.items.reduce((suma, i) => suma + numeroDe(i.valorLinea), 0);
+  // Lo que escribió el vendedor trae el IVA: el subtotal es sin él (y sin
+  // IVA marcado, el cliente paga solo el subtotal).
+  const conIva = formulario.items.reduce((suma, i) => suma + numeroDe(i.valorLinea), 0);
+  const subtotal = conIva / factorIva(porcentajes?.iva);
   const kilos = kilosTotales(formulario.items);
   if (!(subtotal > 0) && !(kilos.total > 0)) return null;
   const pctIva = porcentajes?.iva ?? 19;
-  const iva = formulario.siigoIva ? subtotal * pctIva / 100 : 0;
+  const iva = formulario.siigoIva ? conIva - subtotal : 0;
   const retencion = formulario.siigoRetefuente && porcentajes?.retefuente != null ? subtotal * porcentajes.retefuente / 100 : 0;
   return (
     <dl className="siigo-resumen" aria-label="Valor de la cotización">
@@ -148,9 +151,11 @@ export function ResumenSiigo({ formulario, porcentajes }: {
 }
 
 export function CamposSiigoLinea({
-  indice, item, unidad, productos, buscarProducto, cerrarBusquedaProducto, actualizar,
+  indice, item, unidad, factor, productos, buscarProducto, cerrarBusquedaProducto, actualizar,
 }: {
   indice: number; unidad: string;
+  /** 1,19: el valor escrito siempre trae el IVA (ver factorIva). */
+  factor: number;
   item: { siigoProducto: string; siigoCantidad: string; siigoUnidad?: string; siigoAviso?: string; valorLinea: string };
   productos: ProductoSiigo[] | "buscando" | "error" | undefined;
   buscarProducto: (indice: number, texto: string) => void;
@@ -158,7 +163,8 @@ export function CamposSiigoLinea({
   actualizar: (campo: "siigoProducto" | "siigoCantidad" | "siigoCantidadManual" | "valorLinea", valor: string | boolean) => void;
 }) {
   const valor = numeroDe(item.valorLinea);
-  const porUnidad = numeroDe(item.siigoCantidad) > 0 ? valor / numeroDe(item.siigoCantidad) : 0;
+  const sinIva = valor / factor;
+  const porUnidad = numeroDe(item.siigoCantidad) > 0 ? sinIva / numeroDe(item.siigoCantidad) : 0;
   return (
     <div className="siigo-linea" style={{ gridColumn: "1 / -1" }}>
       <div className="siigo-linea-campo siigo-linea-producto">
@@ -189,13 +195,13 @@ export function CamposSiigoLinea({
         {item.siigoAviso && <p className="siigo-estado siigo-mal">{item.siigoAviso}</p>}
       </div>
       <div className="siigo-linea-campo">
-        <label htmlFor={`siigo-valor-${indice}`}>Valor de la venta sin IVA *</label>
+        <label htmlFor={`siigo-valor-${indice}`}>Valor de la venta con IVA incluido *</label>
         <input id={`siigo-valor-${indice}`} inputMode="decimal" placeholder="Ej. 1.114.448" value={item.valorLinea}
           onChange={(e) => actualizar("valorLinea", e.target.value)} />
       </div>
       <p className="siigo-linea-total">
         {valor > 0 && porUnidad > 0
-          ? <><strong>{pesos(valor)}</strong> ÷ {cantidad(numeroDe(item.siigoCantidad))} {unidad} = {pesos(porUnidad)} por {NOMBRE_UNIDAD[unidad] || unidad} (va así a Siigo)</>
+          ? <>{pesos(valor)} sin IVA = <strong>{pesos(sinIva)}</strong>; ÷ {cantidad(numeroDe(item.siigoCantidad))} {unidad} = {pesos(porUnidad)} por {NOMBRE_UNIDAD[unidad] || unidad} sin IVA (va así a Siigo)</>
           : "—"}
       </p>
     </div>

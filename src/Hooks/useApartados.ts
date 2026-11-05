@@ -30,7 +30,7 @@ const ITEM_VACIO = {
   convertirEn: "caballete", bodegaConversionId: "",
   // Siigo: producto de Siigo, cantidad en su unidad (kilos / centímetros /
   // unidades; el programa la sugiere y no la toca si se escribió a mano) y lo
-  // que vale la línea sin IVA (a Siigo va el precio por kilo/cm: valor ÷ cantidad).
+  // que vale la línea CON IVA (a Siigo va el precio sin IVA por kilo/cm: ver factorIva).
   siigoProducto: "", siigoCantidad: "", siigoCantidadManual: false, siigoUnidad: "", siigoAviso: "", valorLinea: "",
 };
 const FORMULARIO_VACIO = {
@@ -98,6 +98,13 @@ type Apartado = {
 
 /** Número escrito a la colombiana o no: "4.266,32", "4266,32", "1.000" y
  * "1.000.000" (puntos de miles), "4266.32" (punto decimal). 0 si no es un número. */
+/** El vendedor escribe el valor de la línea SIEMPRE con el IVA incluido: a
+ * Siigo va la base (valor ÷ 1,19). Si el cliente paga IVA, Siigo se lo suma y
+ * el total es lo que se escribió; si no, paga solo la base. */
+export function factorIva(porcentaje: number | null | undefined) {
+  return 1 + (porcentaje ?? 19) / 100;
+}
+
 export function numeroDe(valor: string | number) {
   const texto = String(valor ?? "").trim().replace(/\s|\$/g, "");
   let normal = texto;
@@ -251,7 +258,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         convertirEn: it.convertirEn || "caballete", bodegaConversionId: it.bodegaConversionId ? String(it.bodegaConversionId) : "",
         laminasConvertidas: it.laminasConvertidas,
         siigoProducto: it.siigoProducto || "",
-        valorLinea: it.precio == null || it.siigoCantidad == null ? "" : String(Math.round(it.precio * it.siigoCantidad * 100) / 100).replace(".", ","),
+        valorLinea: it.precio == null || it.siigoCantidad == null ? ""
+          : String(Math.round(it.precio * it.siigoCantidad * factorIva(siigo.impuestos?.iva) * 100) / 100).replace(".", ","),
         siigoCantidad: it.siigoCantidad == null ? "" : String(it.siigoCantidad), siigoCantidadManual: it.siigoCantidad != null,
         };
       }),
@@ -667,9 +675,10 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
           const empresa = i.empresa || formulario.empresa;
           const datosSiigo = {
             siigo_producto: i.siigoProducto.trim(),
-            // Siigo pide precio por kilo/cm/unidad: el valor de la línea entre la cantidad (6 decimales, así el total da exacto).
+            // Siigo pide precio SIN IVA por kilo/cm/unidad: el valor de la línea (con IVA) sin el IVA,
+            // entre la cantidad (6 decimales, así el total da exacto).
             precio: numeroDe(i.valorLinea) > 0 && numeroDe(i.siigoCantidad) > 0
-              ? Math.round(numeroDe(i.valorLinea) / numeroDe(i.siigoCantidad) * 1e6) / 1e6 : null,
+              ? Math.round(numeroDe(i.valorLinea) / factorIva(siigo.impuestos?.iva) / numeroDe(i.siigoCantidad) * 1e6) / 1e6 : null,
             siigo_cantidad: numeroDe(i.siigoCantidad) > 0 ? numeroDe(i.siigoCantidad) : null,
           };
           if (i.modalidad === "rollo_completo") {
