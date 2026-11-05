@@ -747,7 +747,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
   }
 
-  // La anulada que estaba en Siigo se borra allá también; si Siigo falló, se dice.
+  // La anulada que estaba en Siigo no se toca allá: se recuerda anularla a mano.
   function avisarSiSiigoFallo(respuesta: unknown) {
     const motivo = (respuesta as { siigo_error?: string } | null)?.siigo_error;
     if (motivo) setAvisoSiigo({ tipo: "pendiente", texto: motivo });

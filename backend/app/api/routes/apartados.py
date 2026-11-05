@@ -689,19 +689,17 @@ def cancelar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: 
 
 
 def _anular_en_siigo(db: Session, anulada: Apartado, usuario: Usuario) -> None:
-    """La cotización anulada se borra también en Siigo. Si era solo una parte
-    (otra bodega sigue activa), en Siigo se actualiza sin esas líneas. Si
-    Siigo falla, la anulación sigue y queda el motivo en siigo_error."""
+    """La API de Siigo no anula cotizaciones (solo las borra, y borrarla la
+    pierde allá): la anulada NO se toca en Siigo y se avisa que la anulen a
+    mano. Si era solo una parte (otra bodega sigue activa), en Siigo se
+    actualiza sin esas líneas."""
     db.flush()
     activas = siigo_cotizacion.partes_de_la_cotizacion(db, anulada)
     if activas:
         siigo_cotizacion.sincronizar(db, activas[0], usuario)
         return
-    try:
-        siigo.borrar_cotizacion(anulada.empresa, anulada.siigo_id)
-        anulada.siigo_error = ""
-    except siigo.ErrorSiigo as error:
-        anulada.siigo_error = f"No se pudo borrar en Siigo ({anulada.siigo_numero}): {error} Bórrala allá a mano."
+    anulada.siigo_error = (f"Recuerda anular {anulada.siigo_numero} en Siigo: el programa no la toca allá "
+                           "(Siigo no deja anular cotizaciones desde otro programa).")
 
 
 @router.patch("/{apartado_id}/enviar-a-produccion", response_model=ApartadoResponse,
