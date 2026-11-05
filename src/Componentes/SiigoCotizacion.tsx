@@ -12,8 +12,22 @@ const cantidad = (valor: number) => valor.toLocaleString("es-CO", { maximumFract
 
 type FormularioSiigo = {
   empresa: string; clienteIdentificacion: string; siigoVendedor: string; siigoIva: boolean; siigoRetefuente: boolean;
-  items: { valorLinea: string }[];
+  items: { valorLinea: string; siigoCantidad?: string; siigoUnidad?: string; siigoKilos?: number | null }[];
 };
+
+/** Lo que pesa la lámina de la cotización: en las líneas que van a Siigo en
+ * kilos, lo que dice su cantidad (el vendedor la puede corregir); en las
+ * demás (Arquitejas va en centímetros), el peso que calculó el servidor. */
+function kilosTotales(items: FormularioSiigo["items"]) {
+  let total = 0;
+  let sinPeso = 0;
+  for (const item of items) {
+    const kilos = item.siigoUnidad === "kg" ? numeroDe(item.siigoCantidad ?? "") : (item.siigoKilos ?? 0);
+    if (kilos > 0) total += kilos;
+    else if (item.siigoUnidad === "kg" || item.siigoUnidad === "cm") sinPeso += 1;
+  }
+  return { total, sinPeso };
+}
 type CampoSiigo = "clienteIdentificacion" | "siigoVendedor" | "siigoIva" | "siigoRetefuente";
 
 /** Arriba del formulario: qué va a pasar con Siigo al guardar. */
@@ -106,20 +120,29 @@ export function ResumenSiigo({ formulario, porcentajes }: {
   formulario: FormularioSiigo; porcentajes: { iva: number | null; retefuente: number | null } | undefined;
 }) {
   const subtotal = formulario.items.reduce((suma, i) => suma + numeroDe(i.valorLinea), 0);
-  if (!(subtotal > 0)) return null;
+  const kilos = kilosTotales(formulario.items);
+  if (!(subtotal > 0) && !(kilos.total > 0)) return null;
   const pctIva = porcentajes?.iva ?? 19;
   const iva = formulario.siigoIva ? subtotal * pctIva / 100 : 0;
   const retencion = formulario.siigoRetefuente && porcentajes?.retefuente != null ? subtotal * porcentajes.retefuente / 100 : 0;
   return (
     <dl className="siigo-resumen" aria-label="Valor de la cotización">
-      <div><dt>Subtotal</dt><dd>{pesos(subtotal)}</dd></div>
-      {formulario.siigoIva && <div><dt>IVA {cantidad(pctIva)} %</dt><dd>{pesos(iva)}</dd></div>}
-      {formulario.siigoRetefuente && (
-        <div><dt>Retención en la fuente{porcentajes?.retefuente != null ? ` ${cantidad(porcentajes.retefuente)} %` : ""}</dt>
-          <dd>{porcentajes?.retefuente != null ? `− ${pesos(retencion)}` : "la calcula Siigo"}</dd></div>
+      {subtotal > 0 && <>
+        <div><dt>Subtotal</dt><dd>{pesos(subtotal)}</dd></div>
+        {formulario.siigoIva && <div><dt>IVA {cantidad(pctIva)} %</dt><dd>{pesos(iva)}</dd></div>}
+        {formulario.siigoRetefuente && (
+          <div><dt>Retención en la fuente{porcentajes?.retefuente != null ? ` ${cantidad(porcentajes.retefuente)} %` : ""}</dt>
+            <dd>{porcentajes?.retefuente != null ? `− ${pesos(retencion)}` : "la calcula Siigo"}</dd></div>
+        )}
+        <div className="siigo-resumen-total"><dt>Total</dt><dd>{pesos(subtotal + iva - retencion)}</dd></div>
+      </>}
+      {kilos.total > 0 && (
+        <div><dt>Kilos totales</dt><dd>{kilos.total.toLocaleString("es-CO", { maximumFractionDigits: 3 })} kg</dd></div>
       )}
-      <div className="siigo-resumen-total"><dt>Total</dt><dd>{pesos(subtotal + iva - retencion)}</dd></div>
-      <p>Aproximado: el valor exacto lo da Siigo al guardar.</p>
+      {kilos.sinPeso > 0 && (
+        <p>Sin contar {kilos.sinPeso} línea{kilos.sinPeso === 1 ? "" : "s"} de lámina sin peso (falta el espesor o la cantidad).</p>
+      )}
+      {subtotal > 0 && <p>Aproximado: el valor exacto lo da Siigo al guardar.</p>}
     </dl>
   );
 }

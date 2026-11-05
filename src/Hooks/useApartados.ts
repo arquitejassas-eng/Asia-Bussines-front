@@ -59,6 +59,7 @@ type ItemFormulario = {
   // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
   id?: number; metrosConsumidos?: number; stockDescontado?: boolean;
   siigoProducto: string; siigoCantidad: string; siigoCantidadManual?: boolean; siigoUnidad?: string; siigoAviso?: string; valorLinea: string;
+  siigoKilos?: number | null;
 };
 type FormularioApartado = {
   bodegaId: string; empresa: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string;

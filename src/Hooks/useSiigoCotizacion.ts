@@ -14,13 +14,14 @@ type LineaParaSiigo = {
   modalidad: string; codigoInterno: string; descripcion: string; cantidad: string | number; medida: string | number;
   tipoProducto: string; productoId: number | null;
   siigoCantidad: string; siigoCantidadManual?: boolean; siigoProducto: string; siigoUnidad?: string; siigoAviso?: string;
+  siigoKilos?: number | null;
 };
 type FormularioParaSiigo = {
   empresa: string; ordenInterna: boolean; deSiigo: boolean; cliente: string; clienteIdentificacion: string;
   siigoVendedor: string; siigoIva: boolean; siigoRetefuente: boolean;
   items: LineaParaSiigo[];
 };
-type Sugerencia = { cantidad: number | null; unidad: string; aviso: string; siigo_producto: string };
+type Sugerencia = { cantidad: number | null; unidad: string; aviso: string; kilos: number | null; siigo_producto: string };
 
 export const NOMBRE_UNIDAD: Record<string, string> = { kg: "kilo", cm: "centímetro", und: "unidad", m2: "metro cuadrado" };
 
@@ -148,7 +149,7 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
             const sugerida = datos[indice];
             if (!sugerida) return item;
             return {
-              ...item, siigoUnidad: sugerida.unidad, siigoAviso: sugerida.aviso,
+              ...item, siigoUnidad: sugerida.unidad, siigoAviso: sugerida.aviso, siigoKilos: sugerida.kilos ?? null,
               siigoCantidad: item.siigoCantidadManual ? item.siigoCantidad : (sugerida.cantidad == null ? "" : String(sugerida.cantidad)),
               siigoProducto: item.siigoProducto || sugerida.siigo_producto,
             };

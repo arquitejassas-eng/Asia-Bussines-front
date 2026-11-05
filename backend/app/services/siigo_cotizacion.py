@@ -74,8 +74,11 @@ def peso_por_metro(db: Session, espesor: float | None) -> float | None:
 
 def cantidad_sugerida(db: Session, empresa: str, *, modalidad: str, codigo_interno: str | None, descripcion: str,
                       cantidad: float, medida: float | None, tipo_producto: str | None, producto_id: int | None) -> dict:
-    """{"cantidad", "unidad", "aviso"}: lo que va en la cantidad de Siigo para
-    una línea. `aviso` explica por qué no se pudo calcular (el vendedor la escribe)."""
+    """{"cantidad", "unidad", "aviso", "kilos"}: lo que va en la cantidad de
+    Siigo para una línea. `aviso` explica por qué no se pudo calcular (el
+    vendedor la escribe). `kilos`: lo que pesa la lámina de la línea (también
+    en Arquitejas, que cobra por centímetro), para el total de la cotización;
+    None si no es lámina o no se sabe su espesor."""
     unidad_lamina = UNIDAD_POR_EMPRESA.get(empresa, "kg")
     metros: float | None = None
     espesor: float | None = None
@@ -86,24 +89,25 @@ def cantidad_sugerida(db: Session, empresa: str, *, modalidad: str, codigo_inter
         producto = db.get(Producto, producto_id) if producto_id else None
         if es_porcelanato(producto):
             if not producto.metros_por_unidad:
-                return {"cantidad": None, "unidad": "m2", "aviso": "Este porcelanato no tiene m² por caja en Inventario: escribe los m²."}
-            return {"cantidad": round(cantidad * float(producto.metros_por_unidad), 2), "unidad": "m2", "aviso": ""}
+                return {"cantidad": None, "unidad": "m2", "aviso": "Este porcelanato no tiene m² por caja en Inventario: escribe los m².", "kilos": None}
+            return {"cantidad": round(cantidad * float(producto.metros_por_unidad), 2), "unidad": "m2", "aviso": "", "kilos": None}
         if producto is not None and producto.metros_por_unidad and producto.tipo_producto not in TIPOS_DE_STOCK_POR_UNIDAD:
             # Teja o lámina de stock: también se cobra por kilo / centímetro.
             metros = round(cantidad * float(producto.metros_por_unidad), 2)
             espesor = _espesor(None, producto.calibre, producto.descripcion, descripcion)
         else:
-            return {"cantidad": round(cantidad, 2), "unidad": "und", "aviso": ""}
+            return {"cantidad": round(cantidad, 2), "unidad": "und", "aviso": "", "kilos": None}
     if not metros:
-        return {"cantidad": None, "unidad": unidad_lamina, "aviso": ""}  # la línea todavía no tiene cantidad y medida
-    if unidad_lamina == "cm":
-        return {"cantidad": round(metros * 100, 2), "unidad": "cm", "aviso": ""}
+        return {"cantidad": None, "unidad": unidad_lamina, "aviso": "", "kilos": None}  # la línea todavía no tiene cantidad y medida
     peso = peso_por_metro(db, espesor)
-    if peso is None:
+    kilos = round(metros * peso, 2) if peso is not None else None
+    if unidad_lamina == "cm":
+        return {"cantidad": round(metros * 100, 2), "unidad": "cm", "aviso": "", "kilos": kilos}
+    if kilos is None:
         aviso = ("No se sabe el espesor de la línea" if espesor is None
                  else f"El espesor {espesor:.2f}".replace(".", ",") + " no está en la tabla de equivalencias")
-        return {"cantidad": None, "unidad": "kg", "aviso": aviso + ": escribe los kilos."}
-    return {"cantidad": round(metros * peso, 2), "unidad": "kg", "aviso": ""}
+        return {"cantidad": None, "unidad": "kg", "aviso": aviso + ": escribe los kilos.", "kilos": None}
+    return {"cantidad": kilos, "unidad": "kg", "aviso": "", "kilos": kilos}
 
 
 # --- Lo que se recuerda por empresa ---------------------------------------------------------
