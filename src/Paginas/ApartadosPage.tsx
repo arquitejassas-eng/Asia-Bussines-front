@@ -17,6 +17,8 @@ import { calcularSolicitudesPendientes, calcularStockParaAlistar, metrosDeLinea,
 import "../Style/Inventario.css";
 import { AvisoSiigoCotizacion, CampoSiigoCliente, CamposSiigoLinea, ImpuestosSiigo, ResumenSiigo } from "../Componentes/SiigoCotizacion";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
+import { api } from "../Componentes/Api";
+import { abrirVentanaImpresion, imprimirCotizacion } from "../Utils/imprimirCotizacion";
 
 // Mismos estados que backend/app/services/apartados.py::ESTADOS_CANCELABLES:
 // se puede cancelar mientras la producción no haya terminado.
@@ -511,6 +513,50 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     };
   }
 
+  // Hoja sin precios para imprimir: la cotización completa (todas sus partes
+  // de esta fila), con la descripción de cada línea. Una línea de stock que
+  // solo dice el código lleva el nombre del producto. La imprimen Admin
+  // Inventario y los encargados de bodega (administrativo).
+  const puedeImprimir = sesion.rol === "admin_inventario" || sesion.rol === "administrativo";
+  async function imprimir(grupo: ApartadoDeLista[]) {
+    const ventana = abrirVentanaImpresion();
+    if (!ventana) {
+      setMensajeInformativo("El navegador bloqueó la ventana para imprimir: permite las ventanas emergentes de esta página.");
+      return;
+    }
+    const ap = grupo[0];
+    const variasBodegas = grupo.length > 1;
+    const lineas = grupo.flatMap((parte) => parte.items.map((it) => ({ parte, it })))
+      .sort((x, y) => x.it.id - y.it.id)
+      .map(({ parte, it }) => {
+        const codigo = it.productoCodigo || "";
+        const soloCodigo = !it.descripcion || (codigo && it.descripcion.trim().toUpperCase() === codigo.toUpperCase());
+        const descripcion = it.modalidad === "por_stock"
+          ? (soloCodigo ? `${num(it.cantidad)} ${it.productoDescripcion || codigo}${codigo && it.productoDescripcion ? ` (${codigo})` : ""}` : it.descripcion)
+          : it.descripcion || `${cantidadLinea(it)} ${it.codigoInterno || ""}`;
+        const detalle = [
+          variasBodegas ? `Sale de ${parte.bodegaNombre}` : "",
+          it.modalidad === "por_stock" && it.medida ? `CORTAR a ${num(it.medida)} m` : "",
+        ].filter(Boolean).join(" · ");
+        return { descripcion, detalle };
+      });
+    let extra = { kilos: 0, lineas_sin_peso: 0, vendedor: "" };
+    try {
+      extra = (await api.get<typeof extra>(`/apartados/impresion?ids=${grupo.map((p) => p.id).join(",")}`)) || extra;
+    } catch {
+      // Sin kilos ni vendedor de Siigo: la hoja sale igual.
+    }
+    imprimirCotizacion(ventana, {
+      numero: ap.siigoNumero || ap.numeroCotizacion,
+      empresa: (EMPRESAS[ap.empresa] || ap.empresa || "").toUpperCase(),
+      cliente: ap.cliente,
+      fecha: formatearFechaColombia(ap.fechaCreacion, false),
+      vendedor: extra.vendedor || ap.creadoPor,
+      bodegas: grupo.map((p) => p.bodegaNombre).filter(Boolean).join(" + "),
+      lineas, kilos: extra.kilos, lineasSinPeso: extra.lineas_sin_peso,
+    });
+  }
+
   // Con "Filtrar por código", la línea que lo usa queda resaltada.
   function claseDeLinea(it: ApartadoDeLista["items"][number], lista: boolean): string | undefined {
     const clases = [lista && "apartado-linea-lista", lineaUsaCodigo(it, codigosBuscados) && "apartado-linea-coincide"].filter(Boolean);
@@ -648,7 +694,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           mensaje: (ap.estado === "apartado"
             ? "El material que tenía reservado queda libre para otras ventas."
             : "Ya fue enviado a producción. Al anularlo, el material que faltaba por producir queda libre para otras ventas y los productos de stock que ya se descontaron vuelven a la bodega. La lámina que ya se produjo NO vuelve al inventario.")
-            + (ap.siigoId ? ` También se borra en Siigo (${ap.siigoNumero}).` : ""),
+            + (ap.siigoId ? ` En Siigo NO se anula: después anula ${ap.siigoNumero} allá a mano.` : ""),
           textoConfirmar: "Sí, anular apartado",
           ejecutar: () => a.cancelarApartado(ap.id),
         })}>Anular</button>
@@ -745,7 +791,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           titulo: `¿Anular la cotización ${numero}?`,
           mensaje: `Se anula completa (${activas.map((p) => p.bodegaNombre).join(" y ")}). El material que tenía reservado queda libre para otras ventas. `
             + "Los productos de stock que ya se descontaron vuelven a la bodega; la lámina que ya se produjo NO vuelve al inventario."
-            + (activas.some((p) => p.siigoId) ? ` También se borra en Siigo (${activas.find((p) => p.siigoId)?.siigoNumero}).` : ""),
+            + (activas.some((p) => p.siigoId) ? ` En Siigo NO se anula: después anula ${activas.find((p) => p.siigoId)?.siigoNumero} allá a mano.` : ""),
           textoConfirmar: "Sí, anular cotización",
           ejecutar: () => a.cancelarVarios(activas.map((p) => p.id)),
         })}>Anular</button>
@@ -1530,6 +1576,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             <td className="inventario-acciones ap-col-acciones">
                               {a.puedeEditarApartados && partesActivas.length > 0 && (variasBodegas || ESTADOS_CANCELABLES.includes(ap.estado)) && (
                                 <button onClick={() => abrirEdicion(partesActivas)}>Editar</button>
+                              )}
+                              {puedeImprimir && grupo.some((parte) => parte.items.length > 0) && (
+                                <button onClick={() => imprimir(grupo)} title="Hoja sin precios: solo la descripción de cada línea">Imprimir</button>
                               )}
                               {variasBodegas ? accionesDeCotizacion(grupo) : accionesDeParte(ap)}
                             </td>

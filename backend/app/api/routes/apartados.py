@@ -220,6 +220,32 @@ def listar_reservas_por_codigo(
     return srv.metros_reservados_por_bodega(db, bodega_id=usuario.bodega_id)
 
 
+@router.get("/impresion", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
+def datos_para_imprimir(ids: str = Query(..., description="ids de las partes de la cotización, separados por coma"),
+                        db: Session = Depends(get_db)) -> dict:
+    """Lo que la hoja impresa de una cotización no tiene en la lista: los
+    kilos de lámina de todas sus partes (como en el formulario, ver
+    siigo_cotizacion.cantidad_sugerida) y el nombre del vendedor en Siigo."""
+    numeros = [int(i) for i in ids.split(",") if i.strip().isdigit()]
+    partes = db.query(Apartado).options(selectinload(Apartado.items)).filter(Apartado.id.in_(numeros)).all()
+    kilos, sin_peso = 0.0, 0
+    for parte in partes:
+        for item in parte.items:
+            calculado = siigo_cotizacion.cantidad_sugerida(
+                db, parte.empresa, modalidad=ModalidadApartado(item.modalidad).value, codigo_interno=item.codigo_interno,
+                descripcion=item.descripcion or "", cantidad=item.cantidad or 0, medida=item.medida,
+                tipo_producto=item.tipo_producto, producto_id=item.producto_id)
+            if calculado["kilos"]:
+                kilos += calculado["kilos"]
+            elif calculado["unidad"] in ("kg", "cm"):
+                sin_peso += 1
+    vendedor = ""
+    con_vendedor = next((p for p in partes if p.siigo_vendedor), None)
+    if con_vendedor is not None and siigo.esta_configurada(con_vendedor.empresa):
+        vendedor = siigo.nombre_vendedor(con_vendedor.empresa, con_vendedor.siigo_vendedor)
+    return {"kilos": round(kilos, 2), "lineas_sin_peso": sin_peso, "vendedor": vendedor}
+
+
 @router.post("/importar", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def importar_desde_excel(
     archivo: UploadFile, confirmar: bool = False,
