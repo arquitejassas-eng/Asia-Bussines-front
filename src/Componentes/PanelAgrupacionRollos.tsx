@@ -4,6 +4,7 @@ import { formatearFechaColombia } from "../Utils/fechas";
 import { claseColorMaterial } from "../Utils/colorRollo";
 import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
 import { formatearCalibre } from "../Utils/calibre";
+import { textoKilos } from "../Utils/kilos";
 
 // "Arquitejas 3 · Asia Business 2" para la cabecera de cada grupo: el mismo
 // código de clasificación puede tener rollos de las dos empresas.
@@ -98,8 +99,8 @@ function PanelAgrupacionRollos({
                     <th>Ancho (m)</th>
                     <th>Proveedor</th>
                     <th>Código proveedor</th>
-                    <th>Peso neto (t)</th>
-                    <th>Peso actual (t)</th>
+                    <th>Peso neto (kg)</th>
+                    <th>Peso actual (kg)</th>
                     <th>Metros proveedor</th>
                     <th>Metros calculados</th>
                     <th>Disponibles</th>
@@ -149,8 +150,8 @@ function PanelAgrupacionRollos({
                       </td>
                       <td>{rollo.proveedor || "—"}</td>
                       <td>{rollo.codigoProveedor || "—"}</td>
-                      <td>{rollo.pesoNeto ?? "—"}</td>
-                      <td>{rollo.pesoActualToneladas ?? "—"}</td>
+                      <td>{textoKilos(rollo.pesoNeto)}</td>
+                      <td>{textoKilos(rollo.pesoActualToneladas, true)}</td>
                       <td>{rollo.metrosProveedor ?? "—"}</td>
                       <td>{rollo.metrosCalculados ?? "—"}</td>
                       <td>{rollo.metrosDisponibles}</td>

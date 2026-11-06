@@ -101,7 +101,11 @@ def rollos_para_apartar(
         .all()
     )
     ocupados = srv.rollos_apartados_completos(db, (r.id for r in rollos))
-    return [r for r in rollos if r.id not in ocupados]
+    libres = [r for r in rollos if r.id not in ocupados]
+    espesores = srv.tabla_espesores(db)
+    for rollo in libres:
+        rollo.peso_actual_kg = srv.kilos_actuales_rollo(db, rollo, espesores)
+    return libres
 
 
 @router.get("/disponibilidad-producto", response_model=DisponibilidadProductoResponse)

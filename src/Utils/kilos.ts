@@ -6,6 +6,13 @@ export function kilosDelRollo(pesoNeto: number | null | undefined): number | nul
   return Math.round(pesoNeto < 100 ? pesoNeto * 1000 : pesoNeto);
 }
 
+/** "4.504" (kilos con separador de miles) o "—": peso neto o, con
+ * `toneladas`, el peso actual que el backend da en toneladas. */
+export function textoKilos(peso: number | null | undefined, toneladas = false): string {
+  const kilos = toneladas ? (peso == null ? null : Math.round(peso * 1000)) : kilosDelRollo(peso);
+  return kilos == null ? "—" : kilos.toLocaleString("es-CO");
+}
+
 /** Si lo escrito en un buscador son kilos ("4248", "4.248", "4248 kg"),
  * devuelve solo los dígitos; si no, cadena vacía. */
 export function kilosBuscados(termino: string): string {

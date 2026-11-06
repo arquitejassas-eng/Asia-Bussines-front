@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RolloParaApartar } from "../Hooks/useApartados";
-import { coincideKilos, kilosBuscados, kilosDelRollo } from "../Utils/kilos";
+import { coincideKilos, kilosBuscados } from "../Utils/kilos";
+import { kilosActualesRollo } from "../Utils/rolloCompleto";
 
 
 function normalizar(texto: unknown) {
@@ -8,7 +9,7 @@ function normalizar(texto: unknown) {
 }
 
 function resumen(r: RolloParaApartar) {
-  const kilos = kilosDelRollo(r.pesoNeto);
+  const kilos = kilosActualesRollo(r);
   return [r.codigoInterno, kilos ? `${kilos.toLocaleString("es-CO")} kg` : "", `${r.metrosDisponibles.toLocaleString("es-CO")} m`]
     .filter(Boolean).join(" · ");
 }
@@ -55,7 +56,7 @@ export default function ElegirRolloCompleto({ rollos, rolloId, rolloResumen, ocu
     const digitos = kilosBuscados(palabra);
     return normalizar(r.identificadorRollo).includes(palabra) || normalizar(r.codigoInterno).includes(palabra)
       || normalizar(r.descripcion).includes(palabra) || normalizar(r.colorMaterial).includes(palabra)
-      || coincideKilos(r.pesoNeto, digitos)
+      || coincideKilos(r.pesoNeto, digitos) || coincideKilos(r.pesoActualKg, digitos)
       || (Boolean(digitos) && String(Math.round(r.metrosDisponibles)).startsWith(digitos));
   };
   const encontrados = palabras.length ? libres.filter((r) => palabras.every((p) => coincide(r, p))) : [];

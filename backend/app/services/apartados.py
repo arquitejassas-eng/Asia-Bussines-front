@@ -139,8 +139,28 @@ def kilos_rollo(peso_neto: float | None) -> int | None:
     return round(peso_neto * 1000 if peso_neto < 100 else peso_neto)
 
 
-def descripcion_rollo_completo(rollo: Rollo) -> str:
-    kilos = kilos_rollo(rollo.peso_neto)
+def tabla_espesores(db: Session) -> dict:
+    from app.models.equivalencias import TablaEspesorEquivalencia
+
+    return {e.espesor: e for e in db.query(TablaEspesorEquivalencia).all()}
+
+
+def kilos_actuales_rollo(db: Session, rollo: Rollo, espesores: dict | None = None) -> int | None:
+    """Lo que pesa HOY el rollo: si ya se usó una parte, por los metros que le
+    quedan y el peso por metro de su espesor; si está entero, su peso neto (el
+    de la etiqueta). `espesores` (tabla_espesores) evita consultarla por rollo."""
+    from app.services.clasificacion import peso_actual_toneladas
+
+    if (rollo.metros_consumidos or 0) > 0.005:
+        espesores = espesores if espesores is not None else tabla_espesores(db)
+        toneladas = peso_actual_toneladas(rollo.calibre, rollo.metros_disponibles or 0, espesores)
+        if toneladas is not None:
+            return round(toneladas * 1000)
+    return kilos_rollo(rollo.peso_neto)
+
+
+def descripcion_rollo_completo(db: Session, rollo: Rollo) -> str:
+    kilos = kilos_actuales_rollo(db, rollo)
     detalle = " - ".join(p for p in (f"{kilos} KG" if kilos else "", f"{rollo.metros_disponibles:g} MTS") if p)
     nombre = rollo.descripcion or rollo.codigo_interno
     return f"1 ROLLO {nombre} ({detalle}) - rollo {rollo.identificador_rollo}"[:255]
@@ -166,7 +186,7 @@ def preparar_rollo_completo(db: Session, linea, bodega_id: int) -> None:
     linea.cantidad = 1
     linea.medida = round(rollo.metros_disponibles, 2)
     if not (linea.descripcion or "").strip():
-        linea.descripcion = descripcion_rollo_completo(rollo)
+        linea.descripcion = descripcion_rollo_completo(db, rollo)
 
 
 def _solo_rollos_completos(items) -> bool:

@@ -19,6 +19,7 @@ import { pasoDelTraslado } from "../Componentes/AvisosTrasladosRollos";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
 import { formatearCalibre } from "../Utils/calibre";
+import { textoKilos } from "../Utils/kilos";
 import "../Style/Inventario.css";
 import "../Style/Rollos.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
@@ -496,8 +497,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                               <th>Bodega</th>
                                               <th>Referencia</th>
                                               <th>Empresa</th>
-                                              <th>Peso neto (t)</th>
-                                              <th>Peso actual (t)</th>
+                                              <th>Peso neto (kg)</th>
+                                              <th>Peso actual (kg)</th>
                                               <th>Metros disponibles</th>
                                               <th>Metros consumidos</th>
                                               <th>Merma</th>
@@ -512,8 +513,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                                 <td>{bodegas.find((b) => b.id === rollo.bodegaId)?.nombre || "—"}</td>
                                                 <td>{rollo.identificadorRollo}</td>
                                                 <td>{nombreEmpresa(rollo.empresa)}</td>
-                                                <td><strong>{rollo.pesoNeto ?? "—"}</strong></td>
-                                                <td>{rollo.pesoActualToneladas ?? "—"}</td>
+                                                <td><strong>{textoKilos(rollo.pesoNeto)}</strong></td>
+                                                <td>{textoKilos(rollo.pesoActualToneladas, true)}</td>
                                                 <td>{rollo.metrosDisponibles}</td>
                                                 <td>{rollo.metrosConsumidos}</td>
                                                 <td>{rollo.mermaMetros ? `${rollo.mermaMetros} m` : "—"}</td>

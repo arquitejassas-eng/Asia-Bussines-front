@@ -242,6 +242,8 @@ class RolloParaApartarResponse(BaseModel):
     empresa: str = ""
     peso_neto: float | None = None
     metros_disponibles: float
+    # Lo que pesa hoy (ver apartados.kilos_actuales_rollo).
+    peso_actual_kg: int | None = None
 
 
 class OtraBodegaConMaterial(BaseModel):
