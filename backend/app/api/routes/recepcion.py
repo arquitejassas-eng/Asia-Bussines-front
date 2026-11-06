@@ -498,15 +498,23 @@ def guardar_en_camino(
     )
     db.add(cargamento)
     db.flush()
+    ahora = datetime.now(timezone.utc)
     for r in rollos_verificados:
         codigo_interno, descripcion, metros = _codigo_descripcion_metros(r)
+        # Un rollo que ya está en el inventario (ej. el checklist se borró y se
+        # vuelve a subir cuando ya llegó una parte) queda como llegado: si no,
+        # sus metros contarían dos veces, en su bodega y "en camino".
+        ya_llego = r.problema_referencia == "ya_existe"
         db.add(CargamentoRollo(
             cargamento_id=cargamento.id, identificador_rollo=r.rollo.strip(), codigo_interno=codigo_interno,
             empresa=r.empresa, descripcion=descripcion, calibre=r.espesor or 0, peso_neto=r.net_weight, metros=metros,
             color_material=r.color_nombre or r.color_top or "", codigo_proveedor=r.codigo_proveedor or "",
             proveedor=r.proveedor or "", lote=r.lote or "", metros_proveedor=r.coil_meters or 0,
             metros_calculados=r.metros_calculados or 0,
+            llego=ya_llego, llego_por=usuario.correo if ya_llego else "", fecha_llegada=ahora if ya_llego else None,
         ))
+    if all(r.problema_referencia == "ya_existe" for r in rollos_verificados):
+        cargamento.estado, cargamento.cerrado_por, cargamento.fecha_cierre = "cerrado", usuario.correo, ahora
     db.commit()
     db.refresh(cargamento)
     archivos_recepcion.eliminar(usuario.id)

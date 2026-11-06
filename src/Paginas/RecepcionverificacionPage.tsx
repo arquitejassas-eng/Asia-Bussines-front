@@ -62,8 +62,10 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
     setGuardandoEnCamino(true); setErrorEnCamino(""); setAvisoEnCamino("");
     try {
       const proveedor = c.rollos.find((r) => r.proveedor)?.proveedor || "";
+      const yaLlegaron = c.referenciasYaRegistradas;
       const guardado = await api.post("/recepcion/en-camino", { proveedor_principal: proveedor });
-      setAvisoEnCamino(`Guardado como material en camino: ${guardado.total_rollos} rollos, ${guardado.total_metros} m. Ya se puede apartar desde cualquier bodega.`);
+      setAvisoEnCamino(`Guardado como material en camino: ${guardado.total_rollos} rollos, ${guardado.total_metros} m. Ya se puede apartar desde cualquier bodega.`
+        + (yaLlegaron ? ` ${yaLlegaron} rollo${yaLlegaron === 1 ? " ya estaba" : "s ya estaban"} en el inventario: quedan marcados como llegados y no cuentan dos veces.` : ""));
       c.iniciarNuevaRecepcion();
       setRecargarEnCamino((n) => n + 1);
     } catch (err) {
