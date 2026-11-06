@@ -363,7 +363,7 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                         <th>Código interno</th>
                         <th>Tipo / Color</th>
                         <th>Espesor</th>
-                        <th>Net Weight (Ton)</th>
+                        <th>Peso neto (kg)</th>
                         <th>Reportado (m)</th>
                         <th>Calculado (m)</th>
                         <th>Diferencia</th>
