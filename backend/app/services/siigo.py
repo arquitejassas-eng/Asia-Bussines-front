@@ -167,6 +167,19 @@ def catalogos(empresa: str) -> dict:
     }
 
 
+# Empresas cuyo Siigo no deja crear una cotización sin centro de costo.
+EMPRESAS_CON_CENTRO_COSTO = {"AR"}
+
+
+def centros_de_costo(empresa: str) -> list[dict]:
+    """Los centros de costo activos del Siigo de la empresa (vacío si su Siigo no los pide)."""
+    if empresa not in EMPRESAS_CON_CENTRO_COSTO:
+        return []
+    centros = pedir(empresa, "GET", "/v1/cost-centers")
+    return [{"id": c["id"], "codigo": c.get("code", ""), "nombre": c.get("name", "")}
+            for c in centros if c.get("active", True)]
+
+
 def nombre_vendedor(empresa: str, vendedor_id: int | None) -> str:
     """El nombre del vendedor de Siigo (para escribirlo en la cotización: Siigo
     no lo imprime). Si Siigo no responde, "" y la cotización sube igual."""

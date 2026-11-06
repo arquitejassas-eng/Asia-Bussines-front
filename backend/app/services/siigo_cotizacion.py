@@ -48,7 +48,7 @@ def es_porcelanato(producto: Producto | None) -> bool:
 ESPESOR_EN_CODIGO = re.compile(r",(\d{2})$")
 ESPESOR_EN_TEXTO = re.compile(r"\b0\s*[.,]\s*(\d{2})\b")
 
-TIPO_PRODUCTO, TIPO_VENDEDOR, TIPO_CLIENTE = "producto", "vendedor", "cliente"
+TIPO_PRODUCTO, TIPO_VENDEDOR, TIPO_CLIENTE, TIPO_CENTRO_COSTO = "producto", "vendedor", "cliente", "centro_costo"
 
 
 def _espesor(codigo_interno: str | None, *textos: str | None) -> float | None:
@@ -157,6 +157,8 @@ def _faltantes(apartado: Apartado, items: list[ApartadoItem], config: dict) -> l
         faltan.append("la cédula o NIT del cliente")
     if not apartado.siigo_vendedor:
         faltan.append("el vendedor de Siigo")
+    if apartado.empresa in siigo.EMPRESAS_CON_CENTRO_COSTO and not apartado.siigo_centro_costo:
+        faltan.append("el centro de costo")
     if not config["documento"]:
         faltan.append(f"el tipo de cotización de Siigo de {EMPRESAS_CONOCIDAS[apartado.empresa]} (configuración del servidor)")
     if apartado.siigo_iva and not config["iva"]:
@@ -222,6 +224,7 @@ def cuerpo_para_siigo(apartado: Apartado, items: list[ApartadoItem], config: dic
     return {
         "document": {"id": config["documento"]},
         "date": fecha.date().isoformat(),
+        **({"cost_center": apartado.siigo_centro_costo} if apartado.siigo_centro_costo else {}),
         "customer": {"identification": re.sub(r"[^0-9A-Za-z]", "", apartado.cliente_identificacion), "branch_office": 0},
         "seller": apartado.siigo_vendedor,
         "items": [{
@@ -262,6 +265,7 @@ def _enviar(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apa
     for parte in partes:
         parte.cliente_identificacion, parte.siigo_vendedor = apartado.cliente_identificacion, apartado.siigo_vendedor
         parte.siigo_iva, parte.siigo_retefuente = apartado.siigo_iva, apartado.siigo_retefuente
+        parte.siigo_centro_costo = apartado.siigo_centro_costo
     items = [item for parte in partes for item in parte.items]
     faltan = _faltantes(apartado, items, config)
     if faltan:
@@ -306,6 +310,8 @@ def _recordar_para_la_proxima(db: Session, apartado: Apartado, items: list[Apart
             for clave, producto in productos.items():
                 recordar(db, empresa, TIPO_PRODUCTO, clave, producto, "", usuario)
             recordar(db, empresa, TIPO_VENDEDOR, usuario.correo, str(apartado.siigo_vendedor), "", usuario)
+            if apartado.siigo_centro_costo:
+                recordar(db, empresa, TIPO_CENTRO_COSTO, usuario.correo, str(apartado.siigo_centro_costo), "", usuario)
             recordar(db, empresa, TIPO_CLIENTE, apartado.cliente_identificacion,
                      ",".join(n for n, si in (("iva", apartado.siigo_iva), ("retefuente", apartado.siigo_retefuente)) if si),
                      apartado.cliente, usuario)

@@ -7,6 +7,7 @@ import { api, ErrorApi } from "../Componentes/Api";
 // centímetros para Arquitejas; ver backend services/siigo_cotizacion.py).
 
 export type VendedorSiigo = { id: number; nombre: string; correo: string };
+export type CentroCostoSiigo = { id: number; codigo: string; nombre: string };
 export type ProductoSiigo = { codigo: string; nombre: string; unidad: string };
 export type ClienteSiigo = { estado: "buscando" | "existe" | "no_existe" | "error"; nombre: string; mensaje?: string };
 
@@ -18,7 +19,7 @@ type LineaParaSiigo = {
 };
 type FormularioParaSiigo = {
   empresa: string; ordenInterna: boolean; deSiigo: boolean; cliente: string; clienteIdentificacion: string;
-  siigoVendedor: string; siigoIva: boolean; siigoRetefuente: boolean;
+  siigoVendedor: string; siigoCentroCosto: string; siigoIva: boolean; siigoRetefuente: boolean;
   items: LineaParaSiigo[];
 };
 type Sugerencia = { cantidad: number | null; unidad: string; aviso: string; kilos: number | null; siigo_producto: string };
@@ -49,17 +50,24 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
       .catch(() => setImpuestos((actual) => ({ ...actual, [empresa]: { iva: null, retefuente: null } })));
   }, [enSiigo, formulario.empresa, impuestos]);
 
-  // Vendedores del Siigo de la empresa (y el que este usuario usó la última vez).
+  // Vendedores del Siigo de la empresa (y el que este usuario usó la última
+  // vez); y sus centros de costo si su Siigo los pide (Arquitejas).
   const [vendedores, setVendedores] = useState<Record<string, VendedorSiigo[] | "cargando" | "error">>({});
+  const [centrosCosto, setCentrosCosto] = useState<Record<string, CentroCostoSiigo[]>>({});
   useEffect(() => {
     const empresa = formulario.empresa;
     if (!enSiigo || vendedores[empresa]) return;
     setVendedores((actual) => ({ ...actual, [empresa]: "cargando" }));
-    api.get<{ vendedores: VendedorSiigo[]; recordado: number | null }>(`/siigo/${empresa}/vendedores`)
+    api.get<{ vendedores: VendedorSiigo[]; recordado: number | null; centros_costo?: CentroCostoSiigo[]; centro_recordado?: number | null }>(
+      `/siigo/${empresa}/vendedores`)
       .then((datos) => {
         setVendedores((actual) => ({ ...actual, [empresa]: datos?.vendedores || [] }));
+        setCentrosCosto((actual) => ({ ...actual, [empresa]: datos?.centros_costo || [] }));
         if (datos?.recordado) {
           setFormulario((actual) => (actual.siigoVendedor ? actual : { ...actual, siigoVendedor: String(datos.recordado) }));
+        }
+        if (datos?.centro_recordado) {
+          setFormulario((actual) => (actual.siigoCentroCosto ? actual : { ...actual, siigoCentroCosto: String(datos.centro_recordado) }));
         }
       })
       .catch(() => setVendedores((actual) => ({ ...actual, [empresa]: "error" })));
@@ -170,7 +178,7 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
 
   return {
     conectadas, empresaConectada, usaSiigo, enSiigo, impuestos: impuestos[formulario.empresa], unidadDe,
-    vendedores: vendedores[formulario.empresa], cliente, consultarCliente,
+    vendedores: vendedores[formulario.empresa], centrosCosto: centrosCosto[formulario.empresa], cliente, consultarCliente,
     productos, buscarProducto, cerrarBusquedaProducto,
   };
 }

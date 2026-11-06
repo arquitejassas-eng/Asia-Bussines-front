@@ -37,7 +37,7 @@ const FORMULARIO_VACIO = {
   bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", ordenInterna: false,
   // Siigo: si va a Siigo (toda cotización nueva de una empresa conectada; el
   // número lo pone Siigo), cédula/NIT, vendedor e impuestos.
-  deSiigo: true, clienteIdentificacion: "", siigoVendedor: "", siigoIva: true, siigoRetefuente: false,
+  deSiigo: true, clienteIdentificacion: "", siigoVendedor: "", siigoCentroCosto: "", siigoIva: true, siigoRetefuente: false,
   items: [{ ...ITEM_VACIO }],
 };
 
@@ -65,7 +65,7 @@ type FormularioApartado = {
   bodegaId: string; empresa: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string;
   // Orden de producción interna (Admin Inventario): solo lámina por producir, todo va al stock.
   ordenInterna: boolean;
-  deSiigo: boolean; clienteIdentificacion: string; siigoVendedor: string; siigoIva: boolean; siigoRetefuente: boolean;
+  deSiigo: boolean; clienteIdentificacion: string; siigoVendedor: string; siigoCentroCosto: string; siigoIva: boolean; siigoRetefuente: boolean;
   items: ItemFormulario[];
 };
 type ApartadoItem = {
@@ -94,7 +94,7 @@ type Apartado = {
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;
   faltantes: string[]; otrasPartes: string[]; items: ApartadoItem[];
   clienteIdentificacion: string; siigoId: string; siigoNumero: string; siigoTotal: number | null;
-  siigoIva: boolean; siigoRetefuente: boolean; siigoVendedor: number | null;
+  siigoIva: boolean; siigoRetefuente: boolean; siigoVendedor: number | null; siigoCentroCosto: number | null;
   siigoPendiente: boolean; siigoError: string;
 };
 
@@ -240,6 +240,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       bodegaId: String(ap.bodegaId), empresa: empresaCotizacion, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
       numeroCotizacion: numeroSinEmpresa(ap.numeroCotizacion), cliente: ap.cliente, observaciones: ap.observaciones,
       deSiigo: Boolean(ap.siigoId || ap.siigoPendiente), clienteIdentificacion: ap.clienteIdentificacion || "", siigoVendedor: ap.siigoVendedor ? String(ap.siigoVendedor) : "",
+      siigoCentroCosto: ap.siigoCentroCosto ? String(ap.siigoCentroCosto) : "",
       siigoIva: ap.siigoIva, siigoRetefuente: ap.siigoRetefuente,
       // Todas las partes juntas, en el orden en que se escribieron las líneas (su id).
       items: partes.flatMap((parte) => parte.items.map((it) => ({ parte, it })))
@@ -329,7 +330,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   }
 
   // Datos de Siigo de la cotización (casillas y textos).
-  function actualizarCampoSiigo(campo: "clienteIdentificacion" | "siigoVendedor" | "siigoIva" | "siigoRetefuente", valor: string | boolean) {
+  function actualizarCampoSiigo(campo: "clienteIdentificacion" | "siigoVendedor" | "siigoCentroCosto" | "siigoIva" | "siigoRetefuente", valor: string | boolean) {
     setFormulario((actual) => ({ ...actual, [campo]: valor }));
   }
 
@@ -622,6 +623,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       // Si Siigo no responde no hay lista de vendedores: se guarda y queda pendiente de Siigo.
       const falta = !formulario.clienteIdentificacion.replace(/[^0-9A-Za-z]/g, "") ? "Escribe la cédula o NIT del cliente."
         : !formulario.siigoVendedor && siigo.vendedores !== "error" ? "Elige el vendedor de Siigo."
+        : !formulario.siigoCentroCosto && (siigo.centrosCosto?.length ?? 0) > 0 ? "Elige el centro de costo."
         : numeroLinea >= 0 ? `Producto ${numeroLinea + 1}: falta el producto de Siigo, la cantidad (${siigo.unidadDe(formulario.items[numeroLinea])}) o el valor.` : "";
       if (falta) {
         setErrorFormularioApartado(falta);
@@ -670,6 +672,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         cliente_identificacion: formulario.ordenInterna ? "" : formulario.clienteIdentificacion.trim(),
         siigo_iva: formulario.siigoIva, siigo_retefuente: formulario.siigoRetefuente,
         siigo_vendedor: formulario.siigoVendedor ? Number(formulario.siigoVendedor) : null,
+        siigo_centro_costo: formulario.siigoCentroCosto ? Number(formulario.siigoCentroCosto) : null,
         ...(editandoId && otrasPartesIds.length ? { otras_partes_ids: otrasPartesIds } : {}),
         items: formulario.items.map((i) => {
           // Cada línea dice de qué bodega y de qué empresa sale: el backend

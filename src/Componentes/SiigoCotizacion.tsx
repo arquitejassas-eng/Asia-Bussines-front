@@ -1,4 +1,4 @@
-import { NOMBRE_UNIDAD, type ClienteSiigo, type ProductoSiigo, type VendedorSiigo } from "../Hooks/useSiigoCotizacion";
+import { NOMBRE_UNIDAD, type CentroCostoSiigo, type ClienteSiigo, type ProductoSiigo, type VendedorSiigo } from "../Hooks/useSiigoCotizacion";
 import { factorIva, numeroDe } from "../Hooks/useApartados";
 import "../Style/Siigo.css";
 
@@ -11,7 +11,7 @@ const pesos = (valor: number) => valor.toLocaleString("es-CO", { style: "currenc
 const cantidad = (valor: number) => valor.toLocaleString("es-CO", { maximumFractionDigits: 2 });
 
 type FormularioSiigo = {
-  empresa: string; clienteIdentificacion: string; siigoVendedor: string; siigoIva: boolean; siigoRetefuente: boolean;
+  empresa: string; clienteIdentificacion: string; siigoVendedor: string; siigoCentroCosto: string; siigoIva: boolean; siigoRetefuente: boolean;
   items: { valorLinea: string; siigoCantidad?: string; siigoUnidad?: string; siigoKilos?: number | null }[];
 };
 
@@ -28,7 +28,7 @@ function kilosTotales(items: FormularioSiigo["items"]) {
   }
   return { total, sinPeso };
 }
-type CampoSiigo = "clienteIdentificacion" | "siigoVendedor" | "siigoIva" | "siigoRetefuente";
+type CampoSiigo = "clienteIdentificacion" | "siigoVendedor" | "siigoCentroCosto" | "siigoIva" | "siigoRetefuente";
 
 /** Arriba del formulario: qué va a pasar con Siigo al guardar. */
 export function AvisoSiigoCotizacion({
@@ -62,12 +62,13 @@ export function AvisoSiigoCotizacion({
   );
 }
 
-/** Cédula/NIT o vendedor: van dentro de la cuadrícula de datos de la cotización. */
+/** Cédula/NIT, vendedor o centro de costo: van dentro de la cuadrícula de datos de la cotización. */
 export function CampoSiigoCliente({
-  campo, formulario, nombreEmpresa, vendedores, cliente, consultarCliente, actualizar,
+  campo, formulario, nombreEmpresa, vendedores, centrosCosto, cliente, consultarCliente, actualizar,
 }: {
-  campo: "nit" | "vendedor"; formulario: FormularioSiigo; nombreEmpresa: string;
+  campo: "nit" | "vendedor" | "centro"; formulario: FormularioSiigo; nombreEmpresa: string;
   vendedores: VendedorSiigo[] | "cargando" | "error" | undefined;
+  centrosCosto: CentroCostoSiigo[] | undefined;
   cliente: ClienteSiigo | null; consultarCliente: (nit: string) => void;
   actualizar: (campo: CampoSiigo, valor: string | boolean) => void;
 }) {
@@ -84,6 +85,19 @@ export function CampoSiigoCliente({
           <p className="siigo-estado siigo-mal">No existe en el Siigo de {nombreEmpresa}: créalo allá primero o revisa el número.</p>
         )}
         {cliente?.estado === "error" && <p className="siigo-estado siigo-mal">{cliente.mensaje || "No se pudo consultar Siigo."}</p>}
+      </div>
+    );
+  }
+  if (campo === "centro") {
+    // Solo lo pide el Siigo de Arquitejas: en las demás la lista llega vacía.
+    if (!centrosCosto?.length) return null;
+    return (
+      <div>
+        <label htmlFor="siigo-centro">Centro de costo *</label>
+        <select id="siigo-centro" value={formulario.siigoCentroCosto} onChange={(e) => actualizar("siigoCentroCosto", e.target.value)}>
+          <option value="">Elige el centro de costo...</option>
+          {centrosCosto.map((c) => <option key={c.id} value={c.id}>{c.codigo} {c.nombre}</option>)}
+        </select>
       </div>
     );
   }

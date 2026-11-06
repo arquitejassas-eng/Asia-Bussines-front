@@ -432,7 +432,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const apartadoEditado = a.editandoId ? a.apartados.find((ap) => ap.id === a.editandoId) : undefined;
   const camposCliente = {
     formulario: a.formulario, nombreEmpresa: EMPRESAS[a.formulario.empresa] || a.formulario.empresa,
-    vendedores: a.siigo.vendedores, cliente: a.siigo.cliente, consultarCliente: a.siigo.consultarCliente, actualizar: a.actualizarCampoSiigo,
+    vendedores: a.siigo.vendedores, centrosCosto: a.siigo.centrosCosto, cliente: a.siigo.cliente, consultarCliente: a.siigo.consultarCliente, actualizar: a.actualizarCampoSiigo,
   };
   const quitaEstaParte = Boolean(a.editandoId) && a.formulario.items.length === 0 && a.parteEditada.otrasPartes.length > 0;
 
@@ -949,6 +949,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   </div>
                 )}
                 {a.siigo.enSiigo && <CampoSiigoCliente campo="vendedor" {...camposCliente} />}
+                {a.siigo.enSiigo && <CampoSiigoCliente campo="centro" {...camposCliente} />}
               </div>
 
               <h3 className="apartado-form-seccion">

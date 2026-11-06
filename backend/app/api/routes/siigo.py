@@ -57,11 +57,16 @@ def catalogos(empresa: str) -> dict:
 
 @router.get("/{empresa}/vendedores")
 def vendedores(empresa: str, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> dict:
-    """Los vendedores del Siigo de la empresa y el que este usuario usó la última vez."""
+    """Los vendedores del Siigo de la empresa y el que este usuario usó la
+    última vez; y los centros de costo si su Siigo los pide (con el último que usó)."""
     empresa = _empresa(empresa)
     lista = _con_errores_de_siigo(siigo.catalogos, empresa)["vendedores"]
+    centros = _con_errores_de_siigo(siigo.centros_de_costo, empresa)
     mio = siigo_cotizacion.recordado(db, empresa, siigo_cotizacion.TIPO_VENDEDOR, usuario.correo)
-    return {"vendedores": lista, "recordado": int(mio.valor) if mio and mio.valor.isdigit() else None}
+    centro = siigo_cotizacion.recordado(db, empresa, siigo_cotizacion.TIPO_CENTRO_COSTO, usuario.correo)
+    return {"vendedores": lista, "recordado": int(mio.valor) if mio and mio.valor.isdigit() else None,
+            "centros_costo": centros,
+            "centro_recordado": int(centro.valor) if centro and centro.valor.isdigit() else None}
 
 
 @router.get("/{empresa}/clientes/{identificacion}")

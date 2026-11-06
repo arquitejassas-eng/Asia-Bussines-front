@@ -1081,7 +1081,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
 def datos_siigo_cotizacion(datos: ApartadoCrear) -> dict:
     """Lo de Siigo que trae el formulario para la cotización (ver siigo_cotizacion)."""
     return {"cliente_identificacion": (datos.cliente_identificacion or "").strip(), "siigo_iva": datos.siigo_iva,
-            "siigo_retefuente": datos.siigo_retefuente, "siigo_vendedor": datos.siigo_vendedor}
+            "siigo_retefuente": datos.siigo_retefuente, "siigo_vendedor": datos.siigo_vendedor,
+            "siigo_centro_costo": datos.siigo_centro_costo}
 
 
 def datos_siigo_linea(linea) -> dict:

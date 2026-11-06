@@ -94,6 +94,8 @@ class Apartado(Base):
     siigo_iva: Mapped[bool] = mapped_column(default=True, server_default=true())
     siigo_retefuente: Mapped[bool] = mapped_column(default=False, server_default=false())
     siigo_vendedor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Centro de costo de Siigo (el de Arquitejas lo exige; lo escoge el vendedor).
+    siigo_centro_costo: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fecha_siigo: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # La cotización es de las que van a Siigo pero el último envío falló (Siigo
     # no respondió, el cliente no existe allá...): se guardó igual y queda

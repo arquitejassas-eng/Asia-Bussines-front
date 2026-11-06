@@ -116,6 +116,7 @@ class ApartadoCrear(BaseModel):
     siigo_iva: bool = True
     siigo_retefuente: bool = False
     siigo_vendedor: int | None = None
+    siigo_centro_costo: int | None = None
 
     @model_validator(mode="after")
     def _empresa_valida(self) -> "ApartadoCrear":
@@ -347,6 +348,7 @@ class ApartadoResponse(ModeloConFechasUtc):
     siigo_iva: bool = True
     siigo_retefuente: bool = False
     siigo_vendedor: int | None = None
+    siigo_centro_costo: int | None = None
     fecha_siigo: datetime | None = None
     siigo_pendiente: bool = False
     siigo_error: str = ""

@@ -160,6 +160,7 @@ export function apartadoDesdeApi(a: RegistroApi) {
     clienteIdentificacion: texto(a.cliente_identificacion), siigoId: texto(a.siigo_id), siigoNumero: texto(a.siigo_numero),
     siigoTotal: a.siigo_total == null ? null : numero(a.siigo_total), siigoIva: a.siigo_iva == null ? true : Boolean(a.siigo_iva),
     siigoRetefuente: Boolean(a.siigo_retefuente), siigoVendedor: a.siigo_vendedor == null ? null : numero(a.siigo_vendedor),
+    siigoCentroCosto: a.siigo_centro_costo == null ? null : numero(a.siigo_centro_costo),
     // Va a Siigo pero el último envío falló (y por qué): se vuelve a intentar desde la lista.
     siigoPendiente: Boolean(a.siigo_pendiente), siigoError: texto(a.siigo_error),
     items: items.map(apartadoItemDesdeApi) };
