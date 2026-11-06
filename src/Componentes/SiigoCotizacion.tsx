@@ -119,23 +119,23 @@ export function ImpuestosSiigo({ formulario, porcentajes, actualizar }: {
 export function ResumenSiigo({ formulario, porcentajes }: {
   formulario: FormularioSiigo; porcentajes: { iva: number | null; retefuente: number | null } | undefined;
 }) {
-  // Lo que escribió el vendedor es lo que paga el cliente: el subtotal es la
-  // base (ver factorIva); sin IVA marcado, el cliente paga menos.
-  const aPagar = formulario.items.reduce((suma, i) => suma + numeroDe(i.valorLinea), 0);
-  const subtotal = aPagar / factorIva(porcentajes, formulario.siigoRetefuente);
+  // Lo que escribió el vendedor trae el IVA: el subtotal es sin él (y sin
+  // IVA marcado, el cliente paga solo el subtotal).
+  const conIva = formulario.items.reduce((suma, i) => suma + numeroDe(i.valorLinea), 0);
+  const subtotal = conIva / factorIva(porcentajes?.iva);
   const kilos = kilosTotales(formulario.items);
   if (!(subtotal > 0) && !(kilos.total > 0)) return null;
   const pctIva = porcentajes?.iva ?? 19;
-  const iva = formulario.siigoIva ? subtotal * pctIva / 100 : 0;
-  const pctRetencion = porcentajes?.retefuente ?? 2.5;
-  const retencion = formulario.siigoRetefuente ? subtotal * pctRetencion / 100 : 0;
+  const iva = formulario.siigoIva ? conIva - subtotal : 0;
+  const retencion = formulario.siigoRetefuente && porcentajes?.retefuente != null ? subtotal * porcentajes.retefuente / 100 : 0;
   return (
     <dl className="siigo-resumen" aria-label="Valor de la cotización">
       {subtotal > 0 && <>
         <div><dt>Subtotal</dt><dd>{pesos(subtotal)}</dd></div>
         {formulario.siigoIva && <div><dt>IVA {cantidad(pctIva)} %</dt><dd>{pesos(iva)}</dd></div>}
         {formulario.siigoRetefuente && (
-          <div><dt>Retención en la fuente {cantidad(pctRetencion)} %</dt><dd>− {pesos(retencion)}</dd></div>
+          <div><dt>Retención en la fuente{porcentajes?.retefuente != null ? ` ${cantidad(porcentajes.retefuente)} %` : ""}</dt>
+            <dd>{porcentajes?.retefuente != null ? `− ${pesos(retencion)}` : "la calcula Siigo"}</dd></div>
         )}
         <div className="siigo-resumen-total"><dt>Total</dt><dd>{pesos(subtotal + iva - retencion)}</dd></div>
       </>}
@@ -154,7 +154,7 @@ export function CamposSiigoLinea({
   indice, item, unidad, factor, productos, buscarProducto, cerrarBusquedaProducto, actualizar,
 }: {
   indice: number; unidad: string;
-  /** Lo que se divide el valor escrito para tener la base (ver factorIva). */
+  /** 1,19: el valor escrito siempre trae el IVA (ver factorIva). */
   factor: number;
   item: { siigoProducto: string; siigoCantidad: string; siigoUnidad?: string; siigoAviso?: string; valorLinea: string };
   productos: ProductoSiigo[] | "buscando" | "error" | undefined;
@@ -195,13 +195,13 @@ export function CamposSiigoLinea({
         {item.siigoAviso && <p className="siigo-estado siigo-mal">{item.siigoAviso}</p>}
       </div>
       <div className="siigo-linea-campo">
-        <label htmlFor={`siigo-valor-${indice}`}>Valor que paga el cliente (con IVA) *</label>
+        <label htmlFor={`siigo-valor-${indice}`}>Valor de la venta con IVA incluido *</label>
         <input id={`siigo-valor-${indice}`} inputMode="decimal" placeholder="Ej. 1.114.448" value={item.valorLinea}
           onChange={(e) => actualizar("valorLinea", e.target.value)} />
       </div>
       <p className="siigo-linea-total">
         {valor > 0 && porUnidad > 0
-          ? <>{pesos(valor)} a pagar → <strong>{pesos(sinIva)} sin IVA</strong> ÷ {cantidad(numeroDe(item.siigoCantidad))} {unidad} = {pesos(porUnidad)} por {NOMBRE_UNIDAD[unidad] || unidad} sin IVA (así va a Siigo)</>
+          ? <>{pesos(valor)} con IVA → <strong>{pesos(sinIva)} sin IVA</strong> ÷ {cantidad(numeroDe(item.siigoCantidad))} {unidad} = {pesos(porUnidad)} por {NOMBRE_UNIDAD[unidad] || unidad} sin IVA (así va a Siigo)</>
           : "—"}
       </p>
     </div>

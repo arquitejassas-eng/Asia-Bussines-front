@@ -1264,7 +1264,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   {a.siigo.enSiigo && (
                     <CamposSiigoLinea
                       indice={indice} item={item} unidad={a.siigo.unidadDe(item)} productos={a.siigo.productos[indice]}
-                      factor={factorIva(a.siigo.impuestos, a.formulario.siigoRetefuente)}
+                      factor={factorIva(a.siigo.impuestos?.iva)}
                       buscarProducto={a.siigo.buscarProducto} cerrarBusquedaProducto={a.siigo.cerrarBusquedaProducto}
                       actualizar={(campo, valor) => a.actualizarItemApartado(indice, campo, valor)}
                     />
