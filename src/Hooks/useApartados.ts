@@ -619,7 +619,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       return;
     }
     if (enSiigo) {
-      const numeroLinea = formulario.items.findIndex((i) => !i.siigoProducto.trim() || !(numeroDe(i.valorLinea) > 0) || !(numeroDe(i.siigoCantidad) > 0));
+      const numeroLinea = formulario.items.findIndex((i) => !i.siigoProducto.trim() || !i.valorLinea.trim() || !(numeroDe(i.siigoCantidad) > 0));
       // Si Siigo no responde no hay lista de vendedores: se guarda y queda pendiente de Siigo.
       const falta = !formulario.clienteIdentificacion.replace(/[^0-9A-Za-z]/g, "") ? "Escribe la cédula o NIT del cliente."
         : !formulario.siigoVendedor && siigo.vendedores !== "error" ? "Elige el vendedor de Siigo."
@@ -682,8 +682,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
           const datosSiigo = {
             siigo_producto: i.siigoProducto.trim(),
             // Siigo pide precio SIN IVA por kilo/cm/unidad: el valor de la línea (con IVA) sin el IVA,
-            // entre la cantidad (6 decimales, así el total da exacto).
-            precio: numeroDe(i.valorLinea) > 0 && numeroDe(i.siigoCantidad) > 0
+            // entre la cantidad (6 decimales, así el total da exacto). Un 0
+            // escrito vale (ej. un traslado sin valor); vacío es que falta.
+            precio: i.valorLinea.trim() && numeroDe(i.siigoCantidad) > 0
               ? Math.round(numeroDe(i.valorLinea) / factorIva(siigo.impuestos?.iva) / numeroDe(i.siigoCantidad) * 1e6) / 1e6 : null,
             siigo_cantidad: numeroDe(i.siigoCantidad) > 0 ? numeroDe(i.siigoCantidad) : null,
           };

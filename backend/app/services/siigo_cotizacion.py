@@ -166,7 +166,7 @@ def _faltantes(apartado: Apartado, items: list[ApartadoItem], config: dict) -> l
     if apartado.siigo_retefuente and not config["retefuente"]:
         faltan.append("la retención en la fuente de Siigo (configuración del servidor)")
     for numero, item in enumerate(items, start=1):
-        que = [n for n, falta in (("el producto de Siigo", not item.siigo_producto), ("el valor de la venta", not (item.precio or 0) > 0),
+        que = [n for n, falta in (("el producto de Siigo", not item.siigo_producto), ("el valor de la venta", item.precio is None),
                                   ("la cantidad para Siigo", not (item.siigo_cantidad or 0) > 0)) if falta]
         if que:
             faltan.append(f"línea {numero} ({(item.descripcion or '').strip()[:40]}): {', '.join(que)}")

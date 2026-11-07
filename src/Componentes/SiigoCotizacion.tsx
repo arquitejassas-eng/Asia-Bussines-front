@@ -216,7 +216,7 @@ export function CamposSiigoLinea({
       <p className="siigo-linea-total">
         {valor > 0 && porUnidad > 0
           ? <>{pesos(valor)} con IVA → <strong>{pesos(sinIva)} sin IVA</strong> ÷ {cantidad(numeroDe(item.siigoCantidad))} {unidad} = {pesos(porUnidad)} por {NOMBRE_UNIDAD[unidad] || unidad} sin IVA (así va a Siigo)</>
-          : "—"}
+          : valor === 0 && item.valorLinea.trim() ? "Sin valor: va a Siigo en $ 0." : "—"}
       </p>
     </div>
   );
