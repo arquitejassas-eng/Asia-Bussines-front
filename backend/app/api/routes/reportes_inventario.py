@@ -12,6 +12,7 @@ from app.models.apartado import Apartado, ApartadoItem, ModalidadApartado
 from app.models.bodega import Bodega
 from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.material_en_camino import Cargamento, CargamentoRollo
+from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario
@@ -118,3 +119,76 @@ def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
             "proveedor": r.proveedor or cargamento.proveedor or "",
         })
     return filas
+
+
+@router.get("/producto")
+def historia_producto(codigo: str, db: Session = Depends(get_db)) -> dict:
+    """Todo lo de un código de producto (ej. CPA) en todas las bodegas y las
+    dos empresas: con cuánto se cargó (la "entrada" del Excel o de cuando se
+    creó), en qué cotizaciones salió, en cuáles está reservado, los demás
+    movimientos (entradas, ajustes, traslados) y cuánto hay hoy."""
+    codigo = codigo.strip().upper()
+    productos = {p.id: p for p in db.query(Producto).filter(func.upper(Producto.codigo) == codigo)} if codigo else {}
+    if not productos:
+        return {"codigo": codigo, "existe": False}
+    bodegas = _nombres_bodegas(db)
+    nombre_bodega = lambda bodega_id: bodegas.get(bodega_id, SIN_BODEGA) if bodega_id else SIN_BODEGA  # noqa: E731
+    movimientos = (db.query(Movimiento).filter(func.upper(Movimiento.producto_codigo) == codigo)
+                   .order_by(Movimiento.fecha).all())
+    # Fecha de la salida de cada cotización en cada bodega (la del movimiento).
+    fecha_salida = {(m.cotizacion, m.bodega_origen_id): m.fecha for m in movimientos
+                    if m.tipo == TipoMovimiento.SALIDA and m.motivo == "apartado_stock"}
+
+    salidas, reservas = [], []
+    lineas = (db.query(ApartadoItem, Apartado).join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+              .filter(ApartadoItem.producto_id.in_(productos), ApartadoItem.modalidad == ModalidadApartado.POR_STOCK)
+              .order_by(Apartado.fecha_creacion))
+    for item, apartado in lineas:
+        producto = productos[item.producto_id]
+        fila = {
+            "cotizacion": apartado.numero_cotizacion, "cliente": apartado.cliente or "",
+            "empresa": producto.empresa or "", "bodega": nombre_bodega(apartado.bodega_id),
+            "cantidad": float(item.cantidad or 0), "estado": apartado.estado.value,
+        }
+        if item.stock_descontado:
+            salidas.append({**fila, "fecha": fecha_salida.get((apartado.numero_cotizacion, apartado.bodega_id))
+                            or apartado.fecha_entregado, "sin_existencia": bool(item.hay_fisico)})
+        elif apartado.estado in ESTADOS_RESERVA_ACTIVA and not item.hay_fisico:
+            reservas.append({**fila, "fecha": apartado.fecha_creacion})
+
+    # Con cuánto quedó al cargarlo al programa: el stock de hoy menos todo lo
+    # que entró y salió de esa bodega desde entonces. Los movimientos no dicen
+    # la empresa: si las dos tienen el código en la misma bodega, se calcula
+    # entre las dos (al_cargar va en None y sale en bodegas_compartidas).
+    neto: dict[int | None, float] = {}
+    for m in movimientos:
+        if m.bodega_destino_id:
+            neto[m.bodega_destino_id] = neto.get(m.bodega_destino_id, 0.0) + float(m.cantidad or 0)
+        if m.bodega_origen_id:
+            neto[m.bodega_origen_id] = neto.get(m.bodega_origen_id, 0.0) - float(m.cantidad or 0)
+    por_id_bodega: dict[int | None, list[Producto]] = {}
+    for p in productos.values():
+        por_id_bodega.setdefault(p.bodega_id, []).append(p)
+    compartidas = [{"bodega": nombre_bodega(b), "al_cargar": round(sum(float(p.stock or 0) for p in ps) - neto.get(b, 0.0), 2)}
+                   for b, ps in por_id_bodega.items() if len(ps) > 1]
+
+    por_bodega = []
+    for p in sorted(productos.values(), key=lambda p: (p.empresa or "", nombre_bodega(p.bodega_id))):
+        bodega = nombre_bodega(p.bodega_id)
+        sola = len(por_id_bodega[p.bodega_id]) == 1
+        por_bodega.append({
+            "empresa": p.empresa or "", "bodega": bodega, "inicial": float(p.entrada or 0),
+            "al_cargar": round(float(p.stock or 0) - neto.get(p.bodega_id, 0.0), 2) if sola else None,
+            "salio": round(sum(s["cantidad"] for s in salidas if s["empresa"] == (p.empresa or "") and s["bodega"] == bodega), 2),
+            "reservado": round(sum(r["cantidad"] for r in reservas if r["empresa"] == (p.empresa or "") and r["bodega"] == bodega), 2),
+            "stock": float(p.stock or 0),
+        })
+    otros = [{
+        "fecha": m.fecha, "tipo": m.tipo.value, "motivo": m.motivo or "", "cantidad": float(m.cantidad or 0),
+        "bodega_origen": nombre_bodega(m.bodega_origen_id) if m.bodega_origen_id else "",
+        "bodega_destino": nombre_bodega(m.bodega_destino_id) if m.bodega_destino_id else "",
+        "cotizacion": m.cotizacion or "", "usuario": m.usuario or "", "observaciones": m.observaciones or "",
+    } for m in movimientos if not (m.tipo == TipoMovimiento.SALIDA and m.motivo == "apartado_stock")]
+    primero = next(iter(productos.values()))
+    return {"codigo": primero.codigo, "descripcion": primero.descripcion, "existe": True,
+            "por_bodega": por_bodega, "bodegas_compartidas": compartidas, "salidas": salidas, "reservas": reservas, "otros_movimientos": otros}

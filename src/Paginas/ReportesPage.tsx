@@ -4,6 +4,7 @@ import { ReporteImportaciones, ReporteInventarioPorTipo } from "../Componentes/P
 import { formatearFechaColombia } from "../Utils/fechas";
 import { useControladorReportes } from "../Componentes/Reportes";
 import Paginacion from "../Componentes/Paginacion";
+import PanelHistoriaProducto from "../Componentes/PanelHistoriaProducto";
 import CampanaAlertas from "../Componentes/CampanaAlertas";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import { contarNotificaciones } from "../Utils/notificaciones";
@@ -202,6 +203,9 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
               </button>
             </div>
           </section>
+
+          {/* Con un código de producto exacto (ej. CPA): con cuánto se cargó, dónde salió y dónde está reservado. */}
+          {todasLasBodegas && <PanelHistoriaProducto codigo={r.filtros.codigoProducto} />}
 
           {/* ================== TABLA DE MOVIMIENTOS ================== */}
           <section className="reportes-tarjeta">
