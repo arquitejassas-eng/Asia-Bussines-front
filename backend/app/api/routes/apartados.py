@@ -238,7 +238,7 @@ def datos_para_imprimir(ids: str = Query(..., description="ids de las partes de 
             calculado = siigo_cotizacion.cantidad_sugerida(
                 db, parte.empresa, modalidad=ModalidadApartado(item.modalidad).value, codigo_interno=item.codigo_interno,
                 descripcion=item.descripcion or "", cantidad=item.cantidad or 0, medida=item.medida,
-                tipo_producto=item.tipo_producto, producto_id=item.producto_id)
+                tipo_producto=item.tipo_producto, producto_id=item.producto_id, rollo_id=item.rollo_id)
             if calculado["kilos"]:
                 kilos += calculado["kilos"]
             elif calculado["unidad"] in ("kg", "cm"):

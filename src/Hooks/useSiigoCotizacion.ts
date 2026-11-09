@@ -13,7 +13,7 @@ export type ClienteSiigo = { estado: "buscando" | "existe" | "no_existe" | "erro
 
 type LineaParaSiigo = {
   modalidad: string; codigoInterno: string; descripcion: string; cantidad: string | number; medida: string | number;
-  tipoProducto: string; productoId: number | null;
+  tipoProducto: string; productoId: number | null; rolloId?: number | null;
   siigoCantidad: string; siigoCantidadManual?: boolean; siigoProducto: string; siigoUnidad?: string; siigoAviso?: string;
   siigoKilos?: number | null;
 };
@@ -136,7 +136,7 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
   // cuando cambian el código, la cantidad, la medida o el producto. La
   // cantidad que el vendedor escribió a mano no se toca.
   const clave = enSiigo ? JSON.stringify([formulario.empresa, formulario.items.map((i) => [
-    i.modalidad, i.codigoInterno, i.cantidad, i.medida, i.tipoProducto, i.productoId, i.descripcion])]) : "";
+    i.modalidad, i.codigoInterno, i.cantidad, i.medida, i.tipoProducto, i.productoId, i.descripcion, i.rolloId])]) : "";
   useEffect(() => {
     if (!clave) return;
     const items = formulario.items;
@@ -148,6 +148,7 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
             modalidad: i.modalidad === "rollo_completo" ? "por_rollo" : i.modalidad, codigo_interno: i.codigoInterno || null,
             descripcion: i.descripcion, cantidad: Number(String(i.cantidad).replace(",", ".")) || 0,
             medida: Number(String(i.medida).replace(",", ".")) || null, tipo_producto: i.tipoProducto || "", producto_id: i.productoId,
+            rollo_id: i.modalidad === "rollo_completo" ? i.rolloId ?? null : null,
           })),
         });
         if (!datos) return;

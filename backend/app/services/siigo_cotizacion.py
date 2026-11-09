@@ -73,7 +73,8 @@ def peso_por_metro(db: Session, espesor: float | None) -> float | None:
 
 
 def cantidad_sugerida(db: Session, empresa: str, *, modalidad: str, codigo_interno: str | None, descripcion: str,
-                      cantidad: float, medida: float | None, tipo_producto: str | None, producto_id: int | None) -> dict:
+                      cantidad: float, medida: float | None, tipo_producto: str | None, producto_id: int | None,
+                      rollo_id: int | None = None) -> dict:
     """{"cantidad", "unidad", "aviso", "kilos"}: lo que va en la cantidad de
     Siigo para una línea. `aviso` explica por qué no se pudo calcular (el
     vendedor la escribe). `kilos`: lo que pesa la lámina de la línea (también
@@ -101,6 +102,13 @@ def cantidad_sugerida(db: Session, empresa: str, *, modalidad: str, codigo_inter
         return {"cantidad": None, "unidad": unidad_lamina, "aviso": "", "kilos": None}  # la línea todavía no tiene cantidad y medida
     peso = peso_por_metro(db, espesor)
     kilos = round(metros * peso, 2) if peso is not None else None
+    if rollo_id:
+        # Rollo completo: se vende lo que pesa el rollo (la etiqueta, o por
+        # los metros que le quedan si ya se usó), no los metros por la tabla.
+        from app.models.rollo import Rollo
+        from app.services.apartados import kilos_actuales_rollo
+        rollo = db.get(Rollo, rollo_id)
+        kilos = float(kilos_actuales_rollo(db, rollo) or 0) or kilos if rollo is not None else kilos
     if unidad_lamina == "cm":
         return {"cantidad": round(metros * 100, 2), "unidad": "cm", "aviso": "", "kilos": kilos}
     if kilos is None:

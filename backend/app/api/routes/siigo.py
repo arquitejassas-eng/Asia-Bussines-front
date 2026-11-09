@@ -142,6 +142,8 @@ class LineaParaSugerir(BaseModel):
     medida: float | None = None
     tipo_producto: str = ""
     producto_id: int | None = None
+    # Rollo completo: los kilos son los del rollo.
+    rollo_id: int | None = None
 
 
 class SugerenciasRequest(BaseModel):
@@ -160,7 +162,8 @@ def sugerencias(datos: SugerenciasRequest, db: Session = Depends(get_db)) -> lis
     for linea in datos.lineas:
         sugerida = siigo_cotizacion.cantidad_sugerida(
             db, empresa, modalidad=linea.modalidad, codigo_interno=linea.codigo_interno, descripcion=linea.descripcion,
-            cantidad=linea.cantidad, medida=linea.medida, tipo_producto=linea.tipo_producto, producto_id=linea.producto_id)
+            cantidad=linea.cantidad, medida=linea.medida, tipo_producto=linea.tipo_producto, producto_id=linea.producto_id,
+            rollo_id=linea.rollo_id)
         clave = linea.codigo_interno or (db.get(Producto, linea.producto_id).codigo if linea.producto_id and db.get(Producto, linea.producto_id) else "")
         producto = siigo_cotizacion.recordado(db, empresa, siigo_cotizacion.TIPO_PRODUCTO, clave)
         respuesta.append({**sugerida, "siigo_producto": producto.valor if producto else ""})
