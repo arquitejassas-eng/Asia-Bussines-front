@@ -171,9 +171,11 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clave]);
 
-  // "kg", "cm", "und" o "m2": la unidad de Siigo de una línea (la de la lámina de la empresa mientras no hay sugerencia).
-  function unidadDe(item: { siigoUnidad?: string }) {
-    return item.siigoUnidad || (formulario.empresa === "AR" ? "cm" : "kg");
+  // "kg", "cm", "und" o "m2": la unidad de Siigo de una línea. Mientras no hay
+  // sugerencia (o si no llegó), un producto de stock va por unidad y la
+  // lámina en la unidad de la empresa.
+  function unidadDe(item: { siigoUnidad?: string; modalidad?: string }) {
+    return item.siigoUnidad || (item.modalidad === "por_stock" ? "und" : formulario.empresa === "AR" ? "cm" : "kg");
   }
 
   return {
