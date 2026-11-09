@@ -59,7 +59,12 @@ export default function ElegirRolloCompleto({ rollos, rolloId, rolloResumen, ocu
       || coincideKilos(r.pesoNeto, digitos) || coincideKilos(r.pesoActualKg, digitos)
       || (Boolean(digitos) && String(Math.round(r.metrosDisponibles)).startsWith(digitos));
   };
-  const encontrados = palabras.length ? libres.filter((r) => palabras.every((p) => coincide(r, p))) : [];
+  // De menor a mayor peso, para ver primero el rollo más liviano; los que no
+  // tienen kilos van al final.
+  const peso = (r: RolloParaApartar) => kilosActualesRollo(r) || Infinity;
+  const encontrados = palabras.length
+    ? libres.filter((r) => palabras.every((p) => coincide(r, p))).sort((x, y) => peso(x) - peso(y) || x.metrosDisponibles - y.metrosDisponibles)
+    : [];
 
   return (
     <div className="rollo-completo">
@@ -84,7 +89,7 @@ export default function ElegirRolloCompleto({ rollos, rolloId, rolloResumen, ocu
       )}
       {encontrados.length > 0 && (
         <p className="inventario-carga-ayuda" style={{ margin: "0.25rem 0 0" }}>
-          {encontrados.length} rollo{encontrados.length === 1 ? "" : "s"}{encontrados.length > 4 ? " (desliza la lista para ver todos)" : ""}
+          {encontrados.length} rollo{encontrados.length === 1 ? "" : "s"}{encontrados.length > 1 ? ", del más liviano al más pesado" : ""}{encontrados.length > 4 ? " (desliza la lista para ver todos)" : ""}
         </p>
       )}
       {encontrados.length > 0 && (
