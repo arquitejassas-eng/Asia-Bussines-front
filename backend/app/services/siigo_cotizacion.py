@@ -165,7 +165,11 @@ def _faltantes(apartado: Apartado, items: list[ApartadoItem], config: dict) -> l
         faltan.append("el IVA de Siigo (configuración del servidor)")
     if apartado.siigo_retefuente and not config["retefuente"]:
         faltan.append("la retención en la fuente de Siigo (configuración del servidor)")
+    if items and all(item.siigo_incluido for item in items):
+        faltan.append("al menos una línea que suba a Siigo (todas están marcadas «va incluido con otra línea»)")
     for numero, item in enumerate(items, start=1):
+        if item.siigo_incluido:
+            continue
         que = [n for n, falta in (("el producto de Siigo", not item.siigo_producto), ("el valor de la venta", item.precio is None),
                                   ("la cantidad para Siigo", not (item.siigo_cantidad or 0) > 0)) if falta]
         if que:
@@ -235,7 +239,7 @@ def cuerpo_para_siigo(apartado: Apartado, items: list[ApartadoItem], config: dic
             "quantity": round(float(item.siigo_cantidad), 2),
             "price": round(float(item.precio), 6),
             "taxes": impuestos,
-        } for numero, item in enumerate(items)],
+        } for numero, item in enumerate(i for i in items if not i.siigo_incluido)],
     }
 
 
@@ -304,7 +308,7 @@ def _recordar_para_la_proxima(db: Session, apartado: Apartado, items: list[Apart
     los impuestos de este cliente. Es solo una ayuda: si falla, la cotización
     se guarda igual."""
     empresa = apartado.empresa
-    productos = {clave_de_linea(item).strip().upper(): item.siigo_producto for item in items}
+    productos = {clave_de_linea(item).strip().upper(): item.siigo_producto for item in items if not item.siigo_incluido}
     try:
         with db.begin_nested():
             for clave, producto in productos.items():

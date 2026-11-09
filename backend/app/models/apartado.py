@@ -190,6 +190,9 @@ class ApartadoItem(Base):
     precio: Mapped[float | None] = mapped_column(Float, nullable=True)
     siigo_cantidad: Mapped[float | None] = mapped_column(Float, nullable=True)
     siigo_producto: Mapped[str] = mapped_column(String(60), default="", server_default="")
+    # La línea va incluida en otra línea de Siigo (ej. el capuchón en
+    # "TORNILLO 2\" CON CAPUCHON AZUL"): descuenta su inventario pero no sube.
+    siigo_incluido: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     @property
     def bodega_conversion(self) -> int | None:

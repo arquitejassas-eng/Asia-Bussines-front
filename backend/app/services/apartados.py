@@ -1087,7 +1087,7 @@ def datos_siigo_cotizacion(datos: ApartadoCrear) -> dict:
 
 def datos_siigo_linea(linea) -> dict:
     return {"precio": linea.precio, "siigo_cantidad": linea.siigo_cantidad,
-            "siigo_producto": (linea.siigo_producto or "").strip()}
+            "siigo_producto": (linea.siigo_producto or "").strip(), "siigo_incluido": bool(linea.siigo_incluido)}
 
 
 def exigir_numero_libre_en_la_empresa(db: Session, numero: str, empresa: str, excepto: list[int] | None = None) -> None:

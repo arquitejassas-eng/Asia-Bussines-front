@@ -54,6 +54,8 @@ class ApartadoItemCrear(BaseModel):
     precio: float | None = Field(default=None, ge=0)
     siigo_cantidad: float | None = Field(default=None, ge=0)
     siigo_producto: str = Field(default="", max_length=60)
+    # Va incluida en otra línea de Siigo (capuchón con su tornillo): no sube.
+    siigo_incluido: bool = False
 
     @model_validator(mode="after")
     def _exigir_campos_segun_modalidad(self) -> "ApartadoItemCrear":
@@ -229,6 +231,7 @@ class ApartadoItemResponse(BaseModel):
     precio: float | None = None
     siigo_cantidad: float | None = None
     siigo_producto: str = ""
+    siigo_incluido: bool = False
 
 
 class RolloParaApartarResponse(BaseModel):

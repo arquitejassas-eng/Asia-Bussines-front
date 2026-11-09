@@ -135,7 +135,9 @@ export function apartadoItemDesdeApi(i: RegistroApi) {
     laminasConvertidas: numero(i.laminas_convertidas || 0),
     // Siigo: precio por unidad de Siigo, cantidad en esa unidad y producto de Siigo.
     precio: i.precio == null ? null : numero(i.precio),
-    siigoCantidad: i.siigo_cantidad == null ? null : numero(i.siigo_cantidad), siigoProducto: texto(i.siigo_producto) };
+    siigoCantidad: i.siigo_cantidad == null ? null : numero(i.siigo_cantidad), siigoProducto: texto(i.siigo_producto),
+    // Va incluida en otra línea de Siigo (capuchón con su tornillo): no sube.
+    siigoIncluido: Boolean(i.siigo_incluido) };
 }
 
 export function apartadoDesdeApi(a: RegistroApi) {

@@ -32,6 +32,9 @@ const ITEM_VACIO = {
   // unidades; el programa la sugiere y no la toca si se escribió a mano) y lo
   // que vale la línea CON IVA (a Siigo va el precio sin IVA por kilo/cm: ver factorIva).
   siigoProducto: "", siigoCantidad: "", siigoCantidadManual: false, siigoUnidad: "", siigoAviso: "", valorLinea: "",
+  // Va incluida en otra línea de Siigo (el capuchón en "TORNILLO 2\" CON
+  // CAPUCHON AZUL"): descuenta su inventario pero no sube a Siigo.
+  siigoIncluido: false,
 };
 const FORMULARIO_VACIO = {
   bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", ordenInterna: false,
@@ -59,7 +62,7 @@ type ItemFormulario = {
   // Solo al editar: la línea que ya existe y lo que ya tuvo salida.
   id?: number; metrosConsumidos?: number; stockDescontado?: boolean;
   siigoProducto: string; siigoCantidad: string; siigoCantidadManual?: boolean; siigoUnidad?: string; siigoAviso?: string; valorLinea: string;
-  siigoKilos?: number | null;
+  siigoKilos?: number | null; siigoIncluido?: boolean;
 };
 type FormularioApartado = {
   bodegaId: string; empresa: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string;
@@ -78,7 +81,7 @@ type ApartadoItem = {
   empresaMaterial: string; // "" = la de la cotización
   hayFisico: boolean;
   convertirEn: string; bodegaConversionId: number | null; laminasConvertidas: number;
-  precio: number | null; siigoCantidad: number | null; siigoProducto: string;
+  precio: number | null; siigoCantidad: number | null; siigoProducto: string; siigoIncluido: boolean;
 };
 export type RolloParaApartar = {
   id: number; identificadorRollo: string; codigoInterno: string; descripcion: string;
@@ -260,7 +263,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         hayFisico: it.hayFisico, hayFisicoOriginal: it.hayFisico,
         convertirEn: it.convertirEn || "caballete", bodegaConversionId: it.bodegaConversionId ? String(it.bodegaConversionId) : "",
         laminasConvertidas: it.laminasConvertidas,
-        siigoProducto: it.siigoProducto || "",
+        siigoProducto: it.siigoProducto || "", siigoIncluido: it.siigoIncluido,
         valorLinea: it.precio == null || it.siigoCantidad == null ? ""
           : String(Math.round(it.precio * it.siigoCantidad * factorIva(siigo.impuestos?.iva) * 100) / 100).replace(".", ","),
         siigoCantidad: it.siigoCantidad == null ? "" : String(it.siigoCantidad), siigoCantidadManual: it.siigoCantidad != null,
@@ -431,6 +434,8 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       ...actual,
       items: actual.items.map((item, i) => (i === indice ? {
         ...item, modalidad,
+        // Solo una línea de stock (el capuchón) va incluida en otra de Siigo.
+        siigoIncluido: modalidad === "por_stock" ? item.siigoIncluido : false,
         // "Material de las dos empresas" es solo para lámina por producir.
         empresa: modalidad !== "por_rollo" && item.empresa === AMBAS_EMPRESAS ? "" : item.empresa,
         codigoInterno: "", medida: "",
@@ -619,11 +624,13 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
       return;
     }
     if (enSiigo) {
-      const numeroLinea = formulario.items.findIndex((i) => !i.siigoProducto.trim() || !i.valorLinea.trim() || !(numeroDe(i.siigoCantidad) > 0));
+      const numeroLinea = formulario.items.findIndex((i) => !i.siigoIncluido
+        && (!i.siigoProducto.trim() || !i.valorLinea.trim() || !(numeroDe(i.siigoCantidad) > 0)));
       // Si Siigo no responde no hay lista de vendedores: se guarda y queda pendiente de Siigo.
       const falta = !formulario.clienteIdentificacion.replace(/[^0-9A-Za-z]/g, "") ? "Escribe la cédula o NIT del cliente."
         : !formulario.siigoVendedor && siigo.vendedores !== "error" ? "Elige el vendedor de Siigo."
         : !formulario.siigoCentroCosto && (siigo.centrosCosto?.length ?? 0) > 0 ? "Elige el centro de costo."
+        : formulario.items.every((i) => i.siigoIncluido) ? "Al menos un producto tiene que subir a Siigo: todos están marcados «va incluido con otra línea»."
         : numeroLinea >= 0 ? `Producto ${numeroLinea + 1}: falta el producto de Siigo, la cantidad (${siigo.unidadDe(formulario.items[numeroLinea])}) o el valor.` : "";
       if (falta) {
         setErrorFormularioApartado(falta);
@@ -687,6 +694,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
             precio: i.valorLinea.trim() && numeroDe(i.siigoCantidad) > 0
               ? Math.round(numeroDe(i.valorLinea) / factorIva(siigo.impuestos?.iva) / numeroDe(i.siigoCantidad) * 1e6) / 1e6 : null,
             siigo_cantidad: numeroDe(i.siigoCantidad) > 0 ? numeroDe(i.siigoCantidad) : null,
+            siigo_incluido: Boolean(i.siigoIncluido),
           };
           if (i.modalidad === "rollo_completo") {
             return { id: i.id, bodega_id, empresa, modalidad: "por_rollo", rollo_id: i.rolloId, descripcion: i.descripcion, cantidad: 1,

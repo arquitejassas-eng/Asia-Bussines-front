@@ -12,7 +12,7 @@ const cantidad = (valor: number) => valor.toLocaleString("es-CO", { maximumFract
 
 type FormularioSiigo = {
   empresa: string; clienteIdentificacion: string; siigoVendedor: string; siigoCentroCosto: string; siigoIva: boolean; siigoRetefuente: boolean;
-  items: { valorLinea: string; siigoCantidad?: string; siigoUnidad?: string; siigoKilos?: number | null }[];
+  items: { valorLinea: string; siigoCantidad?: string; siigoUnidad?: string; siigoKilos?: number | null; siigoIncluido?: boolean }[];
 };
 
 /** Lo que pesa la lámina de la cotización: en las líneas que van a Siigo en
@@ -135,7 +135,7 @@ export function ResumenSiigo({ formulario, porcentajes }: {
 }) {
   // Lo que escribió el vendedor trae el IVA: el subtotal es sin él (y sin
   // IVA marcado, el cliente paga solo el subtotal).
-  const conIva = formulario.items.reduce((suma, i) => suma + numeroDe(i.valorLinea), 0);
+  const conIva = formulario.items.reduce((suma, i) => suma + (i.siigoIncluido ? 0 : numeroDe(i.valorLinea)), 0);
   const subtotal = conIva / factorIva(porcentajes?.iva);
   const kilos = kilosTotales(formulario.items);
   if (!(subtotal > 0) && !(kilos.total > 0)) return null;
@@ -165,22 +165,38 @@ export function ResumenSiigo({ formulario, porcentajes }: {
 }
 
 export function CamposSiigoLinea({
-  indice, item, unidad, factor, productos, buscarProducto, cerrarBusquedaProducto, actualizar,
+  indice, item, unidad, factor, productos, buscarProducto, cerrarBusquedaProducto, actualizar, puedeIncluirse,
 }: {
   indice: number; unidad: string;
+  /** Línea de stock: puede ir incluida en otra línea de Siigo (capuchón con su tornillo). */
+  puedeIncluirse: boolean;
   /** 1,19: el valor escrito siempre trae el IVA (ver factorIva). */
   factor: number;
-  item: { siigoProducto: string; siigoCantidad: string; siigoUnidad?: string; siigoAviso?: string; valorLinea: string };
+  item: { siigoProducto: string; siigoCantidad: string; siigoUnidad?: string; siigoAviso?: string; valorLinea: string; siigoIncluido?: boolean };
   productos: ProductoSiigo[] | "buscando" | "error" | undefined;
   buscarProducto: (indice: number, texto: string) => void;
   cerrarBusquedaProducto: (indice: number) => void;
-  actualizar: (campo: "siigoProducto" | "siigoCantidad" | "siigoCantidadManual" | "valorLinea", valor: string | boolean) => void;
+  actualizar: (campo: "siigoProducto" | "siigoCantidad" | "siigoCantidadManual" | "valorLinea" | "siigoIncluido", valor: string | boolean) => void;
 }) {
   const valor = numeroDe(item.valorLinea);
   const sinIva = valor / factor;
   const porUnidad = numeroDe(item.siigoCantidad) > 0 ? sinIva / numeroDe(item.siigoCantidad) : 0;
+  const incluida = puedeIncluirse && Boolean(item.siigoIncluido);
+  const casilla = puedeIncluirse && (
+    <label className="siigo-linea-incluida">
+      <input type="checkbox" checked={incluida} onChange={(e) => actualizar("siigoIncluido", e.target.checked)} />
+      <span>
+        Va incluido con otra línea en Siigo
+        <small>Ej. el capuchón cuando el tornillo va como «TORNILLO 2" CON CAPUCHON AZUL». Descuenta su inventario, pero no sube a Siigo.</small>
+      </span>
+    </label>
+  );
+  if (incluida) {
+    return <div className="siigo-linea" style={{ gridColumn: "1 / -1" }}>{casilla}</div>;
+  }
   return (
     <div className="siigo-linea" style={{ gridColumn: "1 / -1" }}>
+      {casilla}
       <div className="siigo-linea-campo siigo-linea-producto">
         <label htmlFor={`siigo-producto-${indice}`}>Producto en Siigo *</label>
         <input id={`siigo-producto-${indice}`} placeholder="Busca por código o nombre" autoComplete="off" value={item.siigoProducto}
