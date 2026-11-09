@@ -391,7 +391,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                       onChange={(e) => c.buscarResumenRollos(e.target.value)}
                     />
                   </div>
-                  <div className="inventario-tabla-contenedor">
+                  <div className="inventario-tabla-contenedor inventario-tabla-fija">
                     <table className="inventario-tabla">
                       <thead>
                         <tr>
