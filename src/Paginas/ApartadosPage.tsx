@@ -1578,7 +1578,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             </td>
                             <td className="ap-col-fecha" data-etiqueta="Creado" style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
                             <td className="inventario-acciones ap-col-acciones">
-                              {a.puedeEditarApartados && partesActivas.length > 0 && (variasBodegas || ESTADOS_CANCELABLES.includes(ap.estado)) && (
+                              {/* Ya enviada a producción (cualquiera de sus partes) no la edita nadie. */}
+                              {a.puedeEditarApartados && partesActivas.length > 0 && partesActivas.every((parte) => parte.estado === "apartado") && (
                                 <button onClick={() => abrirEdicion(partesActivas)}>Editar</button>
                               )}
                               {puedeImprimir && grupo.some((parte) => parte.items.length > 0) && (

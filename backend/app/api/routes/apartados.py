@@ -446,6 +446,7 @@ def editar_apartado(
     bodega: se le suman si ya existe ahí, o se crea. Todo junto o nada."""
     # Una cotización no se vuelve orden interna ni al revés.
     original = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+    _exigir_que_no_este_en_produccion(db, original, datos.otras_partes_ids)
     datos = datos.model_copy(update={"orden_interna": original.orden_interna})
     # La que va a Siigo conserva el número que le dio Siigo (o el provisional)
     # y su empresa: los cambios se pasan a esa misma cotización de Siigo.
@@ -510,6 +511,27 @@ def editar_apartado(
         db.commit()
     db.refresh(apartado)
     return _con_faltantes(db, [apartado])[0]
+
+
+ESTADOS_SIN_EDICION = (EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION)
+
+
+def _exigir_que_no_este_en_produccion(db: Session, original: Apartado, otras_partes_ids: list[int]) -> None:
+    """Regla del negocio: una cotización que ya se envió a producción (o que
+    Planta ya está produciendo) no la edita nadie. Cuenta cualquiera de sus
+    partes (la misma cotización en otra bodega)."""
+    numero = srv.numero_sin_empresa(original.numero_cotizacion)
+    partes = db.query(Apartado).filter(
+        Apartado.estado.in_(ESTADOS_SIN_EDICION),
+        (Apartado.id.in_([original.id, *otras_partes_ids]))
+        | ((Apartado.empresa == original.empresa) & Apartado.numero_cotizacion.like(f"{numero}%")),
+    ).all()
+    if any(p.id == original.id or p.id in otras_partes_ids or srv.numero_sin_empresa(p.numero_cotizacion) == numero
+           for p in partes):
+        raise HTTPException(
+            status_code=400,
+            detail="Esta cotización ya se envió a producción: ya no se puede editar.",
+        )
 
 
 def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEditar, usuario: Usuario) -> Apartado:
