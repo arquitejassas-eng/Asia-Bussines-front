@@ -596,10 +596,12 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         ...item, productoId: producto.id, productoCodigo: producto.codigo, productoDescripcion: producto.descripcion,
         busquedaProducto: "", hayFisico: false,
         // Si no escribió una descripción propia, se autocompleta con el
-        // código del producto -- así la lista de apartados (que no vuelve a
-        // consultar el Producto) puede seguir mostrando qué es cada línea.
-        // Si la que hay es el código del producto anterior, se cambia por el nuevo.
-        descripcion: item.descripcion.trim() && item.descripcion.trim() !== item.productoCodigo ? item.descripcion : producto.codigo,
+        // nombre del producto (o su código si no tiene) -- así la lista de
+        // apartados y la hoja impresa dicen qué es cada línea. Si la que hay
+        // es la que puso el producto anterior, se cambia por la del nuevo.
+        descripcion: item.descripcion.trim()
+          && ![item.productoCodigo, item.productoDescripcion].includes(item.descripcion.trim())
+          ? item.descripcion : (producto.descripcion || producto.codigo),
       } : item)),
     }));
     setResultadosBusquedaProducto((actual) => {
