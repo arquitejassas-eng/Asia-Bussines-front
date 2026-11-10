@@ -347,6 +347,22 @@ HERRAMIENTAS: list[dict] = [
     },
 ]
 
+
+
+def _opcionales_aceptan_null(herramientas: list[dict]) -> None:
+    """Groq valida los argumentos contra el esquema y el modelo a veces manda
+    null en un parámetro opcional (ej. bodega_nombre): sin esto respondía
+    error 400 y el asistente no contestaba. Los null se descartan al ejecutar."""
+    for herramienta in herramientas:
+        parametros = herramienta["function"]["parameters"]
+        requeridos = set(parametros.get("required", []))
+        for nombre, esquema in parametros.get("properties", {}).items():
+            if nombre not in requeridos and isinstance(esquema.get("type"), str):
+                parametros["properties"][nombre] = {**esquema, "type": [esquema["type"], "null"]}
+
+
+_opcionales_aceptan_null(HERRAMIENTAS)
+
 _IMPLEMENTACIONES: dict[str, Callable[..., dict]] = {
     "resumen_bodega": _resumen_bodega,
     "comparar_bodegas": _comparar_bodegas,
@@ -366,6 +382,7 @@ def ejecutar_herramienta(
     if implementacion is None:
         return {"error": f"Herramienta '{nombre}' no existe."}
     try:
+        argumentos = {clave: valor for clave, valor in (argumentos or {}).items() if valor is not None}
         return implementacion(db=db, es_admin_inventario=es_admin_inventario, bodega_id_propio=bodega_id_propio, **argumentos)
     except TypeError as exc:
         return {"error": f"Argumentos inválidos para '{nombre}': {exc}"}
