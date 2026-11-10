@@ -141,6 +141,38 @@ def traslados_por_despachar(db: Session = Depends(get_db), usuario: Usuario = De
     ).order_by(Solicitud.fecha_aceptada).all()
 
 
+@router.get("/solicitudes/por-despachar/imprimir")
+def traslados_por_despachar_para_imprimir(
+    bodega_id: int | None = None, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> list[dict]:
+    """Hoja de Reportes > Traslados con lo aceptado que todavía no sale, para
+    alistar el camión. Superadmin y Admin Inventario ven el de todas las
+    bodegas (o el de una, con bodega_id); los demás, lo que sale de la suya."""
+    consulta = db.query(Solicitud).filter(Solicitud.estado == EstadoSolicitud.ACEPTADA)
+    if usuario.rol in (RolUsuario.SUPERADMIN, RolUsuario.ADMIN_INVENTARIO):
+        if bodega_id is not None:
+            consulta = consulta.filter((Solicitud.bodega_propietaria_id == bodega_id) | (Solicitud.bodega_solicitante_id == bodega_id))
+    else:
+        consulta = consulta.filter(Solicitud.bodega_propietaria_id == usuario.bodega_id)
+    solicitudes = consulta.order_by(Solicitud.fecha_aceptada).all()
+    nombres = {b.id: b.nombre for b in db.query(Bodega).all()}
+    ids_rollos = {s.rollo_id for s in solicitudes if s.rollo_id}
+    rollos = {r.id: r for r in db.query(Rollo).filter(Rollo.id.in_(ids_rollos)).all()} if ids_rollos else {}
+    filas = []
+    for s in solicitudes:
+        rollo = rollos.get(s.rollo_id)
+        filas.append({
+            "id": s.id, "origen": nombres.get(s.bodega_propietaria_id, ""), "destino": nombres.get(s.bodega_solicitante_id, ""),
+            "producto_codigo": s.producto_codigo, "producto_descripcion": s.producto_descripcion,
+            "rollo": rollo.identificador_rollo if rollo else "",
+            # Un rollo sale entero: lo que le queda hoy, como al despacharlo.
+            "cantidad": float(rollo.metros_disponibles) if rollo else float(s.cantidad),
+            "es_rollo": rollo is not None, "empresa": s.empresa or "", "cotizacion": s.numero_cotizacion or "",
+            "solicitado_por": s.solicitado_por, "observaciones": s.observaciones or "",
+        })
+    return filas
+
+
 @router.get("/solicitudes/en-camino", response_model=list[SolicitudResponse])
 def traslados_en_camino(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> list[Solicitud]:
     """Lo que otras bodegas ya despacharon hacia esta y falta recibir."""

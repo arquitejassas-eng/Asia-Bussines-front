@@ -24,6 +24,21 @@ type ResumenApi = {
 };
 type PaginaApi = { items: Record<string, unknown>[]; total: number; pagina: number; total_paginas: number; resumen?: ResumenApi };
 
+// Los filtros de la pantalla como parámetros de /inventario/historial.
+function parametrosDeFiltros(filtros: Filtros) {
+  const parametros = new URLSearchParams();
+  if (filtros.grupo) parametros.set("grupo", filtros.grupo);
+  if (filtros.bodegaId) parametros.set("bodega_id", filtros.bodegaId);
+  if (filtros.codigoProducto) parametros.set("codigo_producto", filtros.codigoProducto);
+  if (filtros.codigoRollo) parametros.set("codigo_rollo", filtros.codigoRollo);
+  if (filtros.cotizacion) parametros.set("cotizacion", filtros.cotizacion);
+  if (filtros.empresaExterna) parametros.set("empresa_externa", filtros.empresaExterna);
+  if (filtros.tipo) parametros.set("tipo", filtros.tipo);
+  if (filtros.fechaDesde) parametros.set("fecha_desde", inicioDelDiaColombia(filtros.fechaDesde));
+  if (filtros.fechaHasta) parametros.set("fecha_hasta", finDelDiaColombia(filtros.fechaHasta));
+  return parametros;
+}
+
 export function useControladorReportes(_sesion: unknown, _almacen: unknown) {
   const [movimientos, setMovimientos] = useState<ReturnType<typeof movimientoDesdeApi>[]>([]);
   const [cargandoMovimientos, setCargandoMovimientos] = useState(true);
@@ -57,16 +72,7 @@ export function useControladorReportes(_sesion: unknown, _almacen: unknown) {
     setCargandoMovimientos(true);
     setErrorMovimientos("");
     try {
-      const parametros = new URLSearchParams();
-      if (filtros.grupo) parametros.set("grupo", filtros.grupo);
-      if (filtros.bodegaId) parametros.set("bodega_id", filtros.bodegaId);
-      if (filtros.codigoProducto) parametros.set("codigo_producto", filtros.codigoProducto);
-      if (filtros.codigoRollo) parametros.set("codigo_rollo", filtros.codigoRollo);
-      if (filtros.cotizacion) parametros.set("cotizacion", filtros.cotizacion);
-      if (filtros.empresaExterna) parametros.set("empresa_externa", filtros.empresaExterna);
-      if (filtros.tipo) parametros.set("tipo", filtros.tipo);
-      if (filtros.fechaDesde) parametros.set("fecha_desde", inicioDelDiaColombia(filtros.fechaDesde));
-      if (filtros.fechaHasta) parametros.set("fecha_hasta", finDelDiaColombia(filtros.fechaHasta));
+      const parametros = parametrosDeFiltros(filtros);
       parametros.set("paginado", "true");
       parametros.set("pagina", String(pagina));
       parametros.set("tamano", "30");
@@ -112,6 +118,12 @@ export function useControladorReportes(_sesion: unknown, _almacen: unknown) {
 
   const movimientosFiltrados = movimientos;
 
+  // Todo lo filtrado (no solo la página visible), para imprimirlo.
+  const traerTodoLoFiltrado = useCallback(async () => {
+    const datos = await api.get<Record<string, unknown>[]>(`/inventario/historial?${parametrosDeFiltros(filtros).toString()}`);
+    return (datos || []).map(movimientoDesdeApi);
+  }, [filtros]);
+
   // Totales de TODO el filtro, calculados por el servidor. Antes se sumaban
   // solo los 30 movimientos de la página visible y cambiaban al paginar.
   const resumen = useMemo(() => ({
@@ -134,6 +146,7 @@ export function useControladorReportes(_sesion: unknown, _almacen: unknown) {
     pagina,
     setPagina,
     paginacion,
+    traerTodoLoFiltrado,
 
     alertasStock,
     cargandoAlertasStock,

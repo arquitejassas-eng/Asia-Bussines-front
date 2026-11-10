@@ -6,6 +6,9 @@ import { useControladorReportes } from "../Componentes/Reportes";
 import Paginacion from "../Componentes/Paginacion";
 import CampanaAlertas from "../Componentes/CampanaAlertas";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
+import { abrirVentanaImpresion } from "../Utils/imprimirCotizacion";
+import { imprimirTrasladosFiltrados, imprimirTrasladosPorSalir, type FilaTraslado } from "../Utils/imprimirTraslados";
+import { api } from "../Componentes/Api";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import "../Style/Reportes.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
@@ -32,6 +35,60 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
   const traslados = r.filtros.grupo === "traslados";
 
   const notificaciones = contarNotificaciones(almacen, sesion);
+
+  // Hojas para imprimir de la parte de traslados (ver imprimirTraslados).
+  const [avisoImpresion, setAvisoImpresion] = useState("");
+  const cantidad = (n: number, esRollo: boolean) => `${n.toLocaleString("es-CO", { maximumFractionDigits: 2 })}${esRollo ? " m" : ""}`;
+  const hoy = () => formatearFechaColombia(new Date().toISOString());
+  function ventanaParaImprimir() {
+    setAvisoImpresion("");
+    const ventana = abrirVentanaImpresion();
+    if (!ventana) setAvisoImpresion("El navegador bloqueó la ventana para imprimir: permite las ventanas emergentes de esta página.");
+    return ventana;
+  }
+  async function imprimirPorSalir() {
+    const ventana = ventanaParaImprimir();
+    if (!ventana) return;
+    try {
+      const bodega = todasLasBodegas && r.filtros.bodegaId ? `?bodega_id=${r.filtros.bodegaId}` : "";
+      type PorSalir = { origen: string; destino: string; producto_codigo: string; producto_descripcion: string; rollo: string;
+        cantidad: number; es_rollo: boolean; empresa: string; cotizacion: string; observaciones: string };
+      const datos = await api.get<PorSalir[]>(`/bodegas/solicitudes/por-despachar/imprimir${bodega}`);
+      const filas: FilaTraslado[] = (datos || []).map((s) => ({
+        origen: s.origen, destino: s.destino, producto: `${s.producto_codigo} — ${s.producto_descripcion}`, rollo: s.rollo,
+        empresa: s.empresa, cantidad: cantidad(s.cantidad, s.es_rollo), cotizacion: s.cotizacion, nota: s.observaciones,
+      }));
+      imprimirTrasladosPorSalir(ventana, filas, hoy());
+    } catch {
+      ventana.close();
+      setAvisoImpresion("No se pudo cargar lo que está por despachar.");
+    }
+  }
+  async function imprimirFiltrado() {
+    const ventana = ventanaParaImprimir();
+    if (!ventana) return;
+    try {
+      const movimientos = await r.traerTodoLoFiltrado();
+      const filas: FilaTraslado[] = movimientos.map((m) => ({
+        fecha: formatearFechaColombia(m.fecha), origen: nombreBodega(m.bodegaOrigenId) || "Admin Inventario",
+        destino: nombreBodega(m.bodegaDestinoId) || "—", producto: `${m.productoCodigo} — ${m.productoDescripcion}`,
+        rollo: m.identificadorRollo, empresa: m.empresaExterna, cantidad: cantidad(m.cantidad, Boolean(m.identificadorRollo)),
+        cotizacion: m.cotizacion, nota: m.observaciones,
+      }));
+      const f = r.filtros;
+      const filtro = [
+        f.bodegaId ? `Bodega: ${nombreBodega(Number(f.bodegaId))}` : todasLasBodegas ? "Todas las bodegas" : sesion?.bodegaNombre || "",
+        f.tipo ? `Tipo: ${ETIQUETAS_TIPO[f.tipo] || f.tipo}` : "",
+        f.codigoProducto ? `Producto: ${f.codigoProducto}` : "", f.codigoRollo ? `Rollo: ${f.codigoRollo}` : "",
+        f.cotizacion ? `Cotización: ${f.cotizacion}` : "",
+        f.fechaDesde || f.fechaHasta ? `Fechas: ${f.fechaDesde || "…"} a ${f.fechaHasta || "…"}` : "",
+      ].filter(Boolean).join(" · ");
+      imprimirTrasladosFiltrados(ventana, filas, filtro, hoy());
+    } catch {
+      ventana.close();
+      setAvisoImpresion("No se pudieron cargar los traslados para imprimir.");
+    }
+  }
 
   return (
     <div className="layout-con-sidebar">
@@ -200,7 +257,20 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
               >
                 📥 Exportar a Excel
               </button>
+              {traslados && (
+                <>
+                  <button className="reportes-boton-secundario" onClick={imprimirPorSalir}
+                    title="Lo que ya se aceptó trasladar y todavía no ha salido, por bodega de origen → destino">
+                    🖨️ Imprimir lo que está por salir
+                  </button>
+                  <button className="reportes-boton-secundario" onClick={imprimirFiltrado}
+                    title="Todos los traslados de este filtro (no solo la página que se ve)">
+                    🖨️ Imprimir lo filtrado
+                  </button>
+                </>
+              )}
             </div>
+            {avisoImpresion && <p className="reportes-error">{avisoImpresion}</p>}
           </section>
 
           {/* ================== TABLA DE MOVIMIENTOS ================== */}
