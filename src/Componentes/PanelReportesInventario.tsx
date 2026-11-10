@@ -28,6 +28,18 @@ const numero = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 const nombreEmpresa = (sigla: string) => EMPRESAS[sigla] || sigla || "Sin empresa";
 const ETIQUETAS_ESTADO: Record<string, string> = { cerrado: "Sin usar", abierto: "Empezado", agotado: "Agotado", en_camino: "En camino" };
 
+// Color de una fila: el del rollo, o el que dice la descripción del producto
+// ("UPVC TEJA COLONIAL TERRACOTA - 3,72" → TERRACOTA). "" si no dice ninguno.
+const COLORES = ["ROJO", "AZUL", "BLANCO", "TERRACOTA", "VERDE", "NEGRO", "GRIS", "PLATEADO", "GALVANIZADO",
+  "AMARILLO", "NARANJA", "CAFE", "MADERA", "BEIGE", "CREMA", "TRANSPARENTE", "TRANSLUCIDO", "CRISTAL", "BRONCE"];
+const sinTildes = (texto: string) => texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+function colorDe(f: { descripcion: string; color?: string }) {
+  if (f.color?.trim()) return sinTildes(f.color.trim());
+  const palabras = sinTildes(f.descripcion).split(/[^A-Z]+/);
+  return COLORES.find((c) => palabras.includes(c)) || "";
+}
+const nombreColor = (color: string) => color.charAt(0) + color.slice(1).toLowerCase();
+
 // "17ABG" → "Importación 17 (Asia Business)"; un Lote escrito a mano se muestra tal cual.
 export function nombreImportacion(clave: string) {
   if (!clave) return "Sin número de importación";
@@ -67,6 +79,7 @@ export function ReporteInventarioPorTipo() {
   const [empresa, setEmpresa] = useState("");
   const [bodega, setBodega] = useState("");
   const [buscar, setBuscar] = useState("");
+  const [color, setColor] = useState("");
   const [codigoAbierto, setCodigoAbierto] = useState<string | null>(null);
 
   const familias = useMemo(() => [...new Set(productos.map((p) => p.familia))].sort(), [productos]);
@@ -78,11 +91,18 @@ export function ReporteInventarioPorTipo() {
     return [...nombres].sort((a, b) => (a === SIN_BODEGA ? 1 : b === SIN_BODEGA ? -1 : a.localeCompare(b)));
   }, [esRollos, rollosEnInventario, productos]);
 
+  // Los colores que hay en el tipo escogido (rollos o productos de ese tipo).
+  const coloresDisponibles = useMemo(() => {
+    const filas = esRollos ? rollosEnInventario
+      : productos.filter((p) => !tipo || (tipo === TODO_UPVC ? p.familia.includes("UPVC") : p.familia === tipo));
+    return [...new Set(filas.map(colorDe).filter(Boolean))].sort();
+  }, [esRollos, rollosEnInventario, productos, tipo]);
+
   const termino = buscar.trim().toUpperCase();
-  const coincide = useMemo(() => (f: { codigo: string; descripcion: string; empresa: string; bodega: string }) =>
-    (!empresa || f.empresa === empresa) && (!bodega || f.bodega === bodega)
+  const coincide = useMemo(() => (f: { codigo: string; descripcion: string; empresa: string; bodega: string; color?: string }) =>
+    (!empresa || f.empresa === empresa) && (!bodega || f.bodega === bodega) && (!color || colorDe(f) === color)
     && (!termino || f.codigo.toUpperCase().includes(termino) || f.descripcion.toUpperCase().includes(termino)),
-  [empresa, bodega, termino]);
+  [empresa, bodega, color, termino]);
 
   const productosFiltrados = useMemo(() => productos.filter((p) =>
     (!tipo || (tipo === TODO_UPVC ? p.familia.includes("UPVC") : p.familia === tipo)) && coincide(p)),
@@ -125,7 +145,7 @@ export function ReporteInventarioPorTipo() {
   const nombreTipo = esRollos ? "Rollos de lámina" : tipo === TODO_UPVC ? "Todo UPVC" : tipo || "Todos los productos";
 
   function exportar() {
-    const sufijo = [nombreTipo, empresa && nombreEmpresa(empresa), bodega].filter(Boolean).join(" - ");
+    const sufijo = [nombreTipo, empresa && nombreEmpresa(empresa), bodega, color && nombreColor(color)].filter(Boolean).join(" - ");
     if (esRollos) {
       exportarHojasAExcel([
         { nombre: "Resumen por código", filas: filasRollos.map((g) => ({
@@ -156,7 +176,7 @@ export function ReporteInventarioPorTipo() {
   const totalUnidades = filasProductos.reduce((s, g) => s + g.total, 0);
   const totalMetros = filasRollos.reduce((s, g) => s + g.metros, 0);
   const totalKilos = filasRollos.reduce((s, g) => s + g.kilos, 0);
-  const hayFiltros = Boolean(tipo || empresa || bodega || buscar);
+  const hayFiltros = Boolean(tipo || empresa || bodega || color || buscar);
 
   return (
     <>
@@ -165,7 +185,7 @@ export function ReporteInventarioPorTipo() {
         <div className="reportes-filtros-grid">
           <div>
             <label htmlFor="rep-tipo">Tipo de producto</label>
-            <select id="rep-tipo" value={tipo} onChange={(e) => { setTipo(e.target.value); setBodega(""); }}>
+            <select id="rep-tipo" value={tipo} onChange={(e) => { setTipo(e.target.value); setBodega(""); setColor(""); }}>
               <option value="">Todos los productos</option>
               <option value={TODO_UPVC}>Todo UPVC</option>
               <option value={ROLLOS}>Rollos de lámina</option>
@@ -189,13 +209,20 @@ export function ReporteInventarioPorTipo() {
             </select>
           </div>
           <div>
+            <label htmlFor="rep-color">Color</label>
+            <select id="rep-color" value={color} onChange={(e) => setColor(e.target.value)}>
+              <option value="">Todos</option>
+              {coloresDisponibles.map((c) => <option key={c} value={c}>{nombreColor(c)}</option>)}
+            </select>
+          </div>
+          <div>
             <label htmlFor="rep-buscar">Buscar código o descripción</label>
             <input id="rep-buscar" type="text" value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Ej. LR30020 o TORNILLO" />
           </div>
         </div>
         <div style={{ display: "flex", gap: "12px", marginTop: "12px", flexWrap: "wrap" }}>
           {hayFiltros && (
-            <button type="button" className="reportes-boton-secundario" onClick={() => { setTipo(""); setEmpresa(""); setBodega(""); setBuscar(""); }}>
+            <button type="button" className="reportes-boton-secundario" onClick={() => { setTipo(""); setEmpresa(""); setBodega(""); setColor(""); setBuscar(""); }}>
               Limpiar filtros
             </button>
           )}
@@ -207,7 +234,7 @@ export function ReporteInventarioPorTipo() {
       </section>
 
       <section className="reportes-tarjeta">
-        <h2>{nombreTipo}{empresa ? ` · ${nombreEmpresa(empresa)}` : ""}{bodega ? ` · ${bodega}` : ""}</h2>
+        <h2>{nombreTipo}{empresa ? ` · ${nombreEmpresa(empresa)}` : ""}{bodega ? ` · ${bodega}` : ""}{color ? ` · ${nombreColor(color)}` : ""}</h2>
         {cargando ? <p className="reportes-vacio">Cargando...</p>
           : error ? <p className="reportes-error">{error}</p>
           : (esRollos ? filasRollos.length === 0 : filasProductos.length === 0) ? <p className="reportes-vacio">No hay existencias con estos filtros.</p>
