@@ -369,12 +369,14 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     return formulario.items[indice]?.bodegaId || formulario.bodegaId;
   }
 
-  // Cambiar la bodega de UNA línea: su producto de stock y su disponibilidad
-  // eran de la otra bodega; la de rollo se vuelve a consultar en la nueva.
-  // `conservar` ("Despachar desde ..."): el mismo producto de stock sale de
-  // la otra bodega (el backend usa su fila allá).
-  function cambiarBodegaItem(indice: number, bodegaId: string, conservar = false) {
+  // Cambiar la bodega de UNA línea: el mismo producto de stock sale de la
+  // otra bodega (el backend usa su fila allá, ver producto_en_bodega) y solo
+  // se vuelve a consultar cuánto hay; la de rollo también se vuelve a
+  // consultar en la nueva. El rollo completo escogido sí se borra: ese rollo
+  // está en la bodega anterior.
+  function cambiarBodegaItem(indice: number, bodegaId: string, conservarSiempre = false) {
     const item = formulario.items[indice];
+    const conservar = conservarSiempre || (item?.modalidad === "por_stock" && Boolean(item.productoId));
     setFormulario((actual) => ({
       ...actual,
       items: actual.items.map((it, i) => (i === indice
