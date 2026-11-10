@@ -232,6 +232,16 @@ def datos_para_imprimir(ids: str = Query(..., description="ids de las partes de 
     siigo_cotizacion.cantidad_sugerida) y el nombre del vendedor en Siigo."""
     numeros = [int(i) for i in ids.split(",") if i.strip().isdigit()]
     partes = db.query(Apartado).options(selectinload(Apartado.items)).filter(Apartado.id.in_(numeros)).all()
+    # Una bodega solo ve SU parte de la cotización: la hoja lleva también las
+    # partes de las otras bodegas (mismo número, sin anular), para que salga
+    # completa sin importar quién la imprima.
+    cotizaciones = {p.numero_cotizacion for p in partes if p.numero_cotizacion}
+    otras = (
+        db.query(Apartado).options(selectinload(Apartado.items), joinedload(Apartado.bodega))
+        .filter(Apartado.numero_cotizacion.in_(cotizaciones), Apartado.id.notin_(numeros),
+                Apartado.estado != EstadoApartado.CANCELADO).all()
+    ) if cotizaciones else []
+    partes += otras
     kilos, sin_peso = 0.0, 0
     for parte in partes:
         for item in parte.items:
@@ -247,7 +257,8 @@ def datos_para_imprimir(ids: str = Query(..., description="ids de las partes de 
     con_vendedor = next((p for p in partes if p.siigo_vendedor), None)
     if con_vendedor is not None and siigo.esta_configurada(con_vendedor.empresa):
         vendedor = siigo.nombre_vendedor(con_vendedor.empresa, con_vendedor.siigo_vendedor)
-    return {"kilos": round(kilos, 2), "lineas_sin_peso": sin_peso, "vendedor": vendedor}
+    return {"kilos": round(kilos, 2), "lineas_sin_peso": sin_peso, "vendedor": vendedor,
+            "otras_partes": [ApartadoResponse.model_validate(p).model_dump(mode="json") for p in _con_faltantes(db, otras)]}
 
 
 @router.post("/importar", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])

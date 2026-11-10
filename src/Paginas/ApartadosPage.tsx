@@ -17,6 +17,7 @@ import { calcularSolicitudesPendientes, calcularStockParaAlistar, metrosDeLinea,
 import "../Style/Inventario.css";
 import { AvisoSiigoCotizacion, CampoSiigoCliente, CamposSiigoLinea, ImpuestosSiigo, ResumenSiigo } from "../Componentes/SiigoCotizacion";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
+import { apartadoDesdeApi } from "../Componentes/Mapeo";
 import { api } from "../Componentes/Api";
 import { abrirVentanaImpresion, imprimirCotizacion } from "../Utils/imprimirCotizacion";
 
@@ -524,9 +525,18 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       setMensajeInformativo("El navegador bloqueó la ventana para imprimir: permite las ventanas emergentes de esta página.");
       return;
     }
+    let extra = { kilos: 0, lineas_sin_peso: 0, vendedor: "", otras_partes: [] as Record<string, unknown>[] };
+    try {
+      extra = (await api.get<typeof extra>(`/apartados/impresion?ids=${grupo.map((p) => p.id).join(",")}`)) || extra;
+    } catch {
+      // Sin kilos ni vendedor de Siigo: la hoja sale igual.
+    }
+    // Las partes de otras bodegas que esta lista no muestra (una bodega solo
+    // ve la suya): la hoja sale con la cotización completa.
+    const partes = [...grupo, ...(extra.otras_partes || []).map(apartadoDesdeApi) as ApartadoDeLista[]].sort((x, y) => x.id - y.id);
     const ap = grupo[0];
-    const variasBodegas = grupo.length > 1;
-    const lineas = grupo.flatMap((parte) => parte.items.map((it) => ({ parte, it })))
+    const variasBodegas = partes.length > 1;
+    const lineas = partes.flatMap((parte) => parte.items.map((it) => ({ parte, it })))
       .sort((x, y) => x.it.id - y.it.id)
       .map(({ parte, it }) => {
         const codigo = it.productoCodigo || "";
@@ -540,19 +550,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         ].filter(Boolean).join(" · ");
         return { descripcion, detalle };
       });
-    let extra = { kilos: 0, lineas_sin_peso: 0, vendedor: "" };
-    try {
-      extra = (await api.get<typeof extra>(`/apartados/impresion?ids=${grupo.map((p) => p.id).join(",")}`)) || extra;
-    } catch {
-      // Sin kilos ni vendedor de Siigo: la hoja sale igual.
-    }
     imprimirCotizacion(ventana, {
       numero: ap.siigoNumero || ap.numeroCotizacion,
       empresa: (EMPRESAS[ap.empresa] || ap.empresa || "").toUpperCase(),
       cliente: ap.cliente,
       fecha: formatearFechaColombia(ap.fechaCreacion, false),
       vendedor: extra.vendedor || ap.creadoPor,
-      bodegas: grupo.map((p) => p.bodegaNombre).filter(Boolean).join(" + "),
+      bodegas: [...new Set(partes.map((p) => p.bodegaNombre).filter(Boolean))].join(" + "),
       lineas, kilos: extra.kilos, lineasSinPeso: extra.lineas_sin_peso,
     });
   }
