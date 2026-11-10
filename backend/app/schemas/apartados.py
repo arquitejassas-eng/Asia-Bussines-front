@@ -342,6 +342,9 @@ class ApartadoResponse(ModeloConFechasUtc):
     items: list[ApartadoItemResponse] = []
     # Lo que todavía no ha llegado a la bodega (ej. "faltan 200 m de LA50170,50").
     faltantes: list[str] = []
+    # Todo lo que falta ya viene en camino hacia la bodega (traslado
+    # despachado, importación o por repartir): se puede enviar a producción.
+    faltantes_en_camino: bool = False
     # Otras partes activas de la misma cotización: "SANTANDER", "3811-AR (RICAURTE)".
     otras_partes: list[str] = []
     cliente_identificacion: str = ""

@@ -649,6 +649,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           <ul>
             {ap.faltantes.map((f) => <li key={f}>{f.replace(/^faltan /, "")}</li>)}
           </ul>
+          {ap.faltantesEnCamino && <p>🚚 Ya viene en camino: puedes enviarla a producción y Planta la produce cuando llegue.</p>}
         </div>
       )}
       </>
@@ -678,8 +679,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       <>
       {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
         <button
-          disabled={ap.faltantes.length > 0}
-          title={ap.faltantes.length ? "Esperando material: se habilita cuando le des ingreso" : undefined}
+          disabled={ap.faltantes.length > 0 && !ap.faltantesEnCamino}
+          title={ap.faltantes.length ? (ap.faltantesEnCamino ? "El material que falta ya viene en camino"
+            : "Esperando material: se habilita cuando le des ingreso o cuando ya venga en camino") : undefined}
           onClick={() => confirmarEnvioAProduccion(ap)}
         >Enviar a producción</button>
       )}
@@ -754,7 +756,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const numero = grupo[0].numeroCotizacion;
     const activas = grupo.filter((parte) => ESTADOS_CANCELABLES.includes(parte.estado));
     const porEnviar = grupo.filter((parte) => parte.estado === "apartado");
-    const esperando = porEnviar.some((parte) => parte.faltantes.length > 0);
+    const esperando = porEnviar.some((parte) => parte.faltantes.length > 0 && !parte.faltantesEnCamino);
     const conSalida = activas.filter((parte) => !parte.ordenInterna);
     const separables = grupo.filter((parte) => !parte.ordenInterna && (parte.items.length > 1 || (parte.items[0]?.cantidad ?? 0) > 1)
       && (ESTADOS_CANCELABLES.includes(parte.estado) || parte.estado === "produccion_terminada"));
@@ -777,7 +779,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       {a.puedeEnviarAProduccion && porEnviar.length > 0 && (
         <button
           disabled={esperando}
-          title={esperando ? "Esperando material: se habilita cuando le des ingreso" : undefined}
+          title={esperando ? "Esperando material: se habilita cuando le des ingreso o cuando ya venga en camino" : undefined}
           onClick={() => setConfirmacion({
             titulo: `¿Enviar ${numero} a producción?`,
             mensaje: `Planta verá esta cotización como pendiente de producir (${porEnviar.map((p) => p.bodegaNombre).join(" y ")}).`,

@@ -307,12 +307,15 @@ def faltantes_apartado(db: Session, apartado: Apartado) -> list[str]:
     return faltantes_de_apartados(db, [apartado]).get(apartado.id, [])
 
 
-def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, list[str]]:
+def faltantes_de_apartados(db: Session, apartados: list[Apartado],
+                           detalle: dict[int, list[tuple[str, str, float, bool]]] | None = None) -> dict[int, list[str]]:
     """Lo mismo que faltantes_apartado, pero para una lista entera con pocas
     consultas: la cobertura de cada (bodega, código) se calcula UNA vez (una
     consulta para los metros físicos y otra para las reservas activas), no por
     cada cotización. Con la base remota (Supabase) cada consulta cuesta, y la
-    lista de Apartados se volvía eterna con unas decenas de cotizaciones."""
+    lista de Apartados se volvía eterna con unas decenas de cotizaciones.
+    Con `detalle`, anota por apartado cada faltante como (código, empresa,
+    cuánto falta, es de rollo) para ver si ya viene en camino."""
     activos = [a for a in apartados if a.estado in ESTADOS_RESERVA_ACTIVA]
     resultado: dict[int, list[str]] = {}
     if not activos:
@@ -384,6 +387,8 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
                     coberturas_producto[producto.id] = cobertura_producto(db, producto=producto)
                 falta = round(item.cantidad - coberturas_producto[producto.id].get(item.id, 0), 2)
                 if falta > 0.005:
+                    if detalle is not None:
+                        detalle.setdefault(apartado.id, []).append((producto.codigo, producto.empresa or "", falta, False))
                     clave_p = (producto.id, apartado.bodega_id)
                     if clave_p not in donde_producto:
                         donde_producto[clave_p] = disponible_empresa_producto(db, producto=producto, bodega_despacho=apartado.bodega_id)[1]
@@ -394,6 +399,8 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
                 clave = (apartado.bodega_id, item.codigo_interno, item.empresa_de_linea)
                 falta = round(pendiente - coberturas.get(clave, {}).get(item.id, 0), 2)
                 if falta > 0.005:
+                    if detalle is not None:
+                        detalle.setdefault(apartado.id, []).append((item.codigo_interno, item.empresa_de_linea or "", falta, True))
                     # Lugar en la lista para que el orden de los avisos no cambie.
                     resultado[apartado.id].append("")
                     pendientes.append((apartado.id, item.codigo_interno, falta, item.empresa_de_linea or "", apartado.bodega_id))
@@ -410,6 +417,59 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado]) -> dict[int, 
             lista = resultado[apartado_id]
             lista[lista.index("")] = f"faltan {falta:g} m de {codigo}" + (f" (hay en {_texto_donde(donde, ' m')})" if donde else "")
     return resultado
+
+
+def _cuanto_viene_hacia(db: Session, bodega_id: int, codigo: str, empresa: str, es_rollo: bool) -> float:
+    """Lo que de un código ya viene en camino hacia una bodega: los traslados
+    ya despachados hacia ella y, para la lámina, lo comprado que viene en
+    camino y lo que Admin Inventario tiene por repartir (incluye sus envíos
+    sin confirmar: el rollo sigue sin bodega hasta que lo reciben)."""
+    from app.models.envio import Envio, EnvioItem, EstadoEnvio
+    from app.models.solicitud import EstadoSolicitud, Solicitud
+    empresa = "" if empresa == AMBAS_EMPRESAS else empresa
+    traslados = db.query(func.coalesce(func.sum(Solicitud.cantidad), 0)).filter(
+        Solicitud.estado == EstadoSolicitud.DESPACHADA, Solicitud.bodega_solicitante_id == bodega_id,
+        Solicitud.producto_codigo == codigo,
+        Solicitud.rollo_id.isnot(None) if es_rollo else Solicitud.rollo_id.is_(None))
+    if empresa:
+        traslados = traslados.filter(Solicitud.empresa == empresa)
+    total = float(traslados.scalar() or 0)
+    if es_rollo:
+        total += metros_en_camino_codigo(db, codigo_interno=codigo, empresa=empresa)
+        total += metros_por_repartir_codigo(db, codigo_interno=codigo, empresa=empresa)
+    else:
+        envios = (
+            db.query(func.coalesce(func.sum(EnvioItem.cantidad), 0)).join(Envio, Envio.id == EnvioItem.envio_id)
+            .filter(Envio.estado == EstadoEnvio.PENDIENTE_CONFIRMACION, Envio.bodega_destino_id == bodega_id,
+                    EnvioItem.rollo_id.is_(None), EnvioItem.producto_codigo == codigo)
+        )
+        if empresa:
+            envios = envios.filter(EnvioItem.empresa == empresa)
+        total += float(envios.scalar() or 0)
+    return round(total, 2)
+
+
+def faltantes_que_no_vienen(db: Session, apartados: list[Apartado]) -> tuple[dict[int, list[str]], dict[int, list[str]]]:
+    """(faltantes, lo que de eso NO viene en camino) por apartado. Una
+    cotización que solo espera material que ya viene se puede enviar a
+    producción: Planta la produce cuando llegue."""
+    detalle: dict[int, list[tuple[str, str, float, bool]]] = {}
+    faltantes = faltantes_de_apartados(db, apartados, detalle)
+    bodega_de = {a.id: a.bodega_id for a in apartados}
+    viene: dict[tuple, float] = {}
+    sin_camino: dict[int, list[str]] = {}
+    for apartado_id, lineas in detalle.items():
+        por_codigo: dict[tuple, float] = {}
+        for codigo, empresa, falta, es_rollo in lineas:
+            por_codigo[(codigo, empresa, es_rollo)] = por_codigo.get((codigo, empresa, es_rollo), 0.0) + falta
+        for (codigo, empresa, es_rollo), falta in por_codigo.items():
+            clave = (bodega_de[apartado_id], codigo, empresa, es_rollo)
+            if clave not in viene:
+                viene[clave] = _cuanto_viene_hacia(db, *clave)
+            if viene[clave] + 0.005 < falta:
+                sin_camino.setdefault(apartado_id, []).append(
+                    f"faltan {round(falta - viene[clave], 2):g}{' m' if es_rollo else ''} de {codigo} que no vienen en camino")
+    return faltantes, sin_camino
 
 
 def _libre_por_bodega_codigos(db: Session, claves: set[tuple[str, str]]) -> dict[tuple[str, str], dict[int, float]]:
@@ -1920,11 +1980,14 @@ def enviar_a_produccion(db: Session, apartado_id: int, usuario: Usuario) -> Apar
     # Un rollo completo también pasa por Planta (alistan el rollo); las
     # creadas antes de esto quedaban "por dar salida" sin poder enviarse.
     apartado.salida_pendiente = False
-    faltantes = faltantes_apartado(db, apartado)
-    if faltantes:
+    # Si lo que falta ya viene en camino hacia la bodega, se puede enviar:
+    # Planta la produce cuando llegue.
+    _, sin_camino = faltantes_que_no_vienen(db, [apartado])
+    if sin_camino.get(apartado.id):
         raise HTTPException(
             status_code=400,
-            detail=f"Esperando material: {'; '.join(faltantes)}. Se podrá enviar a producción cuando le des ingreso a ese material.",
+            detail=f"Esperando material: {'; '.join(sin_camino[apartado.id])}. Se podrá enviar a producción cuando "
+            "le des ingreso a ese material o cuando ya venga en camino (traslado despachado o importación).",
         )
     apartado.estado = EstadoApartado.ENVIADO_A_PRODUCCION
     apartado.enviado_a_produccion_por = usuario.correo

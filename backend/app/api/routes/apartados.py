@@ -31,10 +31,12 @@ router = APIRouter(prefix="/apartados", tags=["Apartados"])
 
 def _con_faltantes(db: Session, apartados: list[Apartado]) -> list[Apartado]:
     """Anota en cada apartado lo que le falta por llegar (material en camino)."""
-    faltantes = srv.faltantes_de_apartados(db, apartados)
+    faltantes, sin_camino = srv.faltantes_que_no_vienen(db, apartados)
     partes = srv.otras_partes(db, apartados)
     for apartado in apartados:
         apartado.faltantes = faltantes.get(apartado.id, [])
+        # Todo lo que falta ya viene en camino: se puede enviar a producción.
+        apartado.faltantes_en_camino = bool(apartado.faltantes) and not sin_camino.get(apartado.id)
         apartado.otras_partes = partes.get(apartado.id, [])
     return apartados
 

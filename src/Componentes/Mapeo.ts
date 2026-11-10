@@ -156,6 +156,8 @@ export function apartadoDesdeApi(a: RegistroApi) {
     stockSeparadoEn: a.stock_separado_en == null ? null : texto(a.stock_separado_en),
     // Lo que todavía no llega a la bodega (material en camino).
     faltantes: Array.isArray(a.faltantes) ? a.faltantes.map(texto) : [],
+    // Todo lo que falta ya viene en camino: se puede enviar a producción.
+    faltantesEnCamino: Boolean(a.faltantes_en_camino),
     // Otras partes activas de la misma cotización ("SANTANDER", "3811-AR (RICAURTE)").
     otrasPartes: Array.isArray(a.otras_partes) ? a.otras_partes.map(texto) : [],
     // Siigo: cédula/NIT del cliente y, si ya se subió, su número y total allá.

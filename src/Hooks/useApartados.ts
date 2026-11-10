@@ -95,7 +95,7 @@ type Apartado = {
   fechaCreacion: string; estado: string; enviadoAProduccionPor: string; fechaEnviadoAProduccion: string | null;
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
   stockSeparadoConfirmado: boolean; stockSeparadoPor: string; stockSeparadoEn: string | null;
-  faltantes: string[]; otrasPartes: string[]; items: ApartadoItem[];
+  faltantes: string[]; faltantesEnCamino: boolean; otrasPartes: string[]; items: ApartadoItem[];
   clienteIdentificacion: string; siigoId: string; siigoNumero: string; siigoTotal: number | null;
   siigoIva: boolean; siigoRetefuente: boolean; siigoVendedor: number | null; siigoCentroCosto: number | null;
   siigoPendiente: boolean; siigoError: string;
