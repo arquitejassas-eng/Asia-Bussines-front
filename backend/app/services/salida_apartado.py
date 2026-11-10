@@ -29,6 +29,7 @@ from app.services.apartados import (
 from app.services.envios import envio_pendiente_del_rollo
 from app.services.prestamos import LAMINA, PRODUCTO, registrar_prestamo
 from app.services.transferencias import traslado_en_curso_del_rollo
+from app.services.venta_entre_empresas import pasar_producto_a_compradora, pasar_rollo_a_compradora
 
 TOLERANCIA = 0.005
 
@@ -107,6 +108,10 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
             rollos_codigo=rollos_codigo, metros_reserva_propia=min(metros, pendiente), apartado_item_id=item.id,
             empresa=rollo.empresa or "",
         )
+        if item.rollo_id and pasar_rollo_a_compradora(db, apartado=apartado, rollo=rollo, usuario=usuario, fecha=ahora):
+            # Se lo vendió a la otra empresa: el rollo se queda en la bodega, de la que compra.
+            item.metros_consumidos = round((item.metros_consumidos or 0) + min(metros, pendiente), 2)
+            continue
         restante = round(rollo.metros_disponibles - metros, 2)
         rollo.metros_disponibles = 0.0 if restante < TOLERANCIA else restante
         rollo.metros_consumidos = round(rollo.metros_consumidos + metros, 2)
@@ -159,6 +164,7 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
         ))
         registrar_prestamo(db, apartado=apartado, empresa_material=producto.empresa, tipo=PRODUCTO, codigo=producto.codigo,
                            descripcion=producto.descripcion, cantidad=item.cantidad, usuario=usuario, origen="salida", fecha=ahora)
+        pasar_producto_a_compradora(db, apartado=apartado, producto=producto, cantidad=item.cantidad, usuario=usuario, fecha=ahora)
 
     completa = all(
         (it.stock_descontado if it.modalidad == ModalidadApartado.POR_STOCK

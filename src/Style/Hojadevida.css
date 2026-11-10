@@ -326,3 +326,125 @@
   padding: 0.15rem 0.6rem;
   font-size: 0.75rem;
 }
+
+/* ── Lectura de la tabla (rediseño) ───────────────────────────────────────
+   Menos columnas: cotización + cliente y producto + modelo/medida van
+   apilados en una celda, y los textos largos parten en dos líneas en vez de
+   obligar a correr la tabla de lado. Las cotizaciones con varias
+   producciones se ven como un grupo (franja a la izquierda) y su detalle
+   cuelga de ella con una rama, sin bajar el contraste del texto. */
+.hv-tabla { min-width: 960px; }
+.hv-tabla tbody tr:nth-child(even) { background: transparent; }
+.hv-tabla tbody td { vertical-align: top; padding: 0.8rem 0.9rem; line-height: 1.4; }
+.hv-tabla thead th { padding: 0.75rem 0.9rem; }
+
+.hv-oculto {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+.hv-sub {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+  font-weight: 400;
+  color: var(--at-muted, #7C6A56);
+}
+
+.hv-tenue { color: var(--at-muted, #7C6A56); font-size: 0.78rem; }
+
+.hv-tabla tbody td.hv-col-cotizacion { white-space: normal; min-width: 170px; max-width: 230px; }
+.hv-tabla tbody td.hv-col-producto { white-space: normal; min-width: 240px; max-width: 360px; }
+.hv-tabla tbody td.hv-col-rollo { white-space: normal; max-width: 190px; }
+.hv-tabla tbody td.hv-responsable { white-space: normal; }
+
+.hv-cotizacion {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--at-text, #251C14);
+}
+
+.hv-producto { font-weight: 600; color: var(--at-text, #251C14); }
+
+.hv-cantidad {
+  font-weight: 700;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.hv-bodega { font-weight: 600; }
+
+.hv-etiqueta-stock {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(183, 69, 31, 0.1);
+  color: var(--at-terra, #B7451F);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+.hv-codigo { font-size: 0.76rem; font-weight: 600; }
+.hv-codigo-rollo { white-space: normal; }
+
+/* Columna angosta del botón de desplegar / rama del detalle */
+.hv-tabla .hv-col-toggle { width: 44px; padding-left: 0.6rem; padding-right: 0; }
+
+.hv-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--at-border, #E1D5C0);
+  background: var(--at-surface, #FFFFFF);
+  color: var(--at-terra, #B7451F);
+  cursor: pointer;
+}
+.hv-toggle:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 2px; }
+
+.hv-chevron {
+  display: inline-block;
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: transform var(--hv-transition);
+}
+.hv-abierta .hv-chevron { transform: rotate(90deg); }
+
+/* Fila de grupo: una cotización con varias producciones */
+.hv-tabla tbody tr.hv-fila-grupo { cursor: pointer; background: var(--at-surface, #FFFFFF); }
+.hv-tabla tbody tr.hv-fila-grupo > td:first-child { box-shadow: inset 4px 0 0 var(--at-terra, #B7451F); }
+.hv-tabla tbody tr.hv-fila-grupo.hv-abierta { background: rgba(183, 69, 31, 0.06); }
+.hv-tabla tbody tr.hv-fila-grupo.hv-abierta > td { border-bottom-color: transparent; }
+
+.hv-badge {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: var(--at-surface-2, #F1E9DC);
+  color: var(--at-text-2, #4A392C);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+/* Detalle de un grupo: fondo suave y una rama que lo une a su cotización */
+.hv-tabla tbody tr.hv-fila-detalle { background: #FBF7F1; }
+.hv-tabla tbody tr.hv-fila-detalle > td:first-child { box-shadow: inset 4px 0 0 rgba(183, 69, 31, 0.35); }
+.hv-rama {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 0.15rem 0 0 0.6rem;
+  border-left: 2px solid var(--at-border, #D9C9B0);
+  border-bottom: 2px solid var(--at-border, #D9C9B0);
+  border-bottom-left-radius: 6px;
+}
+
+@media print {
+  .hv-toggle { display: none; }
+}

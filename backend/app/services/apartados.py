@@ -38,6 +38,7 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.services.material_en_camino import metros_en_camino_codigo, metros_por_repartir_codigo
+from app.services.venta_entre_empresas import pasar_producto_a_compradora
 from app.services.prestamos import PRODUCTO, registrar_prestamo
 from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.services.productos import nuevo_producto_en_bodega
@@ -1628,6 +1629,7 @@ def sacar_sin_existencia(
     item.stock_descontado = True
     registrar_prestamo(db, apartado=apartado, empresa_material=producto.empresa, tipo=PRODUCTO, codigo=producto.codigo,
                        descripcion=producto.descripcion, cantidad=item.cantidad, usuario=usuario, origen=origen, fecha=ahora)
+    pasar_producto_a_compradora(db, apartado=apartado, producto=producto, cantidad=item.cantidad, usuario=usuario, fecha=ahora)
 
 
 def _partir_linea(item: ApartadoItem, cantidad: float, nueva_id: int) -> ApartadoItem:
@@ -2079,6 +2081,7 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
         registrar_prestamo(db, apartado=apartado, empresa_material=producto.empresa, tipo=PRODUCTO, codigo=producto.codigo,
                            descripcion=producto.descripcion, cantidad=item.cantidad, usuario=usuario,
                            origen="fin_produccion", fecha=ahora)
+        pasar_producto_a_compradora(db, apartado=apartado, producto=producto, cantidad=item.cantidad, usuario=usuario, fecha=ahora)
 
     if rollos_completos_sin_salida:
         # Planta terminó, pero falta darle salida al rollo completo: la

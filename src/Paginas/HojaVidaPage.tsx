@@ -72,73 +72,67 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
     return nuevas;
   });
 
-  const estiloDetalle = { opacity: 0.85, fontSize: "0.92em" };
-  const filasDeProduccion = (prod: ProduccionRegistro, esDetalle = false) => [
-    <tr key={prod.id} style={esDetalle ? estiloDetalle : undefined}>
-      {esAdminInventario && <td>{nombreBodega(prod.bodegaId)}</td>}
-      <td style={esDetalle ? { paddingLeft: "1.6rem" } : undefined}>
-        {esDetalle && "└ "}<span className="hv-codigo">{prod.codigoUnico}</span>
+  // Cada fila se lee de izquierda a derecha como "cuándo · para quién · qué
+  // se hizo · con qué material": lo que más se busca va primero y el código
+  // de producción (solo para rastrear) queda al final.
+  const segundaLinea = (...partes: (string | number | undefined)[]) => unicos(partes).join(" · ");
+
+  const celdasDeProduccion = (fila: {
+    fecha: string; cotizacion?: string; cliente?: string; producto: string; detalle: string; cantidad: number | string;
+    rollos: string; metros: number | string | null; saldo: string; responsable: string; codigo: string;
+    observaciones?: string; esStock?: boolean; prod?: ProduccionRegistro; esDetalle: boolean; bodegaId: number;
+  }) => (
+    <>
+      <td className="hv-col-toggle" aria-hidden="true">{fila.esDetalle ? <span className="hv-rama" /> : null}</td>
+      {esAdminInventario && <td className="hv-bodega">{nombreBodega(fila.bodegaId)}</td>}
+      <td className="hv-fecha">{formatearFechaColombia(fila.fecha, false)}</td>
+      <td className="hv-col-cotizacion">
+        {fila.esDetalle && !fila.esStock ? <span className="hv-tenue">Misma cotización</span> : (
+          <>
+            <span className={fila.esStock ? "hv-etiqueta-stock" : "hv-cotizacion"}>{fila.cotizacion || "—"}</span>
+            {fila.cliente && fila.cliente !== "-" && <span className="hv-sub">{fila.cliente}</span>}
+          </>
+        )}
       </td>
-
-      <td>{prod.cotizacion || "—"}</td>
-      <td>{prod.clienteApartado || "—"}</td>
-
-      <td className="hv-fecha">
-        {formatearFechaColombia(prod.fecha, false)}
+      <td className="hv-col-producto">
+        <span className="hv-producto">{fila.producto || "—"}</span>
+        {fila.detalle && <span className="hv-sub">{fila.detalle}</span>}
       </td>
-
-      <td>{prod.responsable}</td>
-      <td>{prod.productoFabricado}</td>
-      <td>{prod.modelo}</td>
-      <td>{prod.medidaProducto}</td>
-      <td className="num">{prod.cantidadProductos}</td>
-
-      <td>
-        <span className="hv-codigo-rollo">
-          {prod.rollosUtilizados.map((r) => r.identificadorRollo).join(", ")}
-        </span>
-      </td>
-
+      <td className="num hv-cantidad">{fila.cantidad}</td>
+      <td className="hv-col-rollo">{fila.rollos ? <span className="hv-codigo-rollo">{fila.rollos}</span> : "—"}</td>
       <td className="num hv-metros">
-        {prod.totalMetrosConsumidos} m
-        {sePuedeCorregir(prod) && (
-          <button type="button" className="hv-corregir" onClick={(e) => { e.stopPropagation(); setCorrigiendo(prod); }}>
+        {fila.metros == null ? "—" : `${fila.metros} m`}
+        {fila.prod && sePuedeCorregir(fila.prod) && (
+          <button type="button" className="hv-corregir" onClick={(e) => { e.stopPropagation(); setCorrigiendo(fila.prod!); }}>
             Corregir
           </button>
         )}
       </td>
-      <td className="num hv-saldo">{prod.saldoCodigo} m</td>
+      <td className="num hv-saldo">{fila.saldo}</td>
+      <td className="hv-responsable">{fila.responsable}</td>
+      <td><span className="hv-codigo">{fila.codigo}</span></td>
+      <td className="hv-observaciones">{fila.observaciones || "—"}</td>
+    </>
+  );
 
-      <td className="hv-observaciones">{prod.observaciones || "—"}</td>
+  const filasDeProduccion = (prod: ProduccionRegistro, esDetalle = false) => [
+    <tr key={prod.id} className={esDetalle ? "hv-fila-detalle" : undefined}>
+      {celdasDeProduccion({
+        fecha: prod.fecha, cotizacion: prod.cotizacion, cliente: prod.clienteApartado, producto: prod.productoFabricado,
+        detalle: segundaLinea(prod.modelo, prod.medidaProducto), cantidad: prod.cantidadProductos,
+        rollos: prod.rollosUtilizados.map((r) => r.identificadorRollo).join(", "), metros: prod.totalMetrosConsumidos,
+        saldo: `${prod.saldoCodigo} m`, responsable: prod.responsable, codigo: prod.codigoUnico,
+        observaciones: prod.observaciones, prod, esDetalle, bodegaId: prod.bodegaId,
+      })}
     </tr>,
     ...filasStockAdicional(prod).map((fila) => (
-      <tr key={fila.key} className="hv-fila-stock" style={esDetalle ? estiloDetalle : undefined}>
-        {esAdminInventario && <td>{nombreBodega(prod.bodegaId)}</td>}
-        <td style={esDetalle ? { paddingLeft: "1.6rem" } : undefined}>
-          <span className="hv-codigo">{fila.codigoProduccion}</span>
-        </td>
-
-        <td className="hv-cotizacion-stock">{fila.cotizacion}</td>
-        <td>{fila.cliente}</td>
-
-        <td className="hv-fecha">
-          {formatearFechaColombia(fila.fecha, false)}
-        </td>
-
-        <td>{fila.responsable}</td>
-        <td>{fila.productoFabricado}</td>
-        <td>{fila.modelo}</td>
-        <td>{fila.medida}</td>
-        <td className="num">{fila.cantidad}</td>
-
-        <td>
-          <span className="hv-codigo-rollo">{fila.referencia}</span>
-        </td>
-
-        <td className="num hv-metros">{fila.metrosConsumidos} m</td>
-        <td className="num hv-saldo">{fila.saldoRestante} m</td>
-
-        <td className="hv-observaciones">{fila.observaciones}</td>
+      <tr key={fila.key} className={`hv-fila-stock${esDetalle ? " hv-fila-detalle" : ""}`}>
+        {celdasDeProduccion({
+          fecha: fila.fecha, cotizacion: fila.cotizacion, cliente: fila.cliente, producto: fila.productoFabricado,
+          detalle: segundaLinea(fila.modelo, fila.medida), cantidad: fila.cantidad, rollos: fila.referencia,
+          metros: fila.metrosConsumidos, saldo: `${fila.saldoRestante} m`, responsable: fila.responsable,
+          codigo: fila.codigoProduccion, observaciones: fila.observaciones, esStock: true, esDetalle, bodegaId: prod.bodegaId,
+        })}
       </tr>
     )),
   ];
@@ -150,29 +144,39 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
       const distintos = unicos(valores);
       return distintos.length <= 2 ? distintos.join(", ") || "—" : `${distintos.length} ${plural}`;
     };
+    const productos = unicos(producciones.map((x) => x.productoFabricado));
     // El saldo solo tiene sentido si todas salieron del mismo código: entonces
     // el de la producción más reciente es lo que queda ahora.
     const unSoloCodigo = unicos(producciones.map((x) => x.codigoClasificacion)).length === 1;
     return [
-      <tr key={clave} onClick={() => alternar(clave)} style={{ cursor: "pointer", fontWeight: 600 }}
-        title={abierta ? "Ocultar el detalle" : "Ver cada producción"}>
-        {esAdminInventario && <td>{nombreBodega(reciente.bodegaId)}</td>}
-        <td style={{ whiteSpace: "nowrap" }}>{abierta ? "▾" : "▸"} {producciones.length} producciones</td>
-        <td>{reciente.cotizacion}</td>
-        <td>{reciente.clienteApartado || "—"}</td>
+      <tr key={clave} className={`hv-fila-grupo${abierta ? " hv-abierta" : ""}`} onClick={() => alternar(clave)}>
+        <td className="hv-col-toggle">
+          <button type="button" className="hv-toggle" aria-expanded={abierta}
+            aria-label={abierta ? "Ocultar cada producción" : "Ver cada producción"}
+            onClick={(e) => { e.stopPropagation(); alternar(clave); }}>
+            <span className="hv-chevron" aria-hidden="true">›</span>
+          </button>
+        </td>
+        {esAdminInventario && <td className="hv-bodega">{nombreBodega(reciente.bodegaId)}</td>}
         <td className="hv-fecha">{formatearFechaColombia(reciente.fecha, false)}</td>
-        <td>{lista(producciones.map((x) => x.responsable), "responsables")}</td>
-        <td>{lista(producciones.map((x) => x.productoFabricado), "productos")}</td>
-        <td>{lista(producciones.map((x) => x.modelo), "modelos")}</td>
-        <td>{lista(producciones.map((x) => x.medidaProducto), "medidas")}</td>
-        <td className="num">{redondear(producciones.reduce((s, x) => s + (Number(x.cantidadProductos) || 0), 0))}</td>
-        <td>
+        <td className="hv-col-cotizacion">
+          <span className="hv-cotizacion">{reciente.cotizacion}</span>
+          {reciente.clienteApartado && <span className="hv-sub">{reciente.clienteApartado}</span>}
+        </td>
+        <td className="hv-col-producto">
+          <span className="hv-producto">{productos.length === 1 ? productos[0] : `${productos.length} productos distintos`}</span>
+          <span className="hv-badge">{producciones.length} producciones · {abierta ? "clic para ocultar" : "clic para ver cada una"}</span>
+        </td>
+        <td className="num hv-cantidad">{redondear(producciones.reduce((s, x) => s + (Number(x.cantidadProductos) || 0), 0))}</td>
+        <td className="hv-col-rollo">
           <span className="hv-codigo-rollo">
             {lista(producciones.flatMap((x) => x.rollosUtilizados.map((r) => r.identificadorRollo)), "rollos")}
           </span>
         </td>
         <td className="num hv-metros">{redondear(producciones.reduce((s, x) => s + (Number(x.totalMetrosConsumidos) || 0), 0))} m</td>
         <td className="num hv-saldo">{unSoloCodigo ? `${reciente.saldoCodigo} m` : "—"}</td>
+        <td className="hv-responsable">{lista(producciones.map((x) => x.responsable), "responsables")}</td>
+        <td className="hv-tenue">—</td>
         <td className="hv-observaciones">—</td>
       </tr>,
       ...(abierta ? producciones.flatMap((prod) => filasDeProduccion(prod, true)) : []),
@@ -226,19 +230,17 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
                 <table className="hv-tabla">
                   <thead>
                     <tr>
+                      <th className="hv-col-toggle"><span className="hv-oculto">Detalle</span></th>
                       {esAdminInventario && <th>Bodega</th>}
-                      <th>Código de Producción</th>
-                      <th>Cotización</th>
-                      <th>Cliente</th>
                       <th>Fecha</th>
+                      <th>Cotización / Cliente</th>
+                      <th>Producto fabricado</th>
+                      <th className="num">Cant.</th>
+                      <th>Rollo</th>
+                      <th className="num">Metros usados</th>
+                      <th className="num">Saldo del código</th>
                       <th>Responsable</th>
-                      <th>Producto Fabricado</th>
-                      <th>Modelo</th>
-                      <th>Medida</th>
-                      <th className="num">Cantidad</th>
-                      <th>Referencia</th>
-                      <th className="num">Metros Consumidos</th>
-                      <th className="num">Saldo Restante</th>
+                      <th>Código prod.</th>
                       <th>Observaciones</th>
                     </tr>
                   </thead>
