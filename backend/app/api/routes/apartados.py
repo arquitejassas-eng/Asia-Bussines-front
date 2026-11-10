@@ -1,4 +1,5 @@
 import secrets
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import case, func
@@ -780,9 +781,37 @@ def confirmar_separacion_stock(apartado_id: int, db: Session = Depends(get_db), 
     return apartado
 
 
+def _salida_de_rollos_completos(db: Session, apartado: Apartado, usuario: Usuario) -> Apartado:
+    """La bodega le da "Salida" a una cotización que Planta ya terminó y solo
+    espera sus rollos completos: el rollo ya está escogido en la línea, así que
+    sale entero sin escribir nada (o cambia de dueño si el cliente es la otra
+    empresa). Si falta saber de qué rollo salió una lámina (cotización vieja
+    del Excel), eso lo cierra Admin Inventario con "Registrar salida"."""
+    pendientes = [it for it in apartado.items if it.modalidad == ModalidadApartado.POR_ROLLO
+                  and (it.metros_requeridos or 0) - (it.metros_consumidos or 0) > 0.005]
+    if any(not it.rollo_id for it in pendientes):
+        raise HTTPException(
+            status_code=400,
+            detail="Falta saber de qué rollo salió la lámina de esta cotización: Admin Inventario le da la salida con \"Registrar salida\".",
+        )
+    rollos = [{"item_id": it.id, "referencia": it.rollo.identificador_rollo, "metros": max(it.rollo.metros_disponibles, 0.01)}
+              for it in pendientes]
+    if rollos:
+        apartado = registrar_salida(db, apartado.id, RegistrarSalidaRequest(rollos=rollos), usuario)
+    if apartado.estado != EstadoApartado.ENTREGADO:
+        apartado.estado = EstadoApartado.ENTREGADO
+        apartado.fecha_entregado = datetime.now(timezone.utc)
+    return apartado
+
+
 @router.patch("/{apartado_id}/marcar-entregado", response_model=ApartadoResponse,
               dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO))])
 def marcar_entregado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    pendiente = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+    if pendiente.salida_pendiente and pendiente.estado in srv.ESTADOS_RESERVA_ACTIVA:
+        apartado = _salida_de_rollos_completos(db, pendiente, usuario)
+        db.commit(); db.refresh(apartado)
+        return apartado
     apartado = srv.marcar_entregado(db, apartado_id, usuario)
     db.commit(); db.refresh(apartado)
     return apartado

@@ -40,6 +40,17 @@ function colorDe(f: { descripcion: string; color?: string }) {
 }
 const nombreColor = (color: string) => color.charAt(0) + color.slice(1).toLowerCase();
 
+// Espesor del rollo en mm (el calibre: 0,33). Como número para que Excel lo
+// pueda ordenar y filtrar; "" si el rollo no lo tiene.
+const espesorDe = (r: { calibre: number }) => (r.calibre > 0 ? r.calibre : "");
+const textoEspesor = (calibre: number) => (calibre > 0 ? calibre.toFixed(2).replace(".", ",") : "—");
+// Referencias con números en orden natural (…-2 antes de …-10).
+const compararTexto = (a: string, b: string) => a.localeCompare(b, "es", { numeric: true, sensitivity: "base" });
+// Los rollos van por empresa, bodega, espesor, código y referencia.
+const ordenRollos = (a: FilaRollo, b: FilaRollo) => compararTexto(nombreEmpresa(a.empresa), nombreEmpresa(b.empresa))
+  || compararTexto(a.bodega, b.bodega) || (a.calibre || 0) - (b.calibre || 0)
+  || compararTexto(a.codigo, b.codigo) || compararTexto(a.referencia, b.referencia);
+
 // "17ABG" → "Importación 17 (Asia Business)"; un Lote escrito a mano se muestra tal cual.
 export function nombreImportacion(clave: string) {
   if (!clave) return "Sin número de importación";
@@ -128,10 +139,10 @@ export function ReporteInventarioPorTipo() {
   }, [productosFiltrados]);
 
   const filasRollos = useMemo(() => {
-    const grupos = new Map<string, { codigo: string; descripcion: string; empresa: string; porBodega: Record<string, { rollos: number; metros: number; kilos: number }>; rollos: number; metros: number; kilos: number; lista: FilaRollo[] }>();
+    const grupos = new Map<string, { codigo: string; descripcion: string; empresa: string; calibre: number; color: string; porBodega: Record<string, { rollos: number; metros: number; kilos: number }>; rollos: number; metros: number; kilos: number; lista: FilaRollo[] }>();
     for (const r of rollosFiltrados) {
       const clave = `${r.codigo}|${r.empresa}`;
-      const g = grupos.get(clave) || { codigo: r.codigo, descripcion: r.descripcion, empresa: r.empresa, porBodega: {}, rollos: 0, metros: 0, kilos: 0, lista: [] };
+      const g = grupos.get(clave) || { codigo: r.codigo, descripcion: r.descripcion, empresa: r.empresa, calibre: r.calibre, color: colorDe(r), porBodega: {}, rollos: 0, metros: 0, kilos: 0, lista: [] };
       const celda = g.porBodega[r.bodega] || { rollos: 0, metros: 0, kilos: 0 };
       celda.rollos += 1; celda.metros += r.metros_disponibles; celda.kilos += r.kilos_actuales ?? 0;
       g.porBodega[r.bodega] = celda;
@@ -139,26 +150,34 @@ export function ReporteInventarioPorTipo() {
       g.lista.push(r);
       grupos.set(clave, g);
     }
-    return [...grupos.values()].sort((a, b) => a.codigo.localeCompare(b.codigo));
+    for (const g of grupos.values()) g.lista.sort(ordenRollos);
+    return [...grupos.values()].sort((a, b) => compararTexto(nombreEmpresa(a.empresa), nombreEmpresa(b.empresa))
+      || (a.calibre || 0) - (b.calibre || 0) || compararTexto(a.codigo, b.codigo));
   }, [rollosFiltrados]);
 
   const nombreTipo = esRollos ? "Rollos de lámina" : tipo === TODO_UPVC ? "Todo UPVC" : tipo || "Todos los productos";
+
+  // La descripción de los rollos casi siempre viene vacía: solo sale si alguno la tiene.
+  const conDescripcion = rollosFiltrados.some((r) => r.descripcion?.trim());
 
   function exportar() {
     const sufijo = [nombreTipo, empresa && nombreEmpresa(empresa), bodega, color && nombreColor(color)].filter(Boolean).join(" - ");
     if (esRollos) {
       exportarHojasAExcel([
         { nombre: "Resumen por código", filas: filasRollos.map((g) => ({
-          "Código": g.codigo, "Descripción": g.descripcion, "Empresa": nombreEmpresa(g.empresa),
+          "Empresa": nombreEmpresa(g.empresa), "Código": g.codigo, "Espesor (mm)": espesorDe(g),
+          "Color": g.color ? nombreColor(g.color) : "", ...(conDescripcion ? { "Descripción": g.descripcion } : {}),
           ...Object.fromEntries(columnasBodega.flatMap((b) => [
             [`${b} (metros)`, g.porBodega[b] ? Math.round(g.porBodega[b].metros * 100) / 100 : 0],
             [`${b} (kg)`, g.porBodega[b] ? Math.round(g.porBodega[b].kilos) : 0],
           ])),
           "Rollos": g.rollos, "Metros": Math.round(g.metros * 100) / 100, "Kilos": Math.round(g.kilos),
         })) },
-        { nombre: "Detalle por rollo", filas: rollosFiltrados.map((r) => ({
-          "Referencia": r.referencia, "Código": r.codigo, "Descripción": r.descripcion, "Empresa": nombreEmpresa(r.empresa),
-          "Bodega": r.bodega, "Kilos al llegar": r.kilos ?? "", "Kilos hoy": r.kilos_actuales ?? "", "Metros disponibles": r.metros_disponibles,
+        { nombre: "Detalle por rollo", filas: [...rollosFiltrados].sort(ordenRollos).map((r) => ({
+          "Empresa": nombreEmpresa(r.empresa), "Bodega": r.bodega, "Código": r.codigo, "Espesor (mm)": espesorDe(r),
+          "Color": colorDe(r) ? nombreColor(colorDe(r)) : "", "Referencia": r.referencia,
+          ...(conDescripcion ? { "Descripción": r.descripcion } : {}),
+          "Metros disponibles": r.metros_disponibles, "Kilos hoy": r.kilos_actuales ?? "", "Kilos al llegar": r.kilos ?? "",
           "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado, "Importación": nombreImportacion(r.importacion),
         })) },
       ], `Inventario ${sufijo}.xlsx`);
@@ -251,6 +270,7 @@ export function ReporteInventarioPorTipo() {
                   <thead>
                     <tr>
                       <th>Código</th>
+                      {esRollos && <th className="reportes-num">Espesor (mm)</th>}
                       <th>Descripción</th>
                       {!esRollos && <th>Tipo</th>}
                       <th>Empresa</th>
@@ -271,7 +291,8 @@ export function ReporteInventarioPorTipo() {
                                 {abierto ? "▲" : "▼"} {g.codigo}
                               </button>
                             </td>
-                            <td>{g.descripcion}</td>
+                            <td className="reportes-num"><strong>{textoEspesor(g.calibre)}</strong></td>
+                            <td>{g.descripcion || (g.color ? nombreColor(g.color) : "—")}</td>
                             <td>{nombreEmpresa(g.empresa)}</td>
                             {columnasBodega.map((b) => (
                               <td key={b} className="reportes-num">
@@ -285,7 +306,7 @@ export function ReporteInventarioPorTipo() {
                           </tr>
                           {abierto && (
                             <tr className="reportes-detalle-importacion">
-                              <td colSpan={columnasBodega.length + 6}>
+                              <td colSpan={columnasBodega.length + 7}>
                                 <table className="reportes-tabla reportes-tabla-interna">
                                   <thead>
                                     <tr>
@@ -383,7 +404,8 @@ export function ReporteImportaciones() {
         "Metros que quedan": Math.round(g.metrosQuedan * 100) / 100,
       })) },
       { nombre: "Rollos", filas: lista.flatMap((g) => rollosDe(g).map((r) => ({
-        "Importación": nombreImportacion(g.clave), "Referencia": r.referencia, "Código": r.codigo, "Descripción": r.descripcion,
+        "Importación": nombreImportacion(g.clave), "Referencia": r.referencia, "Código": r.codigo, "Espesor (mm)": espesorDe(r),
+        "Descripción": r.descripcion,
         "Empresa": nombreEmpresa(r.empresa), "Kilos al llegar": r.kilos ?? "", "Kilos hoy": r.estado === EN_CAMINO ? "" : r.kilos_actuales ?? "",
         "Metros que llegaron": r.metros_llegada,
         "Metros que quedan": r.estado === EN_CAMINO ? "" : r.metros_disponibles, "Bodega": r.bodega,
@@ -470,7 +492,7 @@ export function ReporteImportaciones() {
                               <table className="reportes-tabla reportes-tabla-interna">
                                 <thead>
                                   <tr>
-                                    <th>Referencia</th><th>Código</th><th className="reportes-num">Kilos al llegar</th><th className="reportes-num">Kilos hoy</th>
+                                    <th>Referencia</th><th>Código</th><th className="reportes-num">Espesor (mm)</th><th className="reportes-num">Kilos al llegar</th><th className="reportes-num">Kilos hoy</th>
                                     <th className="reportes-num">Metros que llegaron</th><th className="reportes-num">Metros que quedan</th>
                                     <th>Bodega</th><th>Estado</th>
                                   </tr>
@@ -480,6 +502,7 @@ export function ReporteImportaciones() {
                                     <tr key={`${r.estado}-${r.referencia}`}>
                                       <td className="reportes-codigo">{r.referencia}</td>
                                       <td>{r.codigo}</td>
+                                      <td className="reportes-num">{textoEspesor(r.calibre)}</td>
                                       <td className="reportes-num">{r.kilos != null ? numero.format(r.kilos) : "—"}</td>
                                       <td className="reportes-num">{r.estado === EN_CAMINO || r.kilos_actuales == null ? "—" : numero.format(r.kilos_actuales)}</td>
                                       <td className="reportes-num">{numero.format(r.metros_llegada)}</td>

@@ -129,6 +129,14 @@ const CERRADAS = Object.values(ESTADO_DE_PESTANA);
 function porDarSalida(ap: { estado: string; salidaPendiente: boolean }) {
   return ap.salidaPendiente && ap.estado !== "apartado";
 }
+// "Por dar salida" que solo espera sus rollos completos: el rollo ya está
+// escogido en la línea, así que la bodega le da "Salida" y sale entero. Si
+// falta saber de qué rollo salió una lámina, la cierra Admin Inventario.
+function soloEsperaRollosCompletos(ap: { estado: string; salidaPendiente: boolean; ordenInterna: boolean;
+  items: { modalidad: string; rolloId: number | null; metrosPendientes: number | null }[] }) {
+  return porDarSalida(ap) && !ap.ordenInterna && !CERRADAS.includes(ap.estado)
+    && ap.items.filter((it) => it.modalidad === "por_rollo" && (it.metrosPendientes ?? 0) > 0.005).every((it) => it.rolloId);
+}
 function vaEnPestana(ap: { estado: string; salidaPendiente: boolean }, pestana: Pestana) {
   const estadoPropio = ESTADO_DE_PESTANA[pestana];
   if (estadoPropio) return ap.estado === estadoPropio;
@@ -736,10 +744,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           ejecutar: () => a.marcarApartadoProduccionTerminada(ap.id),
         })}>Marcar producción terminada</button>
       )}
-      {a.puedeMarcarEntregado && ap.estado === "produccion_terminada" && !ap.ordenInterna && (
+      {a.puedeMarcarEntregado && ((ap.estado === "produccion_terminada" && !ap.ordenInterna) || soloEsperaRollosCompletos(ap)) && (
         <button onClick={() => setConfirmacion({
           titulo: `¿Dar salida a la cotización ${ap.numeroCotizacion}?`,
-          mensaje: `Confirma que el pedido ya salió de la bodega y se entregó a ${ap.cliente || "el cliente"}. Queda como Entregado y no se puede deshacer.`,
+          mensaje: `Confirma que el pedido ya salió de la bodega y se entregó a ${ap.cliente || "el cliente"}. Queda como Entregado y no se puede deshacer.`
+            + (soloEsperaRollosCompletos(ap) ? " Los rollos completos de la cotización salen enteros del inventario." : ""),
           textoConfirmar: "Sí, dar salida",
           ejecutar: () => a.marcarApartadoEntregado(ap.id),
         })}>Salida</button>
@@ -1472,7 +1481,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 <p className="inventario-carga-ayuda" style={{ margin: "0 0 0.5rem" }}>
                   {pestana === "pendientes_salida"
                     ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización" : "cotizaciones"}: las de "Producción terminada" ya las terminó Planta y la bodega les da "Salida" cuando el pedido sale; `
-                      + `las de "Por dar salida" ya salieron pero falta saber de qué rollo (cuando revisen la hoja de vida, Admin Inventario usa "Registrar salida" con la referencia del rollo).`
+                      + `las de "Por dar salida" con rollo completo también les da "Salida" la bodega; si falta saber de qué rollo salió la lámina, Admin Inventario usa "Registrar salida" con la referencia del rollo.`
                     : pestana === "entregadas"
                     ? `${apartadosFiltrados.length} ${apartadosFiltrados.length === 1 ? "cotización entregada" : "cotizaciones entregadas"} al cliente.`
                     : pestana === "canceladas"
