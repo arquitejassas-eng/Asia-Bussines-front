@@ -105,6 +105,10 @@ def _enviar(cliente: httpx.Client, proveedor: Proveedor, mensajes: list[dict]) -
                     "tools": HERRAMIENTAS,
                     "tool_choice": "auto",
                     "stream": False,
+                    # Los dos modelos "piensan" antes de contestar; para leer
+                    # cifras de las herramientas basta con poco: responde
+                    # varias veces más rápido y gasta menos del cupo gratis.
+                    "reasoning_effort": "low",
                 },
                 timeout=TIMEOUT_SEGUNDOS,
             )
@@ -162,7 +166,9 @@ def chat_con_herramientas(
         for _ in range(MAX_RONDAS_HERRAMIENTAS):
             while True:
                 try:
+                    inicio = time.monotonic()
                     datos = _llamar(cliente, proveedores[actual], mensajes)
+                    logger.info("ia_respuesta proveedor=%s segundos=%.1f", proveedores[actual].nombre, time.monotonic() - inicio)
                     break
                 except _ProveedorNoDisponible as exc:
                     logger.warning("ia_proveedor_fallo proveedor=%s error=%s", proveedores[actual].nombre, exc)
