@@ -2,6 +2,7 @@ import { useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ApartadosPorEnviarContexto } from "./AvisosApartados";
 import { TrasladosRollosContexto } from "./AvisosTrasladosRollos";
+import { ProductosSinCodigoContexto } from "./AvisosProductosSinCodigo";
 import "../Style/Barralateral.css";
 
 type Sesion = { rol?: string; bodegaNombre?: string } | null | undefined;
@@ -31,6 +32,7 @@ export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 
   const location = useLocation();
   const apartadosPorEnviar = useContext(ApartadosPorEnviarContexto);
   const trasladosRollos = useContext(TrasladosRollosContexto);
+  const productosSinCodigo = useContext(ProductosSinCodigoContexto);
   const modulosVisibles = MODULOS.filter((modulo) => !modulo.roles || modulo.roles.includes(sesion?.rol ?? ""));
 
   return (
@@ -48,6 +50,12 @@ export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 
               )}
               {modulo.clave === "admin_inventario" && sesion?.rol === "admin_inventario" && trasladosRollos > 0 && (
                 <span className="barra-notificacion" title="Rollos pedidos entre bodegas que todavía no llegan">{trasladosRollos}</span>
+              )}
+              {modulo.clave === "admin_inventario" && sesion?.rol === "admin_inventario" && productosSinCodigo > 0 && (
+                <span className="barra-notificacion barra-notificacion-aviso" title="Productos de producción a los que les falta el código"
+                  aria-label={`${productosSinCodigo} ${productosSinCodigo === 1 ? "producto" : "productos"} sin código`}>
+                  {productosSinCodigo} sin código
+                </span>
               )}
             </Link>
             {modulo.clave === "inventario" && <p className="barra-item-nota">Productos · Movimientos · Historial</p>}

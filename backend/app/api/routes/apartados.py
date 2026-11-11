@@ -298,7 +298,7 @@ def registrar_salida_con_hoja_de_vida(
 # aprobada) eligiendo la bodega; la bodega solo decide cuándo enviarlo a
 # producción y Admin Inventario es quien los anula.
 @router.post("", response_model=ApartadoResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
 def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
     """Cada línea dice de qué bodega y de qué empresa sale su material. La
     cotización es UNA, de la empresa elegida: una línea con material de la
@@ -309,9 +309,28 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
     # producción interna (para stock), solo Admin Inventario.
     if usuario.rol == RolUsuario.VENDEDOR and datos.orden_interna:
         raise HTTPException(status_code=403, detail="Las órdenes de producción interna las crea Admin Inventario.")
+    # La encargada de la bodega solo crea traslados a una bodega sin
+    # inventario (San Gil), y solo con material de su propia bodega.
+    if usuario.rol == RolUsuario.ADMINISTRATIVO:
+        if not datos.traslado_a:
+            raise HTTPException(status_code=403, detail="Las cotizaciones las crean el vendedor y Admin Inventario.")
+        datos = datos.model_copy(update={
+            "bodega_id": usuario.bodega_id,
+            "items": [i.model_copy(update={"bodega_id": usuario.bodega_id}) for i in datos.items],
+        })
+    if datos.traslado_a:
+        if usuario.rol == RolUsuario.VENDEDOR:
+            raise HTTPException(status_code=403, detail="Los traslados los crean la encargada de la bodega y Admin Inventario.")
+        # Sin cliente, sin precios y sin Siigo; número propio "TR-0001".
+        datos = datos.model_copy(update={
+            "numero_cotizacion": srv.siguiente_numero_traslado(db), "material_en_camino": False,
+            "cliente": "", "cliente_identificacion": "", "siigo_vendedor": None, "siigo_centro_costo": None,
+            "items": [i.model_copy(update={"precio": None, "siigo_cantidad": None, "siigo_producto": "", "siigo_incluido": False})
+                      for i in datos.items],
+        })
     # Con la empresa conectada a Siigo, toda cotización va a Siigo y el número
     # lo pone Siigo: mientras tanto, uno provisional que no choca con nada.
-    a_siigo = not datos.orden_interna and siigo.esta_configurada(datos.empresa)
+    a_siigo = not datos.orden_interna and not datos.traslado_a and siigo.esta_configurada(datos.empresa)
     if a_siigo:
         datos = datos.model_copy(update={"numero_cotizacion": f"PEND-{secrets.token_hex(6)}"})
     # El número no se repite en la misma empresa (las partes de esta cotización
@@ -447,6 +466,8 @@ def editar_apartado(
     bodega: se le suman si ya existe ahí, o se crea. Todo junto o nada."""
     # Una cotización no se vuelve orden interna ni al revés.
     original = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+    if original.traslado_a:
+        raise HTTPException(status_code=400, detail="Un traslado no se edita: anúlalo y créalo de nuevo.")
     if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
         _exigir_que_no_este_en_produccion(db, original, datos.otras_partes_ids)
     datos = datos.model_copy(update={"orden_interna": original.orden_interna})
@@ -735,8 +756,11 @@ def unir_apartado(
 
 
 @router.patch("/{apartado_id}/cancelar", response_model=ApartadoResponse,
-              dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
 def cancelar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    # La encargada de la bodega solo anula sus traslados a San Gil; las cotizaciones, Admin Inventario.
+    if usuario.rol == RolUsuario.ADMINISTRATIVO and not srv.apartado_de_mi_bodega(db, apartado_id, usuario).traslado_a:
+        raise HTTPException(status_code=403, detail="Las cotizaciones las anula Admin Inventario.")
     apartado = srv.cancelar_apartado(db, apartado_id, usuario)
     if apartado.siigo_id:
         _anular_en_siigo(db, apartado, usuario)
@@ -780,6 +804,28 @@ def confirmar_separacion_stock(apartado_id: int, db: Session = Depends(get_db), 
     apartado = srv.confirmar_separacion_stock(db, apartado_id, usuario)
     db.commit(); db.refresh(apartado)
     return apartado
+
+
+@router.post("/{apartado_id}/salida-traslado", response_model=ApartadoResponse,
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+def salida_de_traslado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    """Sale el camión con un traslado a una bodega sin inventario (San Gil):
+    se descuentan sus productos de stock y sus rollos (enteros) y queda
+    Entregado. La encargada de la bodega solo los de la suya."""
+    apartado = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+    if not apartado.traslado_a:
+        raise HTTPException(status_code=400, detail="Esta no es un traslado: dale la salida como a una cotización.")
+    if apartado.estado not in srv.ESTADOS_RESERVA_ACTIVA:
+        raise HTTPException(status_code=400, detail="Este traslado ya salió o está anulado.")
+    rollos = [{"item_id": it.id, "referencia": it.rollo.identificador_rollo, "metros": max(it.rollo.metros_disponibles, 0.01)}
+              for it in apartado.items if it.rollo_id and (it.metros_requeridos or 0) - (it.metros_consumidos or 0) > 0.005]
+    stock = [it.id for it in apartado.items if it.modalidad == ModalidadApartado.POR_STOCK and not it.stock_descontado]
+    apartado = registrar_salida(db, apartado.id, RegistrarSalidaRequest(rollos=rollos, items_stock=stock), usuario)
+    if apartado.estado != EstadoApartado.ENTREGADO:
+        apartado.estado = EstadoApartado.ENTREGADO
+        apartado.fecha_entregado = datetime.now(timezone.utc)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
 
 
 def _salida_de_rollos_completos(db: Session, apartado: Apartado, usuario: Usuario) -> Apartado:

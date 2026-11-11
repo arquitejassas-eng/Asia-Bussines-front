@@ -60,6 +60,10 @@ class Apartado(Base):
     # Planta produce para ella entra al stock y la orden se cierra sola (no
     # hay "Salida"). Número "OI-0001".
     orden_interna: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Traslado a una bodega que no lleva inventario en el sistema (San Gil):
+    # sin cliente, precios ni Siigo; al darle "Salida" el material se
+    # descuenta y no entra a ninguna bodega. Número "TR-0001". "" = cotización normal.
+    traslado_a: Mapped[str] = mapped_column(String(60), default="", server_default="")
 
     creado_por: Mapped[str] = mapped_column(String(150), default="")
     fecha_creacion: Mapped[DateTime] = mapped_column(DateTime(timezone=True))

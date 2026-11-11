@@ -30,6 +30,8 @@ def registrar_prestamo(
 ) -> PrestamoEmpresa | None:
     """Anota el préstamo si el material es de una empresa y la cotización de
     la otra. Sin empresa en alguno de los dos (datos antiguos), no hay préstamo."""
+    if apartado.traslado_a:
+        return None  # un traslado a otra sede no es una venta: nadie le presta a nadie.
     presta, recibe = (empresa_material or "").strip().upper(), (apartado.empresa or "").strip().upper()
     if not presta or not recibe or presta == recibe or cantidad <= 0.005:
         return None

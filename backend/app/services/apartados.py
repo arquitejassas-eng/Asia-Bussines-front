@@ -1102,8 +1102,10 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
         bodega_id=bodega_id,
         numero_cotizacion=datos.numero_cotizacion,
         empresa=datos.empresa,
-        cliente=datos.cliente or ("Orden interna (stock)" if datos.orden_interna else ""),
+        cliente=(f"Traslado a {datos.traslado_a}" if datos.traslado_a
+                 else datos.cliente or ("Orden interna (stock)" if datos.orden_interna else "")),
         orden_interna=datos.orden_interna,
+        traslado_a=datos.traslado_a,
         creado_por=usuario.correo,
         fecha_creacion=ahora,
         estado=EstadoApartado.APARTADO,
@@ -1397,6 +1399,16 @@ def siguiente_numero(db: Session, empresa: str) -> str:
         if de_quien == empresa and inicio:
             mayor = max(mayor, int(inicio.group()))
     return str(mayor + 1) if mayor else ""
+
+
+def siguiente_numero_traslado(db: Session) -> str:
+    """Consecutivo de los traslados a bodegas sin inventario: "TR-0001"..."""
+    mayor = 0
+    for (numero,) in db.query(Apartado.numero_cotizacion).filter(Apartado.numero_cotizacion.like("TR-%")):
+        coincide = re.match(r"TR-(\d+)", numero or "")
+        if coincide:
+            mayor = max(mayor, int(coincide.group(1)))
+    return f"TR-{mayor + 1:04d}"
 
 
 def siguiente_numero_orden_interna(db: Session) -> str:

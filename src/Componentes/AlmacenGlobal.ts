@@ -5,6 +5,7 @@ import { useUnidadesFamilia } from "../Hooks/useUnidadesFamilia";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import { cotizacionesParaPlanta } from "../Utils/produccion";
 import { trasladoRolloDesdeApi, type TrasladoRollo } from "./AvisosTrasladosRollos";
+import { productoSinCodigoDesdeApi, type ProductoSinCodigo } from "./AvisosProductosSinCodigo";
 import type { Bodega, Envio, EnvioApi, Sesion, Solicitud, SolicitudApi } from "../types/dominio";
 
 // Notificaciones de solicitudes/envíos entre bodegas: no hay push del
@@ -149,13 +150,28 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     }
   }, [sesion?.rol]);
 
+  // Productos que Planta mandó al stock con código provisional: Admin
+  // Inventario les pone el código real (aviso en el menú desde cualquier pantalla).
+  const [productosSinCodigo, setProductosSinCodigo] = useState<ProductoSinCodigo[]>([]);
+
+  const refrescarProductosSinCodigo = useCallback(async () => {
+    if (sesion?.rol !== "admin_inventario") return setProductosSinCodigo([]);
+    try {
+      const datos = await api.get<Record<string, unknown>[]>("/admin-inventario/productos-sin-codigo") || [];
+      setProductosSinCodigo(datos.map(productoSinCodigoDesdeApi));
+    } catch {
+      /* Sin conexión un momento: se conserva lo que había. */
+    }
+  }, [sesion?.rol]);
+
   const [apartadosPorEnviarCount, setApartadosPorEnviarCount] = useState(0);
 
   const refrescarApartadosPorEnviar = useCallback(async () => {
     if (sesion?.rol !== "administrativo") return setApartadosPorEnviarCount(0);
     try {
       const datos = await api.get<Record<string, unknown>[]>("/apartados?estado=apartado") || [];
-      setApartadosPorEnviarCount(datos.map(apartadoDesdeApi).filter((ap) => ap.faltantes.length === 0).length);
+      // Un traslado a San Gil no se envía a producción: no cuenta.
+      setApartadosPorEnviarCount(datos.map(apartadoDesdeApi).filter((ap) => ap.faltantes.length === 0 && !ap.trasladoA).length);
     } catch {
       /* Sin conexión un momento: se conserva lo que había (antes se vaciaba y los avisos desaparecían). */
     }
@@ -169,13 +185,14 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     refrescarApartadosPorEnviar();
     refrescarTrasladosPendientes();
     refrescarTrasladosRollos();
+    refrescarProductosSinCodigo();
     if (sesion?.correo) cargarUnidadesFamilia();
   }, [cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente, refrescarApartadosPorEnviar,
-    refrescarTrasladosPendientes, refrescarTrasladosRollos, cargarUnidadesFamilia, sesion?.correo]);
+    refrescarTrasladosPendientes, refrescarTrasladosRollos, refrescarProductosSinCodigo, cargarUnidadesFamilia, sesion?.correo]);
 
   useActualizacionAutomatica(
     () => Promise.all([refrescarSolicitudesPendientes(), refrescarEnviosPendientes(), refrescarProduccionPendiente(), refrescarApartadosPorEnviar(),
-      refrescarTrasladosPendientes(), refrescarTrasladosRollos()]),
+      refrescarTrasladosPendientes(), refrescarTrasladosRollos(), refrescarProductosSinCodigo()]),
     { activa: Boolean(sesion?.correo) },
   );
 
@@ -183,6 +200,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     bodegas, solicitudes, envios, cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes,
     trasladosPendientes, refrescarTrasladosPendientes,
     trasladosRollos, refrescarTrasladosRollos,
+    productosSinCodigo, refrescarProductosSinCodigo,
     produccionPendienteCount, refrescarProduccionPendiente,
     apartadosPorEnviarCount, refrescarApartadosPorEnviar,
     unidadesFamilia, unidadPorFamilia, decimalesPorFamilia, cargarUnidadesFamilia, guardarUnidadFamilia,

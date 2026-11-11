@@ -1885,7 +1885,143 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
 .inventario-form .envio-observaciones { margin-top: 1.4rem; grid-template-columns: 1fr; }
 @media (prefers-reduced-motion: reduce) { .envio-fila { transition: none; } }
 
+/* Inventario total: productos que Planta mandó al stock sin que existieran
+   (código provisional PROD-...). Tarea pendiente: franja terracota, una
+   tarjeta por producto con UN campo y el botón al lado; los códigos
+   parecidos que ya existen quedan a un clic. */
+.sincodigo {
+  margin: 0 0 1.5rem;
+  background: var(--at-surface, #FFFFFF);
+  border: 1px solid var(--at-border-soft, #EBE2D2);
+  border-left: 4px solid var(--at-terra, #B7451F);
+  border-radius: var(--at-r-md, 12px);
+  box-shadow: var(--at-shadow-sm, 0 3px 10px rgba(37, 28, 20, 0.08));
+  overflow: hidden;
+}
+.sincodigo-cabeza { padding: 0.9rem 1.1rem 0.75rem; display: grid; gap: 0.35rem; }
+.sincodigo-titulo {
+  display: flex; align-items: center; gap: 0.5rem; margin: 0;
+  font-size: 1rem; font-weight: 700; color: var(--at-text, #251C14);
+}
+.sincodigo-icono { color: var(--at-terra, #B7451F); flex: none; }
+.sincodigo-explica { margin: 0; font-size: 0.88rem; line-height: 1.5; color: var(--at-text-2, #4A392C); }
+.sincodigo-listo {
+  margin: 0 1.1rem 0.75rem; padding: 0.55rem 0.8rem; border-radius: var(--at-r-sm, 8px);
+  background: var(--at-green-dim, rgba(46, 125, 79, 0.12)); color: var(--at-green, #2E7D4F);
+  font-size: 0.88rem; font-weight: 600;
+}
+.sincodigo-lista {
+  display: grid; gap: 0.6rem; margin: 0; padding: 0.75rem 1.1rem 1rem; list-style: none;
+  background: var(--at-surface-2, #F1E9DC);
+  border-top: 1px solid var(--at-border-soft, #EBE2D2);
+}
+.sincodigo-item {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); gap: 0.75rem 1.5rem; align-items: start;
+  padding: 0.9rem 1rem;
+  background: var(--at-surface, #FFFFFF);
+  border: 1px solid var(--at-border-soft, #EBE2D2);
+  border-radius: var(--at-r-sm, 8px);
+}
+.sincodigo-que { min-width: 0; }
+.sincodigo-descripcion { margin: 0 0 0.35rem; font-size: 0.98rem; font-weight: 700; line-height: 1.35; color: var(--at-text, #251C14); overflow-wrap: anywhere; }
+.sincodigo-datos { display: flex; flex-wrap: wrap; margin: 0; font-size: 0.84rem; color: var(--at-muted, #7C6A56); }
+.sincodigo-datos > span:not(:last-child)::after { content: "·"; margin: 0 0.5rem; color: var(--at-border, #E1D5C0); }
+.sincodigo-datos strong { color: var(--at-text, #251C14); }
+.sincodigo-segunda { color: var(--at-amber, #B8720A); font-weight: 700; }
+
+.sincodigo-form { display: grid; gap: 0.35rem; min-width: 0; }
+.sincodigo-label { font-size: 0.8rem; font-weight: 700; color: var(--at-text-2, #4A392C); }
+.sincodigo-fila { display: flex; gap: 0.5rem; }
+.sincodigo-fila input {
+  flex: 1; min-width: 0; min-height: 44px; padding: 0.5rem 0.75rem;
+  border: 1px solid var(--at-border, #E1D5C0); border-radius: var(--at-r-sm, 8px);
+  font-family: var(--at-font-mono, Consolas, monospace); font-size: 1rem; text-transform: uppercase;
+  background: var(--at-surface, #FFFFFF); color: var(--at-text, #251C14);
+}
+.sincodigo-fila input:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 1px; border-color: var(--at-terra, #B7451F); }
+.sincodigo-fila input[aria-invalid="true"] { border-color: var(--at-red, #C23B2C); }
+.sincodigo-guardar { min-height: 44px; white-space: nowrap; }
+.sincodigo-ayuda { margin: 0; font-size: 0.76rem; color: var(--at-caption, #9C8A74); overflow-wrap: anywhere; }
+.sincodigo-error { margin: 0; font-size: 0.82rem; font-weight: 600; color: var(--at-red, #C23B2C); }
+.sincodigo-sugerencias { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.15rem; font-size: 0.8rem; color: var(--at-muted, #7C6A56); }
+.sincodigo-sugerencia {
+  min-height: 32px; padding: 0.2rem 0.7rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--at-border, #E1D5C0); background: var(--at-surface-2, #F1E9DC);
+  font-family: var(--at-font-mono, Consolas, monospace); font-size: 0.8rem; font-weight: 600; color: var(--at-text-2, #4A392C);
+}
+.sincodigo-sugerencia:hover, .sincodigo-sugerencia.activa {
+  border-color: var(--at-terra, #B7451F); background: var(--at-terra-dim, rgba(183, 69, 31, 0.12)); color: var(--at-terra, #B7451F);
+}
+.sincodigo-sugerencia:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 2px; }
+
+@media (max-width: 860px) {
+  .sincodigo-item { grid-template-columns: 1fr; }
+}
+
 /* Editar o eliminar un producto: la fila que se edita y su formulario debajo. */
 .inventario-tabla tr.inventario-fila-editando > td { background: var(--at-terra-dim, rgba(183, 69, 31, 0.12)); font-weight: 600; }
 .inventario-tabla tr.inventario-fila-edicion > td { padding: 0.75rem 1rem 1rem; background: var(--at-surface-2, #F1E9DC); }
 .inventario-fila-edicion .inventario-editar-producto { margin: 0; }
+
+/* ── Cabecera de página con acciones (Apartados, Inventario total) ──────────
+   Título y explicación a la izquierda, acciones a la derecha. Una sola acción
+   principal (botón lleno); las demás en contorno y las de archivo (Excel) como
+   botón discreto con ícono. En pantallas angostas las acciones bajan. */
+.pagina-cabecera {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 1rem 2rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--at-border, #E1D5C0);
+}
+.pagina-cabecera-texto { min-width: 0; }
+.pagina-cabecera-texto .inventario-titulo { margin-bottom: 0.4rem; }
+.pagina-cabecera-texto .inventario-carga-ayuda { margin: 0; max-width: 68ch; line-height: 1.55; }
+.pagina-acciones {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.5rem;
+  max-width: 560px;
+}
+.pagina-acciones > button { min-height: 44px; white-space: nowrap; }
+
+/* Acción secundaria: contorno terracota (se ve que es un botón, pero no compite con la principal). */
+.boton-secundario {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.6rem 1.1rem;
+  border: 1px solid var(--at-terra, #B7451F); border-radius: var(--at-r-sm, 8px);
+  background: var(--at-surface, #FFFFFF); color: var(--at-terra, #B7451F);
+  font: inherit; font-size: 0.87rem; font-weight: 700; cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.boton-secundario:hover { background: var(--at-terra-dim, rgba(183, 69, 31, 0.12)); }
+
+/* Acción de archivo o de configuración: discreta, con ícono. */
+.boton-terciario {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid transparent; border-radius: var(--at-r-sm, 8px);
+  background: transparent; color: var(--at-text-2, #4A392C);
+  font: inherit; font-size: 0.87rem; font-weight: 600; cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.boton-terciario:hover { background: var(--at-surface-2, #F1E9DC); border-color: var(--at-border, #E1D5C0); }
+.boton-secundario:focus-visible, .boton-terciario:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 2px; }
+
+/* Encabezado de una sección dentro de la página (ej. el resumen de rollos):
+   título legible (no en mayúsculas pequeñas) con su explicación y la acción al lado. */
+.seccion-cabecera {
+  display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem 1rem;
+  margin: 2rem 0 0.9rem; padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--at-border-soft, #EBE2D2);
+}
+.seccion-cabecera h2 { margin: 0; font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em; color: var(--at-text, #251C14); }
+.seccion-cabecera p { margin: 0.2rem 0 0; font-size: 0.84rem; color: var(--at-muted, #7C6A56); }
+
+/* El ejemplo del campo de código se lee normal (el código escrito sí va en mayúsculas). */
+.sincodigo-fila input::placeholder { text-transform: none; font-family: inherit; color: var(--at-caption, #9C8A74); }
+
+@media (max-width: 900px) {
+  .pagina-cabecera { grid-template-columns: 1fr; }
+  .pagina-acciones { justify-content: flex-start; max-width: none; }
+}

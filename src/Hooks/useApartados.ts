@@ -38,6 +38,8 @@ const ITEM_VACIO = {
 };
 const FORMULARIO_VACIO = {
   bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", ordenInterna: false,
+  // Traslado a una bodega sin inventario en el sistema (ej. "San Gil"); "" = cotización.
+  trasladoA: "",
   // Siigo: si va a Siigo (toda cotización nueva de una empresa conectada; el
   // número lo pone Siigo), cédula/NIT, vendedor e impuestos.
   deSiigo: true, clienteIdentificacion: "", siigoVendedor: "", siigoCentroCosto: "", siigoIva: true, siigoRetefuente: false,
@@ -68,6 +70,8 @@ type FormularioApartado = {
   bodegaId: string; empresa: string; materialEnCamino: boolean; numeroCotizacion: string; cliente: string; observaciones: string;
   // Orden de producción interna (Admin Inventario): solo lámina por producir, todo va al stock.
   ordenInterna: boolean;
+  // Traslado a una bodega sin inventario (San Gil): sin cliente, precios ni Siigo.
+  trasladoA: string;
   deSiigo: boolean; clienteIdentificacion: string; siigoVendedor: string; siigoCentroCosto: string; siigoIva: boolean; siigoRetefuente: boolean;
   items: ItemFormulario[];
 };
@@ -90,7 +94,7 @@ export type RolloParaApartar = {
   pesoActualKg?: number | null;
 };
 type Apartado = {
-  id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; salidaPendiente: boolean; ordenInterna: boolean;
+  id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; salidaPendiente: boolean; ordenInterna: boolean; trasladoA: string;
   cliente: string; creadoPor: string;
   fechaCreacion: string; estado: string; enviadoAProduccionPor: string; fechaEnviadoAProduccion: string | null;
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
@@ -138,13 +142,17 @@ function quitarPosicion<T>(porPosicion: Record<number, T>, indice: number): Reco
 /** Estado y operaciones del módulo Apartados (reserva de material por cotización).
  * Cada línea del formulario elige su modalidad (POR_ROLLO/POR_STOCK) de forma
  * independiente -- ver ITEM_VACIO arriba. */
-export function useApartados(sesion: { rol?: string } | null | undefined, alCambiarApartados?: () => void) {
+export function useApartados(sesion: { rol?: string; bodegaId?: number | null } | null | undefined, alCambiarApartados?: () => void) {
   // El vendedor crea y corrige sus cotizaciones (aprobadas, eligiendo la
   // bodega); Admin Inventario también las crea, las corrige y las anula; la
   // bodega (administrativo) decide cuándo enviarlas a producción.
   const puedeCrearApartados = sesion?.rol === "vendedor" || sesion?.rol === "admin_inventario";
   // Las órdenes de producción interna (para stock) solo las crea Admin Inventario.
   const puedeCrearOrdenInterna = sesion?.rol === "admin_inventario";
+  // Traslados a una bodega sin inventario (San Gil): la encargada de la bodega
+  // (con material de la suya) y Admin Inventario. También los anula y les da Salida.
+  const puedeCrearTraslado = sesion?.rol === "administrativo" || sesion?.rol === "admin_inventario";
+  const bodegaFija = sesion?.rol === "administrativo" && sesion.bodegaId ? String(sesion.bodegaId) : "";
   const puedeEditarApartados = sesion?.rol === "vendedor" || sesion?.rol === "admin_inventario";
   const puedeCancelarApartados = sesion?.rol === "admin_inventario";
   const puedeEnviarAProduccion = sesion?.rol === "administrativo";
@@ -209,13 +217,19 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   // _editar_cotizacion_completa). Vacío = se edita solo esta parte.
   const [otrasPartesIds, setOtrasPartesIds] = useState<number[]>([]);
 
-  function abrirFormularioApartado(ordenInterna = false) {
+  function abrirFormularioApartado(ordenInterna = false, trasladoA = "") {
     numeroAutomatico.current = "";
     esOrdenInterna.current = ordenInterna;
     setEditandoId(null);
     setOtrasPartesIds([]);
     setParteEditada({ bodega: "", otrasPartes: [] });
-    setFormulario({ ...FORMULARIO_VACIO, ordenInterna });
+    // La encargada de la bodega solo traslada material de la suya: va fija;
+    // un traslado empieza con un producto de stock (no lleva lámina por producir).
+    setFormulario({
+      ...FORMULARIO_VACIO, ordenInterna, trasladoA, bodegaId: bodegaFija,
+      deSiigo: !trasladoA,
+      items: [{ ...ITEM_VACIO, bodegaId: bodegaFija, modalidad: trasladoA ? "por_stock" : ITEM_VACIO.modalidad }],
+    });
     setErrorFormularioApartado("");
     setDisponibilidadItems({});
     setResultadosBusquedaProducto({});
@@ -239,7 +253,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     const empresaCotizacion = (partes.find((p) => p.numeroCotizacion === numeroSinEmpresa(p.numeroCotizacion)) ?? ap).empresa;
     esOrdenInterna.current = ap.ordenInterna;
     setFormulario({
-      ordenInterna: ap.ordenInterna,
+      ordenInterna: ap.ordenInterna, trasladoA: ap.trasladoA || "",
       bodegaId: String(ap.bodegaId), empresa: empresaCotizacion, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
       numeroCotizacion: numeroSinEmpresa(ap.numeroCotizacion), cliente: ap.cliente, observaciones: ap.observaciones,
       deSiigo: Boolean(ap.siigoId || ap.siigoPendiente), clienteIdentificacion: ap.clienteIdentificacion || "", siigoVendedor: ap.siigoVendedor ? String(ap.siigoVendedor) : "",
@@ -406,7 +420,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   function agregarItemApartado() {
     setFormulario((actual) => {
       const anterior = actual.items[actual.items.length - 1];
-      return { ...actual, items: [...actual.items, { ...ITEM_VACIO, bodegaId: anterior?.bodegaId || "", empresa: anterior?.empresa || "" }] };
+      // En un traslado no hay lámina por producir: la línea nueva es de stock.
+      return { ...actual, items: [...actual.items, { ...ITEM_VACIO, bodegaId: anterior?.bodegaId || bodegaFija, empresa: anterior?.empresa || "",
+        modalidad: actual.trasladoA ? "por_stock" : ITEM_VACIO.modalidad }] };
     });
   }
 
@@ -613,8 +629,18 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
 
   async function crearApartado(evento: { preventDefault: () => void }) {
     evento.preventDefault();
+    // Abierto como traslado aunque hayan borrado el destino (queda " "): se pide escribirlo.
+    const esTraslado = formulario.trasladoA !== "";
+    if (esTraslado && !formulario.trasladoA.trim()) {
+      setErrorFormularioApartado("Escribe a qué bodega va el traslado (ej. San Gil).");
+      return;
+    }
     if (!formulario.empresa) {
-      setErrorFormularioApartado("Elige de qué empresa es la cotización: Arquitejas o Asia Business.");
+      setErrorFormularioApartado(esTraslado ? "Elige de qué empresa es el material." : "Elige de qué empresa es la cotización: Arquitejas o Asia Business.");
+      return;
+    }
+    if (esTraslado && formulario.items.some((i) => i.modalidad === "por_rollo")) {
+      setErrorFormularioApartado("Un traslado solo lleva productos de stock y rollos completos.");
       return;
     }
     if (formulario.items.some((_, indice) => !bodegaDeItem(indice))) {
@@ -623,7 +649,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
     // La que va a Siigo: el número lo pone Siigo (al crearla) y no se cambia.
     const enSiigo = siigo.enSiigo;
-    if (!enSiigo && !formulario.numeroCotizacion.trim()) {
+    if (!enSiigo && !esTraslado && !formulario.numeroCotizacion.trim()) {
       setErrorFormularioApartado("Indica el número de cotización.");
       return;
     }
@@ -675,7 +701,9 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
         bodega_id: Number(bodegaDeItem(0) || formulario.bodegaId),
         material_en_camino: formulario.materialEnCamino,
         // El de una cotización nueva para Siigo lo pone Siigo (el backend ignora este).
-        numero_cotizacion: enSiigo && !editandoId ? "SIIGO" : formulario.numeroCotizacion.trim(),
+        // El de un traslado lo pone el sistema ("TR-0001").
+        numero_cotizacion: esTraslado ? "TR" : enSiigo && !editandoId ? "SIIGO" : formulario.numeroCotizacion.trim(),
+        traslado_a: formulario.trasladoA.trim(),
         empresa: formulario.empresa,
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
@@ -840,6 +868,17 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
     }
   }
 
+  // Sale el camión del traslado a San Gil: se descuenta todo y queda Entregado.
+  async function darSalidaTraslado(id: number) {
+    setErrorAccionApartado("");
+    try {
+      await api.post(`/apartados/${id}/salida-traslado`);
+      await cargarApartados();
+    } catch (err) {
+      setErrorAccionApartado(err instanceof ErrorApi ? err.message : "No se pudo registrar la salida del traslado.");
+    }
+  }
+
   async function marcarApartadoEntregado(id: number) {
     setErrorAccionApartado("");
     try {
@@ -851,7 +890,7 @@ export function useApartados(sesion: { rol?: string } | null | undefined, alCamb
   }
 
   return {
-    puedeCrearApartados, puedeCrearOrdenInterna, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
+    puedeCrearApartados, puedeCrearOrdenInterna, puedeCrearTraslado, bodegaFija, darSalidaTraslado, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
     apartados, cargandoApartados, errorApartados, cargarApartados,
     filtroEstado, setFiltroEstado,
 

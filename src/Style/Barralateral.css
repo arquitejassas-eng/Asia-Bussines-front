@@ -239,3 +239,11 @@
     margin-top: 0;
   }
 }
+/* "N sin código" en Inventario total: tarea pendiente de Admin Inventario. */
+.barra-notificacion-aviso {
+  width: auto;
+  /* Ámbar oscuro: el blanco encima se lee bien (contraste > 4.5:1). */
+  background: #8A5606;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}

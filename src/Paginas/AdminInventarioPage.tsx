@@ -15,6 +15,8 @@ import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia"
 import PanelNuevoProducto from "../Componentes/PanelNuevoProducto";
 import PanelEliminarProducto from "../Componentes/PanelEliminarProducto";
 import PanelTrasladosRollos from "../Componentes/PanelTrasladosRollos";
+import PanelProductosSinCodigo from "../Componentes/PanelProductosSinCodigo";
+import { IconoDescargar } from "../Componentes/Iconos";
 import { pasoDelTraslado } from "../Componentes/AvisosTrasladosRollos";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
@@ -133,14 +135,24 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
 
       <div className="layout-contenido">
         <div className="inventario-page">
-          <div className="inventario-header">
-            <h1 className="inventario-titulo">Inventario total</h1>
+          <div className="pagina-cabecera">
+            <div className="pagina-cabecera-texto">
+              <h1 className="inventario-titulo">Inventario total</h1>
+              <p className="inventario-carga-ayuda">
+                {c.soloLectura ? (
+                  "Consulta el inventario real de productos y rollos en cada sede."
+                ) : (
+                  <>
+                    Consulta el inventario real de cada sede y reparte el material que recibiste entre ellas.
+                    Al enviar, la sede destino recibe una notificación para confirmar si ya llegó.
+                  </>
+                )}
+              </p>
+            </div>
             {!c.soloLectura && !c.mostrarFormularioEnvio && (
-              <div style={{ display: "flex", gap: "0.6rem" }}>
-                <button
-                  className="inventario-boton-cancelar"
-                  onClick={() => setMostrarAdminUnidades((actual) => !actual)}
-                >
+              <div className="pagina-acciones">
+                <button className="boton-terciario" aria-expanded={mostrarAdminUnidades}
+                  onClick={() => setMostrarAdminUnidades((actual) => !actual)}>
                   {mostrarAdminUnidades ? "Ocultar" : "Administrar"} unidades por familia
                 </button>
                 <button className="inventario-boton" onClick={c.abrirFormularioEnvio}>
@@ -149,16 +161,6 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
               </div>
             )}
           </div>
-          <p className="inventario-carga-ayuda">
-            {c.soloLectura ? (
-              "Consulta el inventario real de productos y rollos en cada sede."
-            ) : (
-              <>
-                Consulta el inventario real de cada sede y reparte el material que recibiste entre ellas.
-                Al enviar, la sede destino recibe una notificación para confirmar si ya llegó.
-              </>
-            )}
-          </p>
 
           {mostrarAdminUnidades && !c.mostrarFormularioEnvio && (
             <PanelAdminUnidadesFamilia
@@ -366,14 +368,19 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
 
           {!c.mostrarFormularioEnvio && (
             <>
+              <PanelProductosSinCodigo productos={almacen?.productosSinCodigo || []}
+                alCambiar={() => Promise.all([almacen?.refrescarProductosSinCodigo(), c.cargarComparativo(true)]).then(() => undefined)} />
               <PanelTrasladosRollos traslados={trasladosRollos} verCodigo={verCodigoEnResumen} />
 
               {/* ================== RESUMEN: TOTAL POR CÓDIGO EN TODA LA EMPRESA ================== */}
-              <div id="resumen-rollos" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Resumen — total por código en toda la empresa — Rollos</h2>
+              <div id="resumen-rollos" className="seccion-cabecera">
+                <div>
+                  <h2>Rollos en toda la empresa</h2>
+                  <p>Total por código, sumando todas las bodegas.</p>
+                </div>
                 {c.comparativo.rollos.length > 0 && (
-                  <button className="inventario-boton-cancelar" onClick={exportarResumenRollos}>
-                    📥 Exportar a Excel
+                  <button className="boton-terciario" onClick={exportarResumenRollos}>
+                    <IconoDescargar /> Exportar a Excel
                   </button>
                 )}
               </div>
@@ -611,11 +618,14 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                     <PanelEliminarProducto bodegas={bodegas} alEliminar={() => c.cargarComparativo(true)}
                       familias={(almacen?.unidadesFamilia || []).map((u) => u.familia)} />
                   )}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Resumen — productos por código en toda la empresa — Unidades</h2>
+                  <div className="seccion-cabecera">
+                    <div>
+                      <h2>Productos en toda la empresa</h2>
+                      <p>Mercancía por unidades, total por código sumando todas las bodegas.</p>
+                    </div>
                     {c.comparativo.productos.length > 0 && (
-                      <button className="inventario-boton-cancelar" onClick={exportarResumenProductos}>
-                        📥 Exportar a Excel
+                      <button className="boton-terciario" onClick={exportarResumenProductos}>
+                        <IconoDescargar /> Exportar a Excel
                       </button>
                     )}
                   </div>

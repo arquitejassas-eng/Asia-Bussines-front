@@ -1,3 +1,4 @@
+import type { ProductoSinCodigo } from "../Componentes/AvisosProductosSinCodigo";
 import type { TrasladoRollo } from "../Componentes/AvisosTrasladosRollos";
 
 export type Sesion = { correo: string; bodegaId: number | null; bodegaNombre: string; rol: string };
@@ -48,6 +49,8 @@ export type AlmacenGlobal = {
   trasladosPendientes: Solicitud[]; refrescarTrasladosPendientes: () => Promise<void>;
   // Rollos pedidos entre bodegas que todavía no llegan (solo Admin Inventario).
   trasladosRollos: TrasladoRollo[]; refrescarTrasladosRollos: () => Promise<void>;
+  // Productos de producción con código provisional (solo Admin Inventario).
+  productosSinCodigo: ProductoSinCodigo[]; refrescarProductosSinCodigo: () => Promise<void>;
   unidadPorFamilia: Record<string, string>; decimalesPorFamilia: Record<string, boolean>;
   cargarBodegas: () => Promise<void>; refrescarSolicitudesPendientes: () => Promise<void>;
   refrescarEnviosPendientes: () => Promise<void>; cargarUnidadesFamilia: () => Promise<void>;

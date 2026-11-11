@@ -146,7 +146,7 @@ export function apartadoDesdeApi(a: RegistroApi) {
     // Ya salió pero falta saber de qué rollo (REFERENCIA "SI" en el Excel).
     salidaPendiente: Boolean(a.salida_pendiente),
     // Orden de producción interna de Admin Inventario (para stock, sin cliente).
-    ordenInterna: Boolean(a.orden_interna),
+    ordenInterna: Boolean(a.orden_interna), trasladoA: texto(a.traslado_a),
     cliente: texto(a.cliente), creadoPor: texto(a.creado_por), fechaCreacion: texto(a.fecha_creacion),
     estado: texto(a.estado), enviadoAProduccionPor: texto(a.enviado_a_produccion_por),
     fechaEnviadoAProduccion: a.fecha_enviado_a_produccion == null ? null : texto(a.fecha_enviado_a_produccion),

@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, literal, or_
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, requiere_rol
+from pydantic import BaseModel
+
+from app.api.deps import get_db, requiere_rol, usuario_actual
 from app.api.routes.rollos import asignar_peso_actual, filtro_empresa
 from app.models.apartado import Apartado, ApartadoItem, ModalidadApartado
 from app.models.bodega import Bodega
@@ -10,12 +12,13 @@ from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.producto import Producto
 from app.models.rollo import EstadoRollo, Rollo
 from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, EstadoSolicitud, Solicitud
-from app.models.usuario import RolUsuario
+from app.models.usuario import RolUsuario, Usuario
 from app.schemas.admin_inventario import ComparativoInventarioResponse, FilaComparativoResponse
 from app.schemas.rollos import RolloResponse
 from app.services.apartados import EMPRESA_DE_LINEA, ESTADOS_RESERVA_ACTIVA, de_la_empresa
 from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.services.clasificacion import formatear_calibre
+from app.services import codigo_provisional as srv_codigo
 from app.services.merma_rollo import asignar_merma_y_sobrante, rollos_con_merma_o_sobrante
 
 # Todo este router es de solo lectura, por eso VENDEDOR también entra: es su
@@ -379,3 +382,22 @@ def traslados_de_rollos_en_curso(db: Session = Depends(get_db)) -> list[dict]:
         }
         for s, r in solicitudes
     ]
+
+
+@router.get("/productos-sin-codigo", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def productos_sin_codigo(db: Session = Depends(get_db)) -> list[dict]:
+    """Lo que Planta mandó al stock sin que existiera el producto: tiene un
+    código provisional de la producción y le falta el código real."""
+    return srv_codigo.productos_sin_codigo(db)
+
+
+class PonerCodigoRequest(BaseModel):
+    codigo_provisional: str
+    codigo: str
+
+
+@router.post("/productos-sin-codigo/poner-codigo", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def poner_codigo(datos: PonerCodigoRequest, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> dict:
+    cambiados = srv_codigo.poner_codigo(db, datos.codigo_provisional, datos.codigo, usuario)
+    db.commit()
+    return {"cambiados": cambiados}

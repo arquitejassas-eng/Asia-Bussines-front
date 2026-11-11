@@ -112,6 +112,8 @@ class ApartadoCrear(BaseModel):
     # Orden de producción interna (Admin Inventario): solo líneas de lámina
     # por producir; lo producido entra al stock.
     orden_interna: bool = False
+    # Traslado a una bodega sin inventario en el sistema (ej. "San Gil"); "" = cotización.
+    traslado_a: str = Field(default="", max_length=60)
     items: list[ApartadoItemCrear]
     # Siigo Nube: cédula/NIT del cliente, impuestos que lleva y vendedor de Siigo.
     cliente_identificacion: str = Field(default="", max_length=20)
@@ -130,6 +132,12 @@ class ApartadoCrear(BaseModel):
                 raise ValueError("Una orden de producción interna solo lleva lámina por producir (material por rollo).")
         elif any(i.tipo_producto == LAMINA_LISA for i in self.items):
             raise ValueError("La lámina lisa solo se pide en una orden de producción interna.")
+        self.traslado_a = " ".join(self.traslado_a.split())
+        if self.traslado_a:
+            if self.orden_interna:
+                raise ValueError("Un traslado no es una orden de producción interna.")
+            if any(i.modalidad != ModalidadApartado.POR_STOCK and not i.rollo_id for i in self.items):
+                raise ValueError("Un traslado solo lleva productos de stock y rollos completos (no lámina por producir).")
         return self
 
 
@@ -322,6 +330,7 @@ class ApartadoResponse(ModeloConFechasUtc):
     id: int
     salida_pendiente: bool = False
     orden_interna: bool = False
+    traslado_a: str = ""
     bodega_id: int
     bodega_nombre: str = ""
     numero_cotizacion: str

@@ -18,7 +18,7 @@ type LineaParaSiigo = {
   siigoKilos?: number | null;
 };
 type FormularioParaSiigo = {
-  empresa: string; ordenInterna: boolean; deSiigo: boolean; cliente: string; clienteIdentificacion: string;
+  empresa: string; ordenInterna: boolean; trasladoA?: string; deSiigo: boolean; cliente: string; clienteIdentificacion: string;
   siigoVendedor: string; siigoCentroCosto: string; siigoIva: boolean; siigoRetefuente: boolean;
   items: LineaParaSiigo[];
 };
@@ -36,7 +36,7 @@ export function useSiigoCotizacion<F extends FormularioParaSiigo>(
     api.get<Record<string, boolean>>("/siigo/estado").then((datos) => setConectadas(datos || {})).catch(() => setConectadas({}));
   }, [activo]);
   const empresaConectada = Boolean(conectadas[formulario.empresa]);
-  const usaSiigo = activo && empresaConectada && !formulario.ordenInterna;
+  const usaSiigo = activo && empresaConectada && !formulario.ordenInterna && !formulario.trasladoA;
   // Toda cotización nueva de una empresa conectada va a Siigo; al editar, la que ya es de Siigo.
   const enSiigo = usaSiigo && formulario.deSiigo;
 

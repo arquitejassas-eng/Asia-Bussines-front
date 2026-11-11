@@ -4,6 +4,7 @@ import { descripcionRolloCompleto } from "../Utils/rolloCompleto";
 import { useNavigate } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
+import { IconoSubir } from "../Componentes/Iconos";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { EMPRESAS, AMBAS_EMPRESAS, nombreMaterial } from "../Utils/empresas";
 import PanelImportarCotizaciones from "../Componentes/PanelImportarCotizaciones";
@@ -543,6 +544,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           ? (soloCodigo ? `${num(it.cantidad)} ${it.productoDescripcion || codigo}${codigo && it.productoDescripcion ? ` (${codigo})` : ""}` : it.descripcion)
           : it.descripcion || `${cantidadLinea(it)} ${it.codigoInterno || ""}`;
         const detalle = [
+          it.rolloId ? `Rollo completo ${it.rolloReferencia || ""}`.trim() : "",
           variasBodegas ? `Sale de ${parte.bodegaNombre}` : "",
           it.modalidad === "por_stock" && it.medida ? `CORTAR a ${num(it.medida)} m` : "",
         ].filter(Boolean).join(" · ");
@@ -562,6 +564,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       vendedor: extra.vendedor || ap.creadoPor,
       bodegas: grupo.map((p) => p.bodegaNombre).filter(Boolean).join(" + "),
       lineas, kilos: extra.kilos, lineasSinPeso: extra.lineas_sin_peso,
+      trasladoA: ap.trasladoA || undefined,
     });
   }
 
@@ -683,6 +686,27 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const tieneProduccionPendiente = (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion")
       && !ap.salidaPendiente
       && (calcularSolicitudesPendientes([ap]).length > 0 || calcularStockParaAlistar([ap]).length > 0);
+    // Traslado a una bodega sin inventario (San Gil): no va a Planta ni a
+    // Siigo; cuando sale el camión se le da Salida y se descuenta todo.
+    if (ap.trasladoA) {
+      return a.puedeCrearTraslado && ap.estado === "apartado" ? (
+        <>
+          <button onClick={() => setConfirmacion({
+            titulo: `¿Ya salió el traslado ${ap.numeroCotizacion} a ${ap.trasladoA}?`,
+            mensaje: `Se descuenta todo del inventario de ${ap.bodegaNombre}: los productos y los rollos completos (enteros). `
+              + `No entra a ninguna otra bodega porque ${ap.trasladoA} no lleva inventario en el sistema. No se puede deshacer.`,
+            textoConfirmar: "Sí, ya salió",
+            ejecutar: () => a.darSalidaTraslado(ap.id),
+          })}>Salida a {ap.trasladoA}</button>
+          <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
+            titulo: `¿Anular el traslado ${ap.numeroCotizacion}?`,
+            mensaje: "El material que tenía apartado queda libre otra vez.",
+            textoConfirmar: "Sí, anular traslado",
+            ejecutar: () => a.cancelarApartado(ap.id),
+          })}>Anular</button>
+        </>
+      ) : null;
+    }
     return (
       <>
       {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
@@ -845,13 +869,44 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
       <div className="layout-contenido">
         <div className="inventario-page">
-          <div className="inventario-header">
-            <h1 className="inventario-titulo">Apartados</h1>
-            {(a.puedeCrearApartados || a.puedeCrearOrdenInterna) && !a.mostrarFormularioApartado && !mostrarImportar && (
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          {/* Título y explicación a la izquierda; acciones a la derecha, con UNA
+              principal (la que más se usa según el rol) y las demás en contorno. */}
+          <div className="pagina-cabecera">
+            <div className="pagina-cabecera-texto">
+              <h1 className="inventario-titulo">Apartados</h1>
+              <p className="inventario-carga-ayuda">
+                {a.puedeCrearApartados
+                  ? <>Cuando se aprueba una cotización, créala aquí y elige de qué bodega sale el material.
+                    Cada línea puede ser material por rollo (código de clasificación, color y calibre) o un
+                    producto de stock (Tornillos, Amarres, etc.). El material queda reservado en esa bodega y a
+                    su encargada lo envía a producción desde la lista cuando quiera.
+                    {esAdminInventario
+                      ? <> Aquí ves todas las cotizaciones (también las de los vendedores). Para producir stock (tejas, caballetes,
+                        flanches o lámina lisa) crea una orden de producción interna.</>
+                      : <> Aquí ves solo las cotizaciones que tú creaste.</>}</>
+                  : a.puedeEnviarAProduccion
+                    ? <>Aquí llegan las cotizaciones aprobadas (de los vendedores o de Admin Inventario) con el material ya reservado en tu
+                      bodega. Envíalas a producción desde la lista con el botón "Enviar a producción". Para mandar productos o rollos a
+                      San Gil (que no lleva inventario en el sistema) usa "+ Traslado a San Gil".</>
+                    : <>Cotizaciones aprobadas con su material reservado.</>}
+              </p>
+            </div>
+            {(a.puedeCrearApartados || a.puedeCrearOrdenInterna || a.puedeCrearTraslado) && !a.mostrarFormularioApartado && !mostrarImportar && (
+              <div className="pagina-acciones">
                 {esAdminInventario && (
-                  <button className="inventario-boton-cancelar" onClick={() => setMostrarImportar(true)}>
-                    📥 Cargar desde Excel
+                  <button className="boton-terciario" onClick={() => setMostrarImportar(true)}>
+                    <IconoSubir /> Cargar desde Excel
+                  </button>
+                )}
+                {a.puedeCrearOrdenInterna && (
+                  <button className="boton-secundario" onClick={() => a.abrirFormularioApartado(true)}>
+                    + Orden interna
+                  </button>
+                )}
+                {a.puedeCrearTraslado && (
+                  <button className={a.puedeCrearApartados ? "boton-secundario" : "inventario-boton"}
+                    onClick={() => a.abrirFormularioApartado(false, "San Gil")}>
+                    + Traslado a San Gil
                   </button>
                 )}
                 {a.puedeCrearApartados && (
@@ -859,29 +914,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     + Nuevo apartado
                   </button>
                 )}
-                {a.puedeCrearOrdenInterna && (
-                  <button className="inventario-boton" onClick={() => a.abrirFormularioApartado(true)}>
-                    + Orden de producción interna
-                  </button>
-                )}
               </div>
             )}
           </div>
-          <p className="inventario-carga-ayuda">
-            {a.puedeCrearApartados
-              ? <>Cuando se aprueba una cotización, créala aquí y elige de qué bodega sale el material.
-                Cada línea puede ser material por rollo (código de clasificación, color y calibre) o un
-                producto de stock (Tornillos, Amarres, etc.). El material queda reservado en esa bodega y a
-                su encargada lo envía a producción desde la lista cuando quiera.
-                {esAdminInventario
-                  ? <> Aquí ves todas las cotizaciones (también las de los vendedores). Para producir stock (tejas, caballetes,
-                    flanches o lámina lisa) crea una orden de producción interna.</>
-                  : <> Aquí ves solo las cotizaciones que tú creaste.</>}</>
-              : a.puedeEnviarAProduccion
-                ? <>Aquí llegan las cotizaciones aprobadas (de los vendedores o de Admin Inventario) con el material ya reservado en tu
-                  bodega. Envíalas a producción desde la lista con el botón "Enviar a producción".</>
-                : <>Cotizaciones aprobadas con su material reservado.</>}
-          </p>
 
           {a.errorAccionApartado && <p className="inventario-error">{a.errorAccionApartado}</p>}
           {a.avisoSiigo && (
@@ -894,10 +929,17 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           {a.mostrarFormularioApartado && (
             <form className="inventario-form apartado-form" onSubmit={guardarFormulario} noValidate>
               <h2 className="inventario-form-subtitulo">
-                {a.formulario.ordenInterna
+                {a.formulario.trasladoA ? `Nuevo traslado a ${a.formulario.trasladoA || "otra bodega"}` : a.formulario.ordenInterna
                   ? (a.editandoId ? `Editar orden ${a.formulario.numeroCotizacion}` : "Nueva orden de producción interna")
                   : a.editandoId ? `Editar cotización ${a.formulario.numeroCotizacion}` : "Nuevo apartado"}
               </h2>
+              {a.formulario.trasladoA !== "" && (
+                <p className="inventario-carga-ayuda">
+                  Para mandar productos de stock o rollos completos a una bodega que no lleva inventario en el sistema. Sin cliente,
+                  sin precios y sin Siigo: el material queda apartado y, cuando salga el camión, le das <strong>Salida</strong> en la
+                  lista y se descuenta de {a.bodegaFija ? "tu bodega" : "la bodega de donde sale"}.
+                </p>
+              )}
               {a.formulario.ordenInterna && (
                 <p className="inventario-carga-ayuda">
                   Orden para producir stock: el material queda apartado, la encargada de la bodega la envía a producción y lo que
@@ -918,8 +960,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </p>
               )}
 
-              <h3 className="apartado-form-seccion"><span className="apartado-form-paso">1</span> Datos de la {a.formulario.ordenInterna ? "orden" : "cotización"}</h3>
-              {!a.formulario.ordenInterna && (
+              <h3 className="apartado-form-seccion"><span className="apartado-form-paso">1</span> Datos {a.formulario.trasladoA ? "del traslado" : `de la ${a.formulario.ordenInterna ? "orden" : "cotización"}`}</h3>
+              {!a.formulario.ordenInterna && !a.formulario.trasladoA && (
                 <AvisoSiigoCotizacion
                   nombreEmpresa={EMPRESAS[a.formulario.empresa] || a.formulario.empresa} empresaConectada={a.siigo.empresaConectada}
                   enSiigo={a.siigo.enSiigo} editando={Boolean(a.editandoId)}
@@ -929,7 +971,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               )}
               <div className="inventario-form-grid apartado-form-datos">
                 <div>
-                  <label>Esta cotización es de *</label>
+                  <label>{a.formulario.trasladoA ? "El material es de *" : "Esta cotización es de *"}</label>
                   <select value={a.formulario.empresa} onChange={(e) => a.actualizarCampoApartado("empresa", e.target.value)}>
                     <option value="">Elige la empresa...</option>
                     {Object.entries(EMPRESAS).map(([sigla, nombre]) => (
@@ -937,8 +979,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     ))}
                   </select>
                 </div>
-                {/* La que va a Siigo no lleva número aquí: lo pone Siigo. */}
-                {!a.siigo.enSiigo && (
+                {a.formulario.trasladoA && (
+                  <div>
+                    <label htmlFor="traslado-destino">Va para la bodega *</label>
+                    <input id="traslado-destino" value={a.formulario.trasladoA}
+                      onChange={(e) => a.actualizarCampoApartado("trasladoA", e.target.value || " ")} />
+                  </div>
+                )}
+                {/* La que va a Siigo no lleva número aquí: lo pone Siigo. Un traslado lleva el suyo ("TR-0001"). */}
+                {!a.siigo.enSiigo && !a.formulario.trasladoA && (
                   <div>
                     <label>Número de cotización *</label>
                     <input
@@ -949,7 +998,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   </div>
                 )}
                 {a.siigo.enSiigo && <CampoSiigoCliente campo="nit" {...camposCliente} />}
-                {!a.formulario.ordenInterna && (
+                {!a.formulario.ordenInterna && !a.formulario.trasladoA && (
                   <div>
                     <label>Cliente</label>
                     <input
@@ -1014,7 +1063,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           Préstamo de {EMPRESAS[item.empresa] || item.empresa}
                         </span>
                       )}
-                      <select
+                      {!a.bodegaFija && <select
                         aria-label="Bodega de donde sale este producto"
                         title="Si las líneas salen de varias bodegas, al guardar la cotización queda repartida (mismo número)."
                         className="apartados-select apartados-select-activo"
@@ -1025,7 +1074,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         {almacen.bodegas.map((b) => (
                           <option key={b.id} value={b.id}>Sale de {b.nombre}</option>
                         ))}
-                      </select>
+                      </select>}
                     </div>
                   )}
                   {(a.formulario.items.length > 1 || a.parteEditada.otrasPartes.length > 0) && !(item.metrosConsumidos || item.stockDescontado) && (
@@ -1039,13 +1088,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   <div style={{ gridColumn: "1 / -1", display: item.id || a.formulario.ordenInterna ? "none" : undefined }}>
                     <label>Tipo de material</label>
                     <div className="apartado-tipos" role="group" aria-label="Tipo de material">
-                      <button
+                      {!a.formulario.trasladoA && <button
                         type="button"
                         className={`apartado-tipo-boton ${item.modalidad === "por_rollo" ? "apartado-tipo-activo" : ""}`}
                         onClick={() => a.cambiarModalidadItem(indice, "por_rollo")}
                       >
                         Material por rollo
-                      </button>
+                      </button>}
                       <button
                         type="button"
                         className={`apartado-tipo-boton ${item.modalidad === "por_stock" ? "apartado-tipo-activo" : ""}`}
@@ -1395,7 +1444,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   {a.guardandoApartado ? (a.siigo.enSiigo ? "Guardando y pasando a Siigo..." : "Guardando...")
                     : quitaEstaParte ? `Quitar de ${a.parteEditada.bodega}`
                     : a.siigo.enSiigo ? (apartadoEditado?.siigoId ? "Guardar y actualizar en Siigo" : "Guardar y subir a Siigo")
-                    : a.editandoId ? "Guardar cambios" : a.formulario.ordenInterna ? "Crear orden" : "Crear apartado"}
+                    : a.editandoId ? "Guardar cambios" : a.formulario.trasladoA ? "Crear traslado" : a.formulario.ordenInterna ? "Crear orden" : "Crear apartado"}
                 </button>
                 <button type="button" className="inventario-boton-cancelar" onClick={a.cerrarFormularioApartado}>
                   Cancelar
@@ -1588,7 +1637,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             <td className="ap-col-fecha" data-etiqueta="Creado" style={{ whiteSpace: "nowrap" }}>{formatearFechaColombia(ap.fechaCreacion, false)}</td>
                             <td className="inventario-acciones ap-col-acciones">
                               {/* Ya enviada a producción (cualquiera de sus partes) solo la corrige Admin Inventario. */}
-                              {a.puedeEditarApartados && partesActivas.length > 0 && (esAdminInventario || partesActivas.every((parte) => parte.estado === "apartado")) && (
+                              {a.puedeEditarApartados && !ap.trasladoA && partesActivas.length > 0 && (esAdminInventario || partesActivas.every((parte) => parte.estado === "apartado")) && (
                                 <button onClick={() => abrirEdicion(partesActivas)}>Editar</button>
                               )}
                               {puedeImprimir && grupo.some((parte) => parte.items.length > 0) && (

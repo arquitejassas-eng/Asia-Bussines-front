@@ -32,6 +32,7 @@ from app.services.transferencias import traslado_en_curso_del_rollo
 from app.services.venta_entre_empresas import pasar_producto_a_compradora, pasar_rollo_a_compradora
 
 TOLERANCIA = 0.005
+MOTIVO_TRASLADO_SIN_INVENTARIO = "traslado_sin_inventario"
 
 
 def _rollo_por_referencia(db: Session, apartado: Apartado, referencia: str) -> Rollo:
@@ -62,6 +63,10 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
     items = {item.id: item for item in apartado.items}
     ahora = datetime.now(timezone.utc)
     nota = f"Salida de la cotización {apartado.numero_cotizacion} registrada con la hoja de vida física."
+    # Traslado a una bodega sin inventario (San Gil): sale de aquí y no entra a ninguna.
+    motivo_traslado = MOTIVO_TRASLADO_SIN_INVENTARIO if apartado.traslado_a else ""
+    if motivo_traslado:
+        nota = f"Traslado {apartado.numero_cotizacion} a {apartado.traslado_a} (bodega sin inventario en el sistema)."
     # Si solo salen rollos completos no se está produciendo nada: la cotización
     # no "entra a producción" por eso.
     solo_rollos_completos = not datos.items_stock and all(
@@ -123,7 +128,7 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
         db.add(HistorialConsumoRollo(rollo_id=rollo.id, fecha=ahora, cantidad=metros, usuario=usuario.correo,
                                      observaciones=f"{nota} {item.descripcion}".strip()))
         db.add(Movimiento(
-            fecha=ahora, tipo=TipoMovimiento.SALIDA, motivo="produccion", producto_codigo=rollo.codigo_interno,
+            fecha=ahora, tipo=TipoMovimiento.SALIDA, motivo=motivo_traslado or "produccion", producto_codigo=rollo.codigo_interno,
             producto_descripcion=f"{rollo.descripcion} (rollo {rollo.identificador_rollo})",
             rollo_id=rollo.id, identificador_rollo=rollo.identificador_rollo,
             bodega_origen_id=apartado.bodega_id, bodega_destino_id=None, cantidad=metros, usuario=usuario.correo,
@@ -157,7 +162,7 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
         producto.stock -= Decimal(str(item.cantidad))
         item.stock_descontado = True
         db.add(Movimiento(
-            fecha=ahora, tipo=TipoMovimiento.SALIDA, motivo="apartado_stock",
+            fecha=ahora, tipo=TipoMovimiento.SALIDA, motivo=motivo_traslado or "apartado_stock",
             producto_codigo=producto.codigo, producto_descripcion=producto.descripcion,
             bodega_origen_id=apartado.bodega_id, bodega_destino_id=None, cantidad=item.cantidad,
             usuario=usuario.correo, observaciones=nota, cotizacion=apartado.numero_cotizacion,
@@ -171,7 +176,7 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
          else (it.metros_requeridos or 0) - (it.metros_consumidos or 0) <= TOLERANCIA)
         for it in apartado.items
     )
-    if completa and apartado.salida_pendiente:
+    if completa and (apartado.salida_pendiente or apartado.traslado_a):
         # El material ya se había entregado: solo faltaba saber de qué rollo.
         apartado.estado = EstadoApartado.ENTREGADO
         apartado.fecha_entregado = ahora

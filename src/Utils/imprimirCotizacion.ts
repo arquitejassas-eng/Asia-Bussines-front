@@ -6,6 +6,9 @@ export type LineaParaImprimir = { descripcion: string; detalle?: string };
 export type CotizacionParaImprimir = {
   numero: string; empresa: string; cliente: string; fecha: string; vendedor: string; bodegas: string;
   lineas: LineaParaImprimir[]; kilos: number; lineasSinPeso: number;
+  // Traslado a una bodega sin inventario (San Gil): la hoja va con el camión,
+  // dice para dónde va y lleva firmas de quien despacha, el conductor y quien recibe.
+  trasladoA?: string;
 };
 
 const escapar = (texto: string) =>
@@ -28,8 +31,14 @@ export function imprimirCotizacion(ventana: Window, c: CotizacionParaImprimir) {
   const filas = c.lineas.map((l, i) => `
     <tr><td class="num">${i + 1}</td><td>${escapar(l.descripcion)}${l.detalle ? `<div class="detalle">${escapar(l.detalle)}</div>` : ""}</td></tr>`).join("");
   const dato = (etiqueta: string, valor: string) => valor ? `<div><span>${etiqueta}:</span> ${escapar(valor)}</div>` : "";
+  const tipo = c.trasladoA ? "Traslado" : "Cotización";
+  const datos = c.trasladoA
+    ? `${dato("Sale de", c.bodegas)}${dato("Va para", c.trasladoA)}${dato("Fecha", c.fecha)}${dato("Creado por", c.vendedor)}`
+    : `${dato("Cliente", c.cliente)}${dato("Fecha", c.fecha)}${dato("Vendedor", c.vendedor)}${dato(c.bodegas.includes("+") ? "Bodegas" : "Bodega", c.bodegas)}`;
+  const firmas = c.trasladoA
+    ? `<div class="firmas"><div>Despachó</div><div>Conductor / placa</div><div>Recibió en ${escapar(c.trasladoA)}</div></div>` : "";
   ventana.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8">
-<title>Cotización ${escapar(c.numero)}</title>
+<title>${tipo} ${escapar(c.numero)}</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 24px; font-size: 13px; }
@@ -45,14 +54,17 @@ export function imprimirCotizacion(ventana: Window, c: CotizacionParaImprimir) {
   .detalle { font-size: 11px; color: #444; margin-top: 2px; }
   .kilos { margin-top: 14px; font-size: 14px; }
   .kilos span { font-size: 12px; color: #444; }
+  .firmas { display: flex; gap: 40px; margin-top: 48px; break-inside: avoid; }
+  .firmas div { flex: 1; border-top: 1px solid #111; padding-top: 4px; font-size: 12px; }
   @page { margin: 14mm; }
 </style></head><body>
-<header><h1>${escapar(c.empresa)}</h1><div class="numero">Cotización ${escapar(c.numero)}</div></header>
+<header><h1>${escapar(c.empresa)}</h1><div class="numero">${tipo} ${escapar(c.numero)}</div></header>
 <div class="datos">
-  ${dato("Cliente", c.cliente)}${dato("Fecha", c.fecha)}${dato("Vendedor", c.vendedor)}${dato(c.bodegas.includes("+") ? "Bodegas" : "Bodega", c.bodegas)}
+  ${datos}
 </div>
 <table><thead><tr><th class="num">#</th><th>Descripción</th></tr></thead><tbody>${filas}</tbody></table>
 ${kilos}
+${firmas}
 </body></html>`);
   ventana.document.close();
   ventana.focus();
