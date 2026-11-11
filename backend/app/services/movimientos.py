@@ -69,6 +69,8 @@ def aplicar_stock_editado(
     stock_actual = _decimal(producto.stock or 0)
     diferencia = stock_final - stock_actual
     if abs(diferencia) > Decimal("0.005"):
+        if stock_final < 0:
+            raise HTTPException(status_code=400, detail="El stock no puede quedar en negativo: escribe lo que hay de verdad (0 o más).")
         if diferencia < 0:
             validar_reserva_producto(db, producto=producto, cantidad=-diferencia)
         entra = diferencia > 0

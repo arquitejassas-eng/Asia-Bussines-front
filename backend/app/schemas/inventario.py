@@ -53,6 +53,11 @@ class ProductoActualizar(ProductoCrear):
     # services/movimientos.py::aplicar_stock_editado).
     stock_anterior: float | None = None
     entrada_anterior: float | None = None
+    # Un producto que ya está en negativo (vendido sin existencia) se tiene que
+    # poder editar (nombre, código...) sin tocar su stock: el formulario manda
+    # el mismo valor. Que no QUEDE en un negativo nuevo lo revisa aplicar_stock_editado.
+    stock: float = 0
+    entrada: float = 0
 
 
 class ProductoResponse(ProductoBase):
