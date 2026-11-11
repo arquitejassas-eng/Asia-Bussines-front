@@ -12,10 +12,12 @@ traslados, envíos y préstamos) para que el producto no quede con dos nombres.
 """
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.models.apartado import ApartadoItem
 from app.models.bodega import Bodega
 from app.models.envio import EnvioItem
 from app.models.movimiento import Movimiento, TipoMovimiento
@@ -82,8 +84,10 @@ def productos_sin_codigo(db: Session) -> list[dict]:
 
 def poner_codigo(db: Session, codigo_provisional: str, codigo_nuevo: str, usuario: Usuario) -> int:
     """Cambia el código provisional por el real en todas las bodegas. Devuelve
-    cuántas filas de producto cambiaron. No junta productos: si en una bodega
-    ya hay otro producto con ese código, avisa para que se escoja otro."""
+    cuántas filas de producto cambiaron. Si en una bodega ya existe ese código
+    (misma empresa y calidad), es el mismo producto: sus unidades se le suman y
+    la fila provisional desaparece (las cotizaciones que la usaban pasan a él).
+    Si existe pero es de otra calidad, avisa: no se mezclan primera y segunda."""
     nuevo = " ".join((codigo_nuevo or "").split()).upper()
     if not nuevo:
         raise HTTPException(status_code=400, detail="Escribe el código del producto.")
@@ -96,27 +100,50 @@ def poner_codigo(db: Session, codigo_provisional: str, codigo_nuevo: str, usuari
         raise HTTPException(status_code=404, detail="Ese producto ya tiene código o ya no existe. Recarga la lista.")
 
     bodegas = {b.id: b.nombre for b in db.query(Bodega).all()}
+    existentes: dict[int, Producto] = {}
     for p in productos:
         choca = db.query(Producto).filter(
             Producto.bodega_id == p.bodega_id, Producto.codigo == nuevo,
             Producto.empresa == (p.empresa or ""), Producto.id != p.id,
-        ).first()
-        if choca is not None:
+        ).with_for_update().first()
+        if choca is None:
+            continue
+        if (choca.calidad or "primera") != (p.calidad or "primera"):
             empresa = EMPRESAS_CONOCIDAS.get(p.empresa or "", p.empresa or "")
             raise HTTPException(
                 status_code=400,
-                detail=f"En {bodegas.get(p.bodega_id, 'esa bodega')} ya hay un producto de {empresa} con el código "
-                f"{nuevo} ({choca.descripcion}). Usa otro código, o pásale estas unidades a ese producto con un ajuste.",
+                detail=f"En {bodegas.get(p.bodega_id, 'esa bodega')} el código {nuevo} de {empresa} es "
+                f"{choca.descripcion}, de {choca.calidad or 'primera'}, y este es de {p.calidad or 'primera'}: usa el código de "
+                f"{'segunda' if (p.calidad or '') == 'segunda' else 'primera'}.",
             )
+        existentes[p.id] = choca
 
+    ahora = datetime.now(timezone.utc)
     for p in productos:
-        p.codigo = nuevo
+        destino = existentes.get(p.id)
+        if destino is None:
+            p.codigo = nuevo
+            continue
+        # Ya existía: las unidades pasan a ese producto y la fila provisional se va.
+        cantidad = float(p.stock or 0)
+        destino.stock = Decimal(str(destino.stock or 0)) + Decimal(str(cantidad))
+        destino.entrada = Decimal(str(destino.entrada or 0)) + Decimal(str(cantidad))
+        db.query(ApartadoItem).filter(ApartadoItem.producto_id == p.id).update(
+            {ApartadoItem.producto_id: destino.id}, synchronize_session=False)
+        db.add(Movimiento(
+            fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo="codigo_asignado",
+            producto_codigo=nuevo, producto_descripcion=destino.descripcion[:255],
+            bodega_origen_id=None, bodega_destino_id=p.bodega_id, cantidad=cantidad, usuario=usuario.correo,
+            observaciones=f"Unificado: las {cantidad:g} unidades de {codigo_provisional} ({p.descripcion}) eran este producto.",
+        ))
+        db.delete(p)
+    db.flush()
     for modelo, columna in ((Movimiento, Movimiento.producto_codigo), (Solicitud, Solicitud.producto_codigo),
                             (EnvioItem, EnvioItem.producto_codigo), (PrestamoEmpresa, PrestamoEmpresa.codigo)):
         db.query(modelo).filter(columna == codigo_provisional).update({columna: nuevo}, synchronize_session=False)
     # Queda en el historial quién le puso el código (cantidad 0: no mueve stock).
     db.add(Movimiento(
-        fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.ENTRADA, motivo="codigo_asignado",
+        fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo="codigo_asignado",
         producto_codigo=nuevo, producto_descripcion=productos[0].descripcion[:255],
         bodega_origen_id=None, bodega_destino_id=productos[0].bodega_id, cantidad=0, usuario=usuario.correo,
         observaciones=f"Código asignado por Admin Inventario: antes {codigo_provisional} (código provisional de la producción).",
