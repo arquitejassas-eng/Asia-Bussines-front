@@ -2025,3 +2025,6 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
   .pagina-cabecera { grid-template-columns: 1fr; }
   .pagina-acciones { justify-content: flex-start; max-width: none; }
 }
+.sincodigo-cabeza { grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0.35rem 1rem; }
+.sincodigo-cabeza-texto { display: grid; gap: 0.35rem; min-width: 0; }
+.sincodigo-mas { display: flex; justify-content: center; }

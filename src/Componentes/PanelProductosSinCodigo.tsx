@@ -83,32 +83,64 @@ function TarjetaSinCodigo({ producto, alGuardar }: { producto: ProductoSinCodigo
 
 /** Aviso de Inventario total: lo que Planta mandó al stock sin que existiera
  * el producto. Va arriba de todo y se va solo cuando ya no queda ninguno. */
+// Se recuerda si se dejó oculto (en este navegador) para no tener que cerrarlo cada vez.
+const CLAVE_ABIERTO = "sincodigo-abierto";
+const DE_A = 5;
+
+function leerAbierto() {
+  try { return localStorage.getItem(CLAVE_ABIERTO) !== "no"; } catch { return true; }
+}
+
 export default function PanelProductosSinCodigo({ productos, alCambiar }: {
   productos: ProductoSinCodigo[]; alCambiar: () => Promise<void> | void;
 }) {
   const [aviso, setAviso] = useState("");
+  const [abierto, setAbierto] = useState(leerAbierto);
+  // Con muchos, de 5 en 5: la lista completa empujaba todo el inventario hacia abajo.
+  const [visibles, setVisibles] = useState(DE_A);
   if (productos.length === 0 && !aviso) return null;
+  function alternar() {
+    setAbierto((antes) => {
+      try { localStorage.setItem(CLAVE_ABIERTO, antes ? "no" : "si"); } catch { /* sin almacenamiento: solo por ahora */ }
+      return !antes;
+    });
+  }
+  const restantes = productos.length - visibles;
 
   return (
     <section className="sincodigo" aria-labelledby="sincodigo-titulo">
       <header className="sincodigo-cabeza">
-        <h2 id="sincodigo-titulo" className="sincodigo-titulo">
-          <IconoEtiqueta />
-          {productos.length === 1 ? "1 producto de producción sin código" : `${productos.length} productos de producción sin código`}
-        </h2>
-        <p className="sincodigo-explica">
-          Planta los mandó al stock y no existían en el inventario. Escribe el código de cada uno y dale <strong>Guardar código</strong>.
-        </p>
+        <div className="sincodigo-cabeza-texto">
+          <h2 id="sincodigo-titulo" className="sincodigo-titulo">
+            <IconoEtiqueta />
+            {productos.length === 1 ? "1 producto de producción sin código" : `${productos.length} productos de producción sin código`}
+          </h2>
+          <p className="sincodigo-explica">
+            Planta los mandó al stock y no existían en el inventario. Escribe el código de cada uno y dale <strong>Guardar código</strong>.
+          </p>
+        </div>
+        {productos.length > 0 && (
+          <button type="button" className="traslados-alternar" aria-expanded={abierto} aria-controls="sincodigo-lista" onClick={alternar}>
+            {abierto ? "Ocultar" : "Ver productos"}
+          </button>
+        )}
       </header>
       {aviso && <p className="sincodigo-listo" role="status">{aviso}</p>}
-      {productos.length > 0 && (
-        <ul className="sincodigo-lista">
-          {productos.map((p) => (
+      {abierto && productos.length > 0 && (
+        <ul id="sincodigo-lista" className="sincodigo-lista">
+          {productos.slice(0, visibles).map((p) => (
             <TarjetaSinCodigo key={p.codigo} producto={p} alGuardar={async (codigo) => {
               setAviso(`Listo: "${p.descripcion}" ahora tiene el código ${codigo}.`);
               await alCambiar();
             }} />
           ))}
+          {restantes > 0 && (
+            <li className="sincodigo-mas">
+              <button type="button" className="boton-terciario" onClick={() => setVisibles((v) => v + DE_A)}>
+                Ver {Math.min(DE_A, restantes)} más ({restantes} pendientes)
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </section>
