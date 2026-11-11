@@ -878,8 +878,14 @@ def convertir_lamina_lisa(db: Session, datos: ConvertirLaminaLisa, usuario: Usua
     ahora = datetime.now(timezone.utc)
     tipo = item.convertir_en
     piezas = datos.laminas * SECCIONES_POR_TIPO_PRODUCTO[tipo]
-    familia = FAMILIA_POR_TIPO_PRODUCTO[tipo]
     calidad = lamina.calidad or "primera"
+    # Lo que salió de segunda entra aparte (código con "2" adelante, como las tejas de segunda).
+    piezas_segunda = datos.piezas_segunda
+    if piezas_segunda > piezas:
+        raise HTTPException(status_code=400, detail=f"De {datos.laminas} lámina(s) salen {piezas} {tipo}s: no pueden ser {piezas_segunda} de segunda.")
+    motivo = datos.motivo_segunda.strip()
+    if piezas_segunda and not motivo:
+        raise HTTPException(status_code=400, detail="Escribe por qué salieron de segunda.")
     orden = item.apartado.numero_cotizacion
     nota = (f"Orden {orden}: {datos.laminas} lámina(s) lisa(s) {lamina.codigo} convertidas en {piezas} {tipo}(s). "
             f"Responsable: {datos.responsable}." + (f" {datos.observaciones}" if datos.observaciones else ""))
@@ -892,10 +898,29 @@ def convertir_lamina_lisa(db: Session, datos: ConvertirLaminaLisa, usuario: Usua
         cantidad=datos.laminas, usuario=usuario.correo, observaciones=nota, cotizacion=orden,
     ))
 
+    primeros = None
+    if piezas - piezas_segunda > 0:
+        primeros = _sumar_conversion(db, tipo, lamina, piezas - piezas_segunda, calidad, lamina.motivo_segunda or "", usuario, ahora, nota, orden)
+    segundos = None
+    if piezas_segunda:
+        segundos = _sumar_conversion(db, tipo, lamina, piezas_segunda, "segunda", motivo, usuario, ahora,
+                                     f"{nota} {piezas_segunda} de segunda: {motivo}.", orden)
+    destino = primeros or segundos
+    item.laminas_convertidas = round((item.laminas_convertidas or 0) + datos.laminas, 2)
+    cerrar_orden_interna_si_terminó(item.apartado)
+    return {"lamina_codigo": lamina.codigo, "laminas": datos.laminas, "producto_codigo": destino.codigo,
+            "producto_descripcion": destino.descripcion, "piezas": piezas, "piezas_segunda": piezas_segunda,
+            "producto_segunda": segundos.codigo if segundos is not None else ""}
+
+
+def _sumar_conversion(db: Session, tipo: str, lamina: Producto, cantidad: float, calidad: str, motivo: str,
+                      usuario: Usuario, ahora: datetime, nota: str, orden: str) -> Producto:
+    """Entran `cantidad` caballetes/flanches de esa calidad que salieron de la lámina."""
+    familia = FAMILIA_POR_TIPO_PRODUCTO[tipo]
     # Los caballetes/flanches entran con el código de siempre (el del rollo con
     # "C" o "FC24" en vez de "L": LA50170,25 -> CA50170,25) y se suman al
     # producto que ya existe con ese código: misma tarjeta que los demás.
-    codigo_destino = codigo_de_conversion(db, tipo, lamina)
+    codigo_destino = codigo_de_conversion(db, tipo, lamina, calidad)
     destino = (
         db.query(Producto)
         .filter(Producto.bodega_id == usuario.bodega_id, func.upper(Producto.codigo) == codigo_destino,
@@ -903,8 +928,8 @@ def convertir_lamina_lisa(db: Session, datos: ConvertirLaminaLisa, usuario: Usua
         .order_by(Producto.id).with_for_update().first()
     )
     if destino is not None:
-        destino.stock = round(destino.stock + piezas, 2)
-        destino.entrada = round(destino.entrada + piezas, 2)
+        destino.stock = round(destino.stock + cantidad, 2)
+        destino.entrada = round(destino.entrada + cantidad, 2)
     else:
         # En otra bodega ya existe: es el mismo producto (mismos datos).
         plantilla = (
@@ -914,15 +939,15 @@ def convertir_lamina_lisa(db: Session, datos: ConvertirLaminaLisa, usuario: Usua
             .order_by(Producto.id).first()
         )
         if plantilla is not None:
-            destino = nuevo_producto_en_bodega(plantilla, bodega_id=usuario.bodega_id, cantidad=piezas)
+            destino = nuevo_producto_en_bodega(plantilla, bodega_id=usuario.bodega_id, cantidad=cantidad)
         else:
             destino = Producto(
                 bodega_id=usuario.bodega_id, empresa=lamina.empresa or "", codigo=codigo_destino,
-                descripcion=descripcion_de_conversion(db, tipo, lamina)[:255], familia=familia,
+                descripcion=descripcion_de_conversion(db, tipo, lamina, calidad)[:255], familia=familia,
                 calibre=lamina.calibre or "", color=lamina.color or "", ral=lamina.ral or "",
-                calidad=calidad, motivo_segunda=(lamina.motivo_segunda or "") if calidad == "segunda" else "",
+                calidad=calidad, motivo_segunda=motivo[:255] if calidad == "segunda" else "",
                 codigo_rollo_origen=lamina.codigo_rollo_origen, ancho_rollo=lamina.ancho_rollo,
-                fecha_produccion=ahora, entrada=piezas, stock=piezas,
+                fecha_produccion=ahora, entrada=cantidad, stock=cantidad,
             )
         db.add(destino)
         db.flush()
@@ -930,12 +955,9 @@ def convertir_lamina_lisa(db: Session, datos: ConvertirLaminaLisa, usuario: Usua
         fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo="conversion_lamina_lisa",
         producto_codigo=destino.codigo, producto_descripcion=destino.descripcion[:255],
         bodega_origen_id=None, bodega_destino_id=usuario.bodega_id,
-        cantidad=piezas, usuario=usuario.correo, observaciones=nota, cotizacion=orden,
+        cantidad=cantidad, usuario=usuario.correo, observaciones=nota, cotizacion=orden,
     ))
-    item.laminas_convertidas = round((item.laminas_convertidas or 0) + datos.laminas, 2)
-    cerrar_orden_interna_si_terminó(item.apartado)
-    return {"lamina_codigo": lamina.codigo, "laminas": datos.laminas, "producto_codigo": destino.codigo,
-            "producto_descripcion": destino.descripcion, "piezas": piezas}
+    return destino
 
 
 _CODIGO_LAMINA = re.compile(r"^L([A-Z]+)(\d{4})(\d,\d+)$")
@@ -947,7 +969,7 @@ def _desarrollo_flanche(ancho) -> int:
     return int((ancho if ancho > 10 else ancho * 100) // SECCIONES_POR_TIPO_PRODUCTO["flanche"])
 
 
-def codigo_de_conversion(db: Session, tipo: str, lamina: Producto) -> str:
+def codigo_de_conversion(db: Session, tipo: str, lamina: Producto, calidad: str | None = None) -> str:
     """Código de los caballetes/flanches que salen de una lámina lisa, como
     los del inventario: el del rollo con "C" (caballete) o "FC" + desarrollo
     (flanche) en vez de la "L": LA50170,25 -> CA50170,25 / FC24A50170,25.
@@ -955,10 +977,10 @@ def codigo_de_conversion(db: Session, tipo: str, lamina: Producto) -> str:
     origen = (lamina.codigo_rollo_origen or "").strip().upper()
     resto = origen[1:] if origen.startswith("L") else origen
     prefijo = "C" if tipo == "caballete" else f"FC{_desarrollo_flanche(lamina.ancho_rollo)}"
-    return ("2" if (lamina.calidad or "") == "segunda" else "") + prefijo + resto
+    return ("2" if (calidad or lamina.calidad or "") == "segunda" else "") + prefijo + resto
 
 
-def descripcion_de_conversion(db: Session, tipo: str, lamina: Producto) -> str:
+def descripcion_de_conversion(db: Session, tipo: str, lamina: Producto, calidad: str | None = None) -> str:
     """Como los del inventario: "CABALLETE AZUL 5017 0,25" /
     "FLANCHE DESARROLLO 24 AZUL 5017 0,25"."""
     origen = (lamina.codigo_rollo_origen or "").strip().upper()
@@ -969,4 +991,4 @@ def descripcion_de_conversion(db: Session, tipo: str, lamina: Producto) -> str:
     if color:
         partes.append(color)
     partes += [coincide.group(2), coincide.group(3)] if coincide else ([lamina.calibre] if lamina.calibre else [])
-    return " ".join(partes) + (" (Segunda)" if (lamina.calidad or "") == "segunda" else "")
+    return " ".join(partes) + (" (Segunda)" if (calidad or lamina.calidad or "") == "segunda" else "")

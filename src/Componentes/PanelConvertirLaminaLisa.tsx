@@ -22,6 +22,9 @@ function PanelConvertirLaminaLisa() {
   const [laminaId, setLaminaId] = useState("");
   const [cantidad, setCantidad] = useState("");
   const [responsable, setResponsable] = useState("");
+  // De los caballetes/flanches que salieron, cuántos quedaron de segunda y por qué.
+  const [segunda, setSegunda] = useState("");
+  const [motivoSegunda, setMotivoSegunda] = useState("");
   const [error, setError] = useState("");
   const [exito, setExito] = useState("");
   const [confirmando, setConfirmando] = useState(false);
@@ -41,6 +44,7 @@ function PanelConvertirLaminaLisa() {
   const numero = Number(cantidad) || 0;
   const piezas = linea ? numero * SECCIONES_POR_TIPO_PRODUCTO[linea.convertir_en] : 0;
   const nombre = linea?.convertir_en === "flanche" ? "flanches" : "caballetes";
+  const deSegunda = Number(segunda) || 0;
 
   function elegirLinea(id: string) {
     setItemId(id);
@@ -59,6 +63,9 @@ function PanelConvertirLaminaLisa() {
     if (numero > linea.laminas_por_convertir) return setError(`La orden solo tiene ${linea.laminas_por_convertir} láminas por convertir.`);
     if (numero > lamina.disponibles) return setError(`Solo hay ${lamina.disponibles} láminas libres de esa.`);
     if (!responsable.trim()) return setError("Escribe quién hizo la conversión.");
+    if (deSegunda < 0 || !Number.isInteger(deSegunda)) return setError(`Escribe cuántos ${nombre} salieron de segunda (número entero, 0 si ninguno).`);
+    if (deSegunda > piezas) return setError(`De ${numero} láminas salen ${piezas} ${nombre}: no pueden ser ${deSegunda} de segunda.`);
+    if (deSegunda > 0 && !motivoSegunda.trim()) return setError("Escribe por qué salieron de segunda.");
     setError("");
     setConfirmando(true);
   }
@@ -69,9 +76,12 @@ function PanelConvertirLaminaLisa() {
     try {
       const r = await api.post<{ piezas: number; producto_descripcion: string }>("/produccion/convertir-lamina-lisa", {
         apartado_item_id: linea!.item_id, producto_id: lamina!.id, laminas: numero, responsable: responsable.trim(),
+        piezas_segunda: deSegunda, motivo_segunda: deSegunda > 0 ? motivoSegunda.trim() : "",
       });
-      setExito(`Listo (${linea!.numero_orden}): entraron ${r?.piezas} ${nombre} (${r?.producto_descripcion}) y salieron ${numero} láminas lisas.`);
-      setItemId(""); setLaminaId(""); setCantidad("");
+      setExito(`Listo (${linea!.numero_orden}): entraron ${r?.piezas} ${nombre}`
+        + (deSegunda > 0 ? ` (${(r?.piezas ?? 0) - deSegunda} de primera y ${deSegunda} de segunda)` : ` (${r?.producto_descripcion})`)
+        + ` y salieron ${numero} láminas lisas.`);
+      setItemId(""); setLaminaId(""); setCantidad(""); setSegunda(""); setMotivoSegunda("");
       await cargar();
     } catch (err) {
       setError(err instanceof ErrorApi ? err.message : "No se pudo convertir la lámina lisa.");
@@ -135,13 +145,26 @@ function PanelConvertirLaminaLisa() {
                 <input id="lisa-responsable" type="text" className="produccion-input" placeholder="Nombre de quien la hizo"
                   value={responsable} onChange={(e) => setResponsable(e.target.value)} />
               </div>
+              <div>
+                <label className="produccion-label" htmlFor="lisa-segunda">¿Cuántos {nombre} salieron de segunda?</label>
+                <input id="lisa-segunda" type="number" min="0" step="1" className="produccion-input" placeholder="0"
+                  value={segunda} onChange={(e) => setSegunda(e.target.value)} />
+              </div>
+              {deSegunda > 0 && (
+                <div>
+                  <label className="produccion-label" htmlFor="lisa-motivo">¿Por qué salieron de segunda?</label>
+                  <input id="lisa-motivo" type="text" className="produccion-input" placeholder="Ej. rayados, mal doblados"
+                    value={motivoSegunda} onChange={(e) => setMotivoSegunda(e.target.value)} />
+                </div>
+              )}
             </>
           )}
         </div>
       )}
       {linea && numero > 0 && (
         <p className="produccion-resumen" style={{ marginTop: "1rem" }}>
-          {numero} lámina{numero === 1 ? "" : "s"} de {metros(linea.medida)} m = <strong>{piezas} {nombre}</strong> de {metros(linea.medida)} m.
+          {numero} lámina{numero === 1 ? "" : "s"} de {metros(linea.medida)} m = <strong>{piezas} {nombre}</strong> de {metros(linea.medida)} m
+          {deSegunda > 0 && deSegunda <= piezas ? <>: <strong>{piezas - deSegunda} de primera</strong> y <strong>{deSegunda} de segunda</strong></> : ""}.
         </p>
       )}
       {error && <p className="produccion-error">{error}</p>}

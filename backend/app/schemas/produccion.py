@@ -112,6 +112,9 @@ class ConvertirLaminaLisa(BaseModel):
     laminas: int = Field(gt=0)
     responsable: str = Field(min_length=1)
     observaciones: str = ""
+    # De los caballetes/flanches que salieron, cuántos quedaron de segunda (y por qué).
+    piezas_segunda: int = Field(default=0, ge=0)
+    motivo_segunda: str = ""
 
 
 class LaminaParaConvertir(BaseModel):
@@ -143,6 +146,8 @@ class ConversionLaminaResponse(BaseModel):
     producto_codigo: str
     producto_descripcion: str
     piezas: int
+    piezas_segunda: int = 0
+    producto_segunda: str = ""
 
 
 class RolloCorregido(BaseModel):
