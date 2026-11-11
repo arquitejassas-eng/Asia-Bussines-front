@@ -1884,3 +1884,8 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
 .envio-fila.marcada .envio-ref { color: var(--at-terra, #B7451F); }
 .inventario-form .envio-observaciones { margin-top: 1.4rem; grid-template-columns: 1fr; }
 @media (prefers-reduced-motion: reduce) { .envio-fila { transition: none; } }
+
+/* Editar o eliminar un producto: la fila que se edita y su formulario debajo. */
+.inventario-tabla tr.inventario-fila-editando > td { background: var(--at-terra-dim, rgba(183, 69, 31, 0.12)); font-weight: 600; }
+.inventario-tabla tr.inventario-fila-edicion > td { padding: 0.75rem 1rem 1rem; background: var(--at-surface-2, #F1E9DC); }
+.inventario-fila-edicion .inventario-editar-producto { margin: 0; }

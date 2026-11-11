@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
 import { MODELOS_TEJA } from "../Utils/teja";
@@ -29,6 +29,12 @@ function PanelEliminarProducto({ bodegas, alEliminar, familias = [] }: {
   const [editando, setEditando] = useState<ProductoDeBodega | null>(null);
   const [edicion, setEdicion] = useState<Edicion | null>(null);
   const [guardando, setGuardando] = useState(false);
+
+  // Al abrir la edición de un producto, se muestra (una vez, no a cada tecla).
+  const celdaEdicion = useRef<HTMLTableCellElement | null>(null);
+  useEffect(() => {
+    if (editando) celdaEdicion.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [editando?.id]);
 
   function abrirEdicion(producto: ProductoDeBodega) {
     const d = producto.datos;
@@ -120,6 +126,69 @@ function PanelEliminarProducto({ bodegas, alEliminar, familias = [] }: {
     );
   }
 
+  // El formulario se abre debajo de la fila que se está editando: con varios
+  // resultados, al final de la lista quedaba fuera de la pantalla y parecía
+  // que "Editar" no hacía nada.
+  function formularioEdicion() {
+    if (!editando || !edicion) return null;
+    return (
+    <div className="inventario-editar-producto">
+      <h3 className="inventario-form-subtitulo">Editar {editando.codigo} — {bodega}</h3>
+      <div className="inventario-form-grid">
+        <div>
+          <label>Código *</label>
+          <input value={edicion.codigo} onChange={(e) => setEdicion({ ...edicion, codigo: e.target.value })} />
+        </div>
+        <div>
+          <label>Empresa</label>
+          <select value={edicion.empresa} onChange={(e) => setEdicion({ ...edicion, empresa: e.target.value })}>
+            <option value="">Sin empresa</option>
+            {Object.entries(EMPRESAS).map(([sigla, nombre]) => <option key={sigla} value={sigla}>{nombre}</option>)}
+          </select>
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label>Descripción *</label>
+          <input value={edicion.descripcion} onChange={(e) => setEdicion({ ...edicion, descripcion: e.target.value })} />
+        </div>
+        <div>
+          <label>Familia</label>
+          <input list="editar-producto-familias" value={edicion.familia} onChange={(e) => setEdicion({ ...edicion, familia: e.target.value })} />
+          <datalist id="editar-producto-familias">{familias.map((f) => <option key={f} value={f} />)}</datalist>
+        </div>
+        <div>
+          <label>Espesor</label>
+          <input placeholder="Ej. 0,33" value={edicion.calibre} onChange={(e) => setEdicion({ ...edicion, calibre: e.target.value })} />
+        </div>
+        <div>
+          {/* En una teja la referencia es su modelo: de ahí sale su tarjeta. */}
+          <label>{esTeja(edicion.familia) ? "Modelo" : "Referencia"}</label>
+          <input list={esTeja(edicion.familia) ? "editar-producto-modelos" : undefined}
+            value={edicion.referencia} onChange={(e) => setEdicion({ ...edicion, referencia: e.target.value })} />
+          {esTeja(edicion.familia) && (
+            <datalist id="editar-producto-modelos">{Object.keys(MODELOS_TEJA).map((m) => <option key={m} value={m} />)}</datalist>
+          )}
+        </div>
+        <div>
+          <label>Stock</label>
+          <input type="number" step="any" value={edicion.stock} onChange={(e) => setEdicion({ ...edicion, stock: e.target.value })} />
+        </div>
+        <div>
+          <label>Stock mínimo (opcional)</label>
+          <input type="number" min="0" step="any" placeholder="Sin alerta" value={edicion.stockMinimo}
+            onChange={(e) => setEdicion({ ...edicion, stockMinimo: e.target.value })} />
+        </div>
+      </div>
+      {error && <p className="inventario-error" role="alert">{error}</p>}
+      <div className="inventario-form-botones">
+        <button type="button" className="inventario-boton" disabled={guardando} onClick={guardarEdicion}>
+          {guardando ? "Guardando..." : "Guardar cambios"}
+        </button>
+        <button type="button" className="inventario-boton-cancelar" onClick={() => { setEditando(null); setEdicion(null); }}>Cancelar</button>
+      </div>
+    </div>
+    );
+  }
+
   const bodega = bodegas.find((b) => String(b.id) === bodegaId)?.nombre || "";
   return (
     <form className="inventario-form" onSubmit={buscar} noValidate>
@@ -147,7 +216,7 @@ function PanelEliminarProducto({ bodegas, alEliminar, familias = [] }: {
           Cerrar
         </button>
       </div>
-      {error && <p className="inventario-error">{error}</p>}
+      {error && !editando && <p className="inventario-error">{error}</p>}
       {mensaje && <p className="inventario-carga-ayuda"><strong>{mensaje}</strong></p>}
       {resultados.length > 0 && (
         <div className="inventario-tabla-contenedor">
@@ -155,7 +224,8 @@ function PanelEliminarProducto({ bodegas, alEliminar, familias = [] }: {
             <thead><tr><th>Código</th><th>Descripción</th><th>Empresa</th><th>Stock</th><th></th></tr></thead>
             <tbody>
               {resultados.map((p) => (
-                <tr key={p.id}>
+                <Fragment key={p.id}>
+                <tr className={editando?.id === p.id ? "inventario-fila-editando" : undefined}>
                   <td>{p.codigo}</td>
                   <td>{p.descripcion}</td>
                   <td>{nombreEmpresa(p.empresa) || "—"}</td>
@@ -169,64 +239,15 @@ function PanelEliminarProducto({ bodegas, alEliminar, familias = [] }: {
                     </button>
                   </td>
                 </tr>
+                {editando?.id === p.id && (
+                  <tr className="inventario-fila-edicion"><td colSpan={5} ref={celdaEdicion}>
+                    {formularioEdicion()}
+                  </td></tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-      {editando && edicion && (
-        <div className="inventario-editar-producto">
-          <h3 className="inventario-form-subtitulo">Editar {editando.codigo} — {bodega}</h3>
-          <div className="inventario-form-grid">
-            <div>
-              <label>Código *</label>
-              <input value={edicion.codigo} onChange={(e) => setEdicion({ ...edicion, codigo: e.target.value })} />
-            </div>
-            <div>
-              <label>Empresa</label>
-              <select value={edicion.empresa} onChange={(e) => setEdicion({ ...edicion, empresa: e.target.value })}>
-                <option value="">Sin empresa</option>
-                {Object.entries(EMPRESAS).map(([sigla, nombre]) => <option key={sigla} value={sigla}>{nombre}</option>)}
-              </select>
-            </div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label>Descripción *</label>
-              <input value={edicion.descripcion} onChange={(e) => setEdicion({ ...edicion, descripcion: e.target.value })} />
-            </div>
-            <div>
-              <label>Familia</label>
-              <input list="editar-producto-familias" value={edicion.familia} onChange={(e) => setEdicion({ ...edicion, familia: e.target.value })} />
-              <datalist id="editar-producto-familias">{familias.map((f) => <option key={f} value={f} />)}</datalist>
-            </div>
-            <div>
-              <label>Espesor</label>
-              <input placeholder="Ej. 0,33" value={edicion.calibre} onChange={(e) => setEdicion({ ...edicion, calibre: e.target.value })} />
-            </div>
-            <div>
-              {/* En una teja la referencia es su modelo: de ahí sale su tarjeta. */}
-              <label>{esTeja(edicion.familia) ? "Modelo" : "Referencia"}</label>
-              <input list={esTeja(edicion.familia) ? "editar-producto-modelos" : undefined}
-                value={edicion.referencia} onChange={(e) => setEdicion({ ...edicion, referencia: e.target.value })} />
-              {esTeja(edicion.familia) && (
-                <datalist id="editar-producto-modelos">{Object.keys(MODELOS_TEJA).map((m) => <option key={m} value={m} />)}</datalist>
-              )}
-            </div>
-            <div>
-              <label>Stock</label>
-              <input type="number" step="any" value={edicion.stock} onChange={(e) => setEdicion({ ...edicion, stock: e.target.value })} />
-            </div>
-            <div>
-              <label>Stock mínimo (opcional)</label>
-              <input type="number" min="0" step="any" placeholder="Sin alerta" value={edicion.stockMinimo}
-                onChange={(e) => setEdicion({ ...edicion, stockMinimo: e.target.value })} />
-            </div>
-          </div>
-          <div className="inventario-form-botones">
-            <button type="button" className="inventario-boton" disabled={guardando} onClick={guardarEdicion}>
-              {guardando ? "Guardando..." : "Guardar cambios"}
-            </button>
-            <button type="button" className="inventario-boton-cancelar" onClick={() => { setEditando(null); setEdicion(null); }}>Cancelar</button>
-          </div>
         </div>
       )}
       {aEliminar && (
