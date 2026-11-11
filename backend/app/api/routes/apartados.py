@@ -2,6 +2,7 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -26,6 +27,7 @@ from app.services import apartados as srv
 from app.services import siigo, siigo_cotizacion
 from app.services import importar_cotizaciones
 from app.services.salida_apartado import registrar_salida
+from app.services.seccionados import LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO
 
 router = APIRouter(prefix="/apartados", tags=["Apartados"])
 
@@ -862,3 +864,47 @@ def marcar_entregado(apartado_id: int, db: Session = Depends(get_db), usuario: U
     apartado = srv.marcar_entregado(db, apartado_id, usuario)
     db.commit(); db.refresh(apartado)
     return apartado
+
+
+class ConversionDeLinea(BaseModel):
+    item_id: int
+    convertir_en: str
+    bodega_conversion_id: int | None = None
+
+
+class DefinirConversionRequest(BaseModel):
+    lineas: list[ConversionDeLinea]
+
+
+@router.post("/{apartado_id}/definir-conversion", response_model=ApartadoResponse,
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def definir_conversion(apartado_id: int, datos: DefinirConversionRequest, db: Session = Depends(get_db),
+                       usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    """Orden interna cuya lámina lisa se produjo sin decir en qué se convierte
+    (la orden se cerró sola): Admin Inventario dice ahora caballete o flanche y
+    qué bodega la convierte. La orden vuelve a quedar abierta hasta que esa
+    Planta convierta las láminas (ver produccion.conversiones_pendientes)."""
+    apartado = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+    if not apartado.orden_interna:
+        raise HTTPException(status_code=400, detail="Solo una orden de producción interna lleva lámina lisa para convertir.")
+    if apartado.estado == EstadoApartado.CANCELADO:
+        raise HTTPException(status_code=400, detail="Esa orden está anulada.")
+    items = {it.id: it for it in apartado.items}
+    for linea in datos.lineas:
+        item = items.get(linea.item_id)
+        if item is None or item.tipo_producto != LAMINA_LISA:
+            raise HTTPException(status_code=400, detail="Esa línea no es de lámina lisa de esta orden.")
+        if linea.convertir_en not in SECCIONES_POR_TIPO_PRODUCTO:
+            raise HTTPException(status_code=400, detail="Escoge si se convierte en caballete o en flanche.")
+        if (item.laminas_convertidas or 0) > 0.005 and linea.convertir_en != item.convertir_en:
+            raise HTTPException(status_code=400, detail="Esa lámina ya se empezó a convertir: no se puede cambiar en qué se convierte.")
+        if linea.bodega_conversion_id is not None and db.get(Bodega, linea.bodega_conversion_id) is None:
+            raise HTTPException(status_code=400, detail="Esa bodega no existe.")
+        item.convertir_en = linea.convertir_en
+        item.bodega_conversion_id = linea.bodega_conversion_id
+    # Se había cerrado sola por no tener nada que convertir: vuelve a esperar la conversión.
+    if apartado.estado == EstadoApartado.ENTREGADO and any(it.laminas_por_convertir > 0.005 for it in apartado.items):
+        apartado.estado = EstadoApartado.PRODUCCION_TERMINADA
+        apartado.fecha_entregado = None
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]

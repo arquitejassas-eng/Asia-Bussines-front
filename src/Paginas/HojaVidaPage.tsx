@@ -20,6 +20,7 @@ type ProduccionRegistro = {
 const unicos = (valores: (string | number | undefined)[]) =>
   [...new Set(valores.filter((v) => v !== undefined && v !== "").map(String))];
 const redondear = (n: number) => Math.round(n * 100) / 100;
+const esOrdenInterna = (prod: { clienteApartado?: string }) => (prod.clienteApartado || "").startsWith("Orden interna");
 
 // Varias producciones de la misma cotización (y bodega) van en una sola fila
 // con los totales; `producciones` viene ordenada como la lista original, así
@@ -125,7 +126,9 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
         observaciones: prod.observaciones, prod, esDetalle, bodegaId: prod.bodegaId,
       })}
     </tr>,
-    ...filasStockAdicional(prod).map((fila) => (
+    // En una orden interna lo producido ES el stock: su fila "STOCK" con la
+    // misma cantidad repetía la producción (2 producciones se veían como 4).
+    ...filasStockAdicional(prod).filter((fila) => !(esOrdenInterna(prod) && Number(fila.cantidad) === Number(prod.cantidadProductos))).map((fila) => (
       <tr key={fila.key} className={`hv-fila-stock${esDetalle ? " hv-fila-detalle" : ""}`}>
         {celdasDeProduccion({
           fecha: fila.fecha, cotizacion: fila.cotizacion, cliente: fila.cliente, producto: fila.productoFabricado,

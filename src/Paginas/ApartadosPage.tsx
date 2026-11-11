@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
 import { IconoSubir } from "../Componentes/Iconos";
+import ModalDefinirConversion from "../Componentes/ModalDefinirConversion";
+import "../Style/Rollos.css";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { EMPRESAS, AMBAS_EMPRESAS, nombreMaterial } from "../Utils/empresas";
 import PanelImportarCotizaciones from "../Componentes/PanelImportarCotizaciones";
@@ -355,6 +357,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const cerrarSeparar = useCallback(() => setSepararAbierta(null), []);
   // "Unir": lo contrario de Separar; otra cotización pasa sus líneas a esta.
   const [unirAbierta, setUnirAbierta] = useState<number | null>(null);
+  // Orden interna con lámina lisa producida sin decir en qué se convierte.
+  const [conversionAbierta, setConversionAbierta] = useState<ApartadoDeLista | null>(null);
   const cerrarUnir = useCallback(() => setUnirAbierta(null), []);
   // Las que se pueden unir a esta: misma bodega, empresa y estado (ver backend unir_apartado).
   const candidatasParaUnir = (ap: ApartadoDeLista) => a.apartados.filter((otra) => otra.id !== ap.id && !otra.ordenInterna
@@ -709,6 +713,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     }
     return (
       <>
+      {esAdminInventario && ap.ordenInterna && ap.estado !== "cancelado"
+        && ap.items.some((it) => it.tipoProducto === "lamina_lisa" && !it.convertirEn) && (
+        <button title="La lámina lisa de esta orden no dice en qué se convierte" onClick={() => setConversionAbierta(ap)}>
+          Definir conversión
+        </button>
+      )}
       {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
         <button
           disabled={ap.faltantes.length > 0 && !ap.faltantesEnCamino}
@@ -1706,6 +1716,18 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           mensaje={mensajeInformativo}
           textoConfirmar="Entendido"
           onConfirmar={() => setMensajeInformativo("")}
+        />
+      )}
+      {conversionAbierta && (
+        <ModalDefinirConversion
+          orden={conversionAbierta} bodegaOrden={conversionAbierta.bodegaId} bodegas={almacen.bodegas}
+          lineas={conversionAbierta.items.filter((it) => it.tipoProducto === "lamina_lisa")}
+          alCerrar={() => setConversionAbierta(null)}
+          alGuardar={async () => {
+            setConversionAbierta(null);
+            await a.cargarApartados();
+            setMensajeInformativo("Listo: la lámina lisa ya dice en qué se convierte. Si la convierte otra bodega, mándale las láminas con un traslado.");
+          }}
         />
       )}
       {confirmacion && (

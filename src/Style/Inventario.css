@@ -2028,3 +2028,10 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
 .sincodigo-cabeza { grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0.35rem 1rem; }
 .sincodigo-cabeza-texto { display: grid; gap: 0.35rem; min-width: 0; }
 .sincodigo-mas { display: flex; justify-content: center; }
+
+/* Definir conversión de la lámina lisa de una orden interna. */
+.conversion-linea { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.75rem; margin: 0 0 0.75rem; padding: 0.75rem;
+  border: 1px solid var(--at-border, #E1D5C0); border-radius: var(--at-r-sm, 8px); }
+.conversion-linea legend { padding: 0 0.3rem; font-weight: 700; font-size: 0.88rem; }
+.conversion-linea label { display: grid; gap: 0.25rem; font-size: 0.8rem; font-weight: 600; }
+.conversion-linea small { grid-column: 1 / -1; color: var(--at-muted, #7C6A56); }
