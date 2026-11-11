@@ -23,11 +23,11 @@ export type ProductoAgrupable = {
  * stock adicional que genera Producción usa como familia el código de
  * clasificación del rollo de origen, así queda agrupado ahí.
  *
- * Excepción 1 — productos "seccionados" (caballete/flanche — ver
- * tipoProducto): la familia sola no alcanza para identificar la tarjeta —
- * "CABALLETES" de 6 m y "CABALLETES" de 4 m son existencias distintas y NO
- * deben mezclarse en una sola tarjeta. Ahí se agrupa por familia + longitud
- * (metrosPorUnidad).
+ * Los "seccionados" (caballete/flanche) van en UNA tarjeta por familia,
+ * con la medida de cada uno en su fila: antes los que produce Planta (con
+ * tipoProducto y metrosPorUnidad) salían en una tarjeta por medida, aparte de
+ * los del catálogo (sin medida guardada), y quedaban dos tarjetas
+ * "CABALLETES" iguales.
  *
  * Excepción 2 — productos vendidos "por conversión" (ej. Porcelanato: la
  * unidad física de stock es la CAJA, pero el cliente pide m² — ver
@@ -86,11 +86,7 @@ export function agruparProductosPorFamilia<T extends ProductoAgrupable>(producto
     const esTeja = !esSeccionado && !tieneConversion && normalizarFamilia(familia) === FAMILIA_TEJA;
 
     let clave: string, longitud: number | null, tipoGrupo: GrupoFamilia<T>["tipoGrupo"], referenciaGrupo = "";
-    if (esSeccionado) {
-      longitud = producto.metrosPorUnidad ?? null;
-      clave = `${familia}|${longitud}`;
-      tipoGrupo = "seccionado";
-    } else if (tieneConversion) {
+    if (tieneConversion) {
       longitud = producto.metrosPorUnidad ?? null;
       clave = `${familia}|${producto.descripcion}|${producto.calibre}|${longitud}`;
       tipoGrupo = "conversion";
@@ -101,9 +97,10 @@ export function agruparProductosPorFamilia<T extends ProductoAgrupable>(producto
       clave = `${familia}|${referenciaGrupo}`;
       tipoGrupo = "teja";
     } else {
+      // También caballetes y flanches (producidos o del catálogo): una sola tarjeta.
       longitud = null;
-      clave = familia;
-      tipoGrupo = "simple";
+      clave = normalizarFamilia(familia);
+      tipoGrupo = esSeccionado ? "seccionado" : "simple";
     }
 
     if (!mapa.has(clave)) {
