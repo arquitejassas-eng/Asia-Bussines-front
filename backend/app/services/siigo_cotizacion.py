@@ -200,9 +200,12 @@ def descripcion_para_siigo(item: ApartadoItem) -> str:
     (500 MTS - 1.193,5 KG)"; una de stock: "20 TORNILLO 2\"... (T2-12)"."""
     escrita = (item.descripcion or "").strip()
     producto = getattr(item, "producto", None) if item.modalidad == ModalidadApartado.POR_STOCK else None
-    # En una línea de stock el formulario llena la descripción con el código
-    # del producto: eso solo no dice qué es, así que se arma la completa.
-    if escrita and not (producto is not None and escrita.upper() == (producto.codigo or "").upper()):
+    # En una línea de stock el formulario llena la descripción sola con el
+    # nombre del producto (antes, con su código): eso solo no dice cuántos ni
+    # qué código, así que se arma la completa. Lo que el vendedor escribió
+    # distinto se respeta tal cual.
+    automaticas = {(producto.codigo or "").strip().upper(), (producto.descripcion or "").strip().upper()} if producto is not None else set()
+    if escrita and escrita.upper() not in automaticas:
         return escrita[:500]
     cantidad = _numero(item.cantidad or 0)
     if item.modalidad == ModalidadApartado.POR_STOCK:
