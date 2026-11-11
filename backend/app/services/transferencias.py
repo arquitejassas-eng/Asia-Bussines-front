@@ -11,7 +11,10 @@ from app.models.rollo import Rollo
 from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, EstadoSolicitud, Solicitud
 from app.models.usuario import Usuario
 from app.schemas.bodegas import SolicitudCrear
-from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_producto, validar_reserva_rollos
+from app.services.apartados import (
+    bloquear_rollos_codigo, exigir_rollo_libre, linea_del_rollo_para_cotizacion, mover_linea_a_bodega,
+    validar_reserva_producto, validar_reserva_rollos,
+)
 from app.services.productos import nuevo_producto_en_bodega
 
 
@@ -19,10 +22,11 @@ def _decimal(valor: float | Decimal) -> Decimal:
     return Decimal(str(valor))
 
 
-def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int) -> tuple[Rollo, list[Rollo]]:
+def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int, numero_cotizacion: str = "") -> tuple[Rollo, list[Rollo], object]:
     """El rollo y todos los de su código en SU bodega, bloqueados en orden
     por id (la reserva de apartados es por código; ver
-    apartados.bloquear_rollos_codigo)."""
+    apartados.bloquear_rollos_codigo). Un rollo apartado completo solo se
+    puede trasladar para esa misma cotización: entonces devuelve también su línea."""
     previo = db.get(Rollo, rollo_id)
     if previo is None:
         raise HTTPException(status_code=404, detail="Rollo no encontrado.")
@@ -30,8 +34,9 @@ def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int) -> tuple[Rollo, l
     rollo = next((r for r in rollos_codigo if r.id == rollo_id), None)
     if rollo is None:
         raise HTTPException(status_code=409, detail="El rollo acaba de cambiar. Recarga e intenta de nuevo.")
-    exigir_rollo_libre(db, rollo)
-    return rollo, rollos_codigo
+    linea = linea_del_rollo_para_cotizacion(db, rollo.id, numero_cotizacion)
+    exigir_rollo_libre(db, rollo, item_id=linea.id if linea else None)
+    return rollo, rollos_codigo, linea
 
 
 def crear_solicitud_transferencia(
@@ -47,7 +52,7 @@ def crear_solicitud_transferencia(
             detail="Admin Inventario no usa Solicitudes entre sedes; usa /envios para repartir material.",
         )
     if datos.rollo_id is not None:
-        rollo, rollos_codigo = _rollo_bloqueado_con_su_codigo(db, datos.rollo_id)
+        rollo, rollos_codigo, linea = _rollo_bloqueado_con_su_codigo(db, datos.rollo_id, datos.numero_cotizacion)
         if rollo.metros_disponibles <= 0:
             raise HTTPException(status_code=400, detail="El rollo no tiene metros disponibles.")
         if rollo.bodega_id == usuario.bodega_id:
@@ -57,6 +62,8 @@ def crear_solicitud_transferencia(
         validar_reserva_rollos(
             db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
             metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
+            # El de su misma cotización sale de la reserva de esa cotización.
+            metros_reserva_propia=rollo.metros_disponibles if linea else 0.0, apartado_item_id=linea.id if linea else None,
         )
         if db.query(Solicitud.id).filter(
             Solicitud.rollo_id == rollo.id, Solicitud.estado == EstadoSolicitud.PENDIENTE
@@ -128,13 +135,15 @@ def aceptar_solicitud_transferencia(
         previo = db.get(Rollo, solicitud.rollo_id)
         if previo is None or previo.bodega_id != solicitud.bodega_propietaria_id:
             raise HTTPException(status_code=400, detail="El rollo ya no esta disponible en esta bodega.")
-        rollo, rollos_codigo = _rollo_bloqueado_con_su_codigo(db, solicitud.rollo_id)
+        rollo, rollos_codigo, linea = _rollo_bloqueado_con_su_codigo(db, solicitud.rollo_id, solicitud.numero_cotizacion or "")
         if rollo.bodega_id != solicitud.bodega_propietaria_id:
             raise HTTPException(status_code=400, detail="El rollo ya no esta disponible en esta bodega.")
-        # El rollo sale completo de esta bodega: no puede llevarse metros apartados aquí.
+        # El rollo sale completo de esta bodega: no puede llevarse metros apartados
+        # aquí (salvo los de la cotización para la que se traslada).
         validar_reserva_rollos(
             db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
             metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
+            metros_reserva_propia=rollo.metros_disponibles if linea else 0.0, apartado_item_id=linea.id if linea else None,
         )
         solicitud.cantidad = rollo.metros_disponibles
     else:
@@ -201,6 +210,10 @@ def recibir_solicitud(db: Session, solicitud_id: int, usuario: Usuario) -> Solic
         if rollo is None or rollo.bodega_id != solicitud.bodega_propietaria_id:
             raise HTTPException(status_code=400, detail="El rollo ya no está en la bodega de donde salió.")
         rollo.bodega_id = solicitud.bodega_solicitante_id
+        # Trasladado para despachar su cotización desde aquí: la línea viene con el rollo.
+        linea = linea_del_rollo_para_cotizacion(db, rollo.id, solicitud.numero_cotizacion or "")
+        if linea is not None:
+            mover_linea_a_bodega(db, linea, solicitud.bodega_solicitante_id)
         descripcion = f"{rollo.descripcion} (rollo {rollo.identificador_rollo})"
     else:
         producto_origen = _producto_de(db, solicitud, solicitud.bodega_propietaria_id)

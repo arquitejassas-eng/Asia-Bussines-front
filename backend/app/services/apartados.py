@@ -102,8 +102,53 @@ def exigir_rollo_libre(db: Session, rollo: Rollo, *, item_id: int | None = None)
         raise HTTPException(
             status_code=400,
             detail=f"El rollo {rollo.identificador_rollo} está apartado completo para la cotización "
-            f"{ap.numero_cotizacion}{f' ({ap.cliente})' if ap.cliente else ''}: no se puede usar para otra cosa.",
+            f"{ap.numero_cotizacion}{f' ({ap.cliente})' if ap.cliente else ''}: no se puede usar para otra cosa. "
+            f"Si lo trasladas para despachar esa misma cotización desde otra bodega, escribe "
+            f"{numero_sin_empresa(ap.numero_cotizacion)} en «Cotización» al pedirlo.",
         )
+
+
+def linea_del_rollo_para_cotizacion(db: Session, rollo_id: int, numero_cotizacion: str) -> ApartadoItem | None:
+    """La línea de rollo completo que aparta ese rollo, si es de la cotización
+    para la que se pide el traslado (ej. se despacha desde otra bodega)."""
+    item = item_que_aparta_rollo(db, rollo_id)
+    numero = numero_sin_empresa((numero_cotizacion or "").strip())
+    if item is None or not numero or numero_sin_empresa(item.apartado.numero_cotizacion) != numero:
+        return None
+    return item
+
+
+def mover_linea_a_bodega(db: Session, item: ApartadoItem, bodega_id: int) -> Apartado:
+    """El rollo de una línea de rollo completo llegó a otra bodega por un
+    traslado para esa misma cotización: la línea pasa a la parte de la
+    cotización en esa bodega (se crea si no hay; si la línea era lo único, la
+    parte entera cambia de bodega), para darle la salida desde allá."""
+    origen = item.apartado
+    if origen.bodega_id == bodega_id:
+        return origen
+    destino = (
+        db.query(Apartado)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == origen.numero_cotizacion,
+                Apartado.empresa == origen.empresa, Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), Apartado.id != origen.id)
+        .first()
+    )
+    if destino is None and len(origen.items) == 1:
+        origen.bodega_id = bodega_id
+        return origen
+    if destino is None:
+        columnas = [c.key for c in Apartado.__table__.columns if c.key not in ("id", "bodega_id")]
+        destino = Apartado(**{c: getattr(origen, c) for c in columnas}, bodega_id=bodega_id)
+        db.add(destino)
+        db.flush()
+    origen.items.remove(item)
+    destino.items.append(item)
+    if not origen.items:
+        # Como al unir cotizaciones: la parte vacía queda anulada (se sabe a dónde fue su línea).
+        origen.estado = EstadoApartado.CANCELADO
+        nota = "Su rollo se trasladó y la línea pasó a la otra bodega."
+        origen.observaciones = f"{origen.observaciones} · {nota}" if origen.observaciones else nota
+    db.flush()
+    return destino
 
 
 def rollos_en_traslado(db: Session, rollo_ids) -> set[int]:
