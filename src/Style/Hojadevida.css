@@ -447,4 +447,7 @@
 
 @media print {
   .hv-toggle { display: none; }
+  .hv-no-imprimir, .hv-corregir { display: none !important; }
+  .hv-conteo { display: none; }
+  @page { size: landscape; margin: 1cm; }
 }

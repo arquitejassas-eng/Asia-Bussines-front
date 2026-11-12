@@ -713,6 +713,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     }
     return (
       <>
+      {esAdminInventario && (
+        <button title="Las producciones de esta cotización, para revisarlas o imprimirlas"
+          onClick={() => navigate(`/hoja-vida?cotizacion=${encodeURIComponent(ap.numeroCotizacion)}`)}>
+          Ver hoja de vida
+        </button>
+      )}
       {esAdminInventario && ap.ordenInterna && ap.estado !== "cancelado"
         && ap.items.some((it) => it.tipoProducto === "lamina_lisa" && !it.convertirEn) && (
         <button title="La lámina lisa de esta orden no dice en qué se convierte" onClick={() => setConversionAbierta(ap)}>
@@ -839,6 +845,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             ejecutar: () => a.enviarVariosAProduccion(porEnviar.map((p) => p.id)),
           })}
         >Enviar a producción</button>
+      )}
+      {esAdminInventario && (
+        <button title="Las producciones de esta cotización, para revisarlas o imprimirlas"
+          onClick={() => navigate(`/hoja-vida?cotizacion=${encodeURIComponent(numero)}`)}>
+          Ver hoja de vida
+        </button>
       )}
       {a.puedeQuitarDeProduccion && enProduccion.length > 0 && (
         <button onClick={() => setConfirmacion({

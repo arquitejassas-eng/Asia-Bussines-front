@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import BarraLateral from "../Componentes/BarraLateral";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { useControladorProduccion } from "../Componentes/Produccion";
@@ -6,6 +7,7 @@ import { contarNotificaciones } from "../Utils/notificaciones";
 import { filasStockAdicional } from "../Utils/produccion";
 import PanelCorregirProduccion from "../Componentes/PanelCorregirProduccion";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
+import { exportarArregloAExcel } from "../Utils/exportarExcel";
 import "../Style/Hojadevida.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
@@ -21,6 +23,8 @@ const unicos = (valores: (string | number | undefined)[]) =>
   [...new Set(valores.filter((v) => v !== undefined && v !== "").map(String))];
 const redondear = (n: number) => Math.round(n * 100) / 100;
 const esOrdenInterna = (prod: { clienteApartado?: string }) => (prod.clienteApartado || "").startsWith("Orden interna");
+// "4119", "4119-AR" y "4119-SAL" son la misma cotización.
+const numeroCotizacion = (n?: string) => (n || "").trim().toUpperCase().replace(/-(AR|ABG|SAL)$/, "");
 
 // Varias producciones de la misma cotización (y bodega) van en una sola fila
 // con los totales; `producciones` viene ordenada como la lista original, así
@@ -50,6 +54,9 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   // una sea el real: por eso ve la columna Bodega y puede filtrar por sede.
   const esAdminInventario = sesion?.rol === "admin_inventario";
   const [bodegaFiltro, setBodegaFiltro] = useState("");
+  // "Ver hoja de vida" desde Apartados: solo las producciones de esa cotización, para imprimirlas.
+  const [parametros, setParametros] = useSearchParams();
+  const cotizacionFiltro = numeroCotizacion(parametros.get("cotizacion") || "");
   // "Corregir metros": la producción que se está corrigiendo y el aviso al terminar.
   const [corrigiendo, setCorrigiendo] = useState<ProduccionRegistro | null>(null);
   const [aviso, setAviso] = useState("");
@@ -58,9 +65,39 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
     esAdminInventario && !["caballete", "flanche", "lamina_lisa"].includes(prod.tipoProducto || "teja");
   const nombreBodega = (id: number) => (almacen?.bodegas || []).find((b) => b.id === id)?.nombre || `Bodega ${id}`;
   const misProducciones = (p.misProducciones as ProduccionRegistro[])
-    .filter((prod) => !bodegaFiltro || String(prod.bodegaId) === bodegaFiltro);
+    .filter((prod) => !bodegaFiltro || String(prod.bodegaId) === bodegaFiltro)
+    .filter((prod) => !cotizacionFiltro || numeroCotizacion(prod.cotizacion) === cotizacionFiltro);
+  const clienteFiltro = cotizacionFiltro ? misProducciones.find((prod) => prod.clienteApartado)?.clienteApartado : undefined;
 
   const notificaciones = contarNotificaciones(almacen, sesion);
+
+  // Las mismas filas de la tabla (cada producción y su stock adicional), una por línea.
+  function exportarExcel() {
+    const filasExcel = misProducciones.flatMap((prod) => [
+      {
+        Bodega: nombreBodega(prod.bodegaId), Fecha: formatearFechaColombia(prod.fecha, false),
+        Cotización: prod.cotizacion || "", Cliente: prod.clienteApartado || "", Tipo: "Producción",
+        "Producto fabricado": prod.productoFabricado, Modelo: prod.modelo, Medida: prod.medidaProducto,
+        Cantidad: Number(prod.cantidadProductos) || 0,
+        Rollos: prod.rollosUtilizados.map((r) => r.identificadorRollo).join(", "),
+        "Código material": prod.codigoClasificacion, "Metros usados": Number(prod.totalMetrosConsumidos) || 0,
+        "Saldo del código (m)": Number(prod.saldoCodigo) || 0, Responsable: prod.responsable,
+        "Código producción": prod.codigoUnico, Observaciones: prod.observaciones || "",
+      },
+      ...filasStockAdicional(prod)
+        .filter((fila) => !(esOrdenInterna(prod) && Number(fila.cantidad) === Number(prod.cantidadProductos)))
+        .map((fila) => ({
+          Bodega: nombreBodega(prod.bodegaId), Fecha: formatearFechaColombia(fila.fecha, false),
+          Cotización: fila.cotizacion || "", Cliente: fila.cliente || "", Tipo: "Stock adicional",
+          "Producto fabricado": fila.productoFabricado, Modelo: fila.modelo, Medida: fila.medida,
+          Cantidad: Number(fila.cantidad) || 0, Rollos: fila.referencia || "", "Código material": prod.codigoClasificacion,
+          "Metros usados": fila.metrosConsumidos == null ? "" : Number(fila.metrosConsumidos),
+          "Saldo del código (m)": Number(fila.saldoRestante) || 0, Responsable: fila.responsable,
+          "Código producción": fila.codigoProduccion, Observaciones: fila.observaciones || "",
+        })),
+    ]);
+    exportarArregloAExcel(filasExcel, cotizacionFiltro ? `Hoja_de_vida_cotizacion_${cotizacionFiltro}.xlsx` : "Hoja_de_vida.xlsx", "Hoja de vida");
+  }
 
   const totalProducciones = misProducciones.length;
   const filas = agruparPorCotizacion(misProducciones);
@@ -141,7 +178,8 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   ];
 
   const filaDeCotizacion = ({ clave, producciones }: FilaHojaVida) => {
-    const abierta = abiertas.has(clave);
+    // De una sola cotización (para imprimir) se ve cada producción.
+    const abierta = abiertas.has(clave) || Boolean(cotizacionFiltro);
     const reciente = producciones[0];
     const lista = (valores: (string | number | undefined)[], plural: string) => {
       const distintos = unicos(valores);
@@ -198,13 +236,30 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
         <div className="hv-page">
           <header className="hv-header">
             <div className="hv-header-texto">
-              <h1 className="hv-titulo">Hoja de Vida</h1>
+              <h1 className="hv-titulo">
+                {cotizacionFiltro ? `Hoja de Vida · Cotización ${cotizacionFiltro}` : "Hoja de Vida"}
+              </h1>
               <p className="hv-subtitulo">
-                {esAdminInventario
-                  ? "Reporte de control de material: verifica las producciones registradas en todas las bodegas."
-                  : "Reporte de control de material: consulta las producciones registradas en tu bodega."}
+                {cotizacionFiltro
+                  ? `${clienteFiltro ? `${clienteFiltro} · ` : ""}Producciones registradas para esta cotización. Impreso el ${formatearFechaColombia(new Date().toISOString(), false)}.`
+                  : esAdminInventario
+                    ? "Reporte de control de material: verifica las producciones registradas en todas las bodegas."
+                    : "Reporte de control de material: consulta las producciones registradas en tu bodega."}
               </p>
-              {esAdminInventario && (
+              {cotizacionFiltro && (
+                <div className="hv-no-imprimir" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+                  <button type="button" className="inventario-boton" onClick={() => window.print()} disabled={totalProducciones === 0}>
+                    Imprimir
+                  </button>
+                  <button type="button" className="inventario-boton" onClick={exportarExcel} disabled={totalProducciones === 0}>
+                    Exportar a Excel
+                  </button>
+                  <button type="button" className="rollos-boton-secundario" onClick={() => setParametros({})}>
+                    Ver todas las producciones
+                  </button>
+                </div>
+              )}
+              {esAdminInventario && !cotizacionFiltro && (
                 <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem" }}>
                   Bodega
                   <select value={bodegaFiltro} onChange={(e) => setBodegaFiltro(e.target.value)}>
@@ -260,7 +315,8 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
             <div className="hv-vacio">
               <div className="hv-vacio-icono">◎</div>
               <p>
-                {esAdminInventario
+                {cotizacionFiltro ? `La cotización ${cotizacionFiltro} todavía no tiene producciones registradas.`
+                  : esAdminInventario
                   ? bodegaFiltro ? "Todavía no hay producciones registradas en esta bodega." : "Todavía no hay producciones registradas en ninguna bodega."
                   : "Todavía no hay producciones registradas en tu bodega."}
               </p>
