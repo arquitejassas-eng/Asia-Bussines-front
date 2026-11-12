@@ -792,6 +792,14 @@ def enviar_a_produccion(apartado_id: int, db: Session = Depends(get_db), usuario
     return apartado
 
 
+@router.patch("/{apartado_id}/quitar-de-produccion", response_model=ApartadoResponse,
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+def quitar_de_produccion(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    apartado = srv.quitar_de_produccion(db, apartado_id, usuario)
+    db.commit(); db.refresh(apartado)
+    return apartado
+
+
 @router.patch("/{apartado_id}/marcar-terminado", response_model=ApartadoResponse,
               dependencies=[Depends(requiere_rol(RolUsuario.JEFE_PLANTA))])
 def marcar_produccion_terminada(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:

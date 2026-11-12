@@ -156,6 +156,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
   const puedeEditarApartados = sesion?.rol === "vendedor" || sesion?.rol === "admin_inventario";
   const puedeCancelarApartados = sesion?.rol === "admin_inventario";
   const puedeEnviarAProduccion = sesion?.rol === "administrativo";
+  const puedeQuitarDeProduccion = sesion?.rol === "administrativo" || sesion?.rol === "admin_inventario";
   const puedeMarcarTerminado = sesion?.rol === "jefe_planta";
   // "Salida": la encargada de la bodega entrega al cliente lo ya producido.
   const puedeMarcarEntregado = sesion?.rol === "administrativo";
@@ -853,6 +854,8 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
   }
   const cancelarVarios = (ids: number[]) =>
     enVarios(ids, async (id) => avisarSiSiigoFallo(await api.patch(`/apartados/${id}/cancelar`)), "No se pudo cancelar la cotización.");
+  const quitarVariosDeProduccion = (ids: number[]) =>
+    enVarios(ids, (id) => api.patch(`/apartados/${id}/quitar-de-produccion`), "No se pudo quitar la cotización de producción.");
   const enviarVariosAProduccion = (ids: number[]) =>
     enVarios(ids, (id) => api.patch(`/apartados/${id}/enviar-a-produccion`), "No se pudo enviar la cotización a producción.");
   const eliminarVarios = (ids: number[]) =>
@@ -890,7 +893,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
   }
 
   return {
-    puedeCrearApartados, puedeCrearOrdenInterna, puedeCrearTraslado, bodegaFija, darSalidaTraslado, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
+    puedeCrearApartados, puedeCrearOrdenInterna, puedeCrearTraslado, bodegaFija, darSalidaTraslado, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeQuitarDeProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
     apartados, cargandoApartados, errorApartados, cargarApartados,
     filtroEstado, setFiltroEstado,
 
@@ -904,7 +907,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
 
     siigo, subirApartadoASiigo, subiendoASiigo, avisoSiigo, setAvisoSiigo,
     errorAccionApartado, cancelarApartado, eliminarApartado, enviarApartadoAProduccion, devolverLineaABodega,
-    cancelarVarios, enviarVariosAProduccion, eliminarVarios,
+    cancelarVarios, enviarVariosAProduccion, quitarVariosDeProduccion, eliminarVarios,
     marcarApartadoProduccionTerminada, marcarApartadoEntregado,
   };
 }

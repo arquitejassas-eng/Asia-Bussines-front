@@ -727,6 +727,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           onClick={() => confirmarEnvioAProduccion(ap)}
         >Enviar a producción</button>
       )}
+      {a.puedeQuitarDeProduccion && (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion") && (
+        <button onClick={() => setConfirmacion({
+          titulo: `¿Quitar ${ap.numeroCotizacion} de producción?`,
+          mensaje: "Vuelve a «Apartado» con su material reservado y Planta deja de verla. Solo se puede si Planta todavía no ha registrado producción de ella.",
+          textoConfirmar: "Sí, quitar de producción",
+          ejecutar: () => a.quitarVariosDeProduccion([ap.id]),
+        })}>Quitar de producción</button>
+      )}
       {a.puedeEditarApartados && ap.siigoPendiente && ESTADOS_CANCELABLES.includes(ap.estado) && (
         <button title={ap.siigoError} disabled={a.subiendoASiigo === ap.id} onClick={() => a.subirApartadoASiigo(ap.id)}>
           {a.subiendoASiigo === ap.id ? "Enviando a Siigo..." : ap.siigoId ? "Actualizar en Siigo" : "Subir a Siigo"}
@@ -814,6 +822,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         setEligiendoBodega(eligiendoBodega?.accion === accion && eligiendoBodega.numero === numero ? null : { accion, numero });
       }
     };
+    const enProduccion = grupo.filter((parte) => parte.estado === "enviado_a_produccion" || parte.estado === "en_produccion");
     const opciones = eligiendoBodega?.numero === numero
       ? (eligiendoBodega.accion === "salida" ? activas : separables)
       : [];
@@ -830,6 +839,15 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             ejecutar: () => a.enviarVariosAProduccion(porEnviar.map((p) => p.id)),
           })}
         >Enviar a producción</button>
+      )}
+      {a.puedeQuitarDeProduccion && enProduccion.length > 0 && (
+        <button onClick={() => setConfirmacion({
+          titulo: `¿Quitar ${numero} de producción?`,
+          mensaje: `Vuelve a «Apartado» con su material reservado (${enProduccion.map((p) => p.bodegaNombre).join(" y ")}) y Planta deja de verla. `
+            + "Solo se puede si Planta todavía no ha registrado producción de ella.",
+          textoConfirmar: "Sí, quitar de producción",
+          ejecutar: () => a.quitarVariosDeProduccion(enProduccion.map((p) => p.id)),
+        })}>Quitar de producción</button>
       )}
       {a.puedeCancelarApartados && activas.length > 0 && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({

@@ -2054,6 +2054,33 @@ def enviar_a_produccion(db: Session, apartado_id: int, usuario: Usuario) -> Apar
     return apartado
 
 
+def quitar_de_produccion(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
+    """Se envió a producción por error (o hay que cambiarla): vuelve a
+    "Apartado" con su material reservado, mientras Planta no haya producido
+    nada de ella."""
+    from app.models.produccion import Produccion
+
+    apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
+    db.refresh(apartado, with_for_update=True)
+    if apartado.estado not in (EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION):
+        raise HTTPException(status_code=400, detail="Esta cotización no está enviada a producción.")
+    ids = [it.id for it in apartado.items]
+    producido = any((it.metros_consumidos or 0) > 0.005 or (it.laminas_convertidas or 0) > 0.005 for it in apartado.items) or (
+        bool(ids) and db.query(Produccion.id).filter(Produccion.apartado_item_id.in_(ids)).first() is not None)
+    if producido:
+        raise HTTPException(
+            status_code=400,
+            detail="Planta ya registró producción de esta cotización: no se puede quitar de producción. "
+            "Si hay que cambiarla, Admin Inventario la puede editar.",
+        )
+    apartado.estado = EstadoApartado.APARTADO
+    apartado.enviado_a_produccion_por = ""
+    apartado.fecha_enviado_a_produccion = None
+    nota = f"Quitada de producción por {usuario.correo}."
+    apartado.observaciones = f"{apartado.observaciones} · {nota}" if apartado.observaciones else nota
+    return apartado
+
+
 def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
     apartado = (
         db.query(Apartado)
