@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import BarraLateral from "../Componentes/BarraLateral";
 import { formatearFechaColombia } from "../Utils/fechas";
-import { useControladorAdminInventario } from "../Componentes/AdminInventario";
+import { SIN_COLOR, useControladorAdminInventario } from "../Componentes/AdminInventario";
 import { ESTADOS_ROLLO } from "../Componentes/Rollos";
 import { claseColorMaterial } from "../Utils/colorRollo";
 import Paginacion from "../Componentes/Paginacion";
@@ -401,13 +401,20 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 <p className="inventario-cargando">Cargando...</p>
               ) : (
                 <>
-                  <div className="inventario-buscador">
+                  <div className="inventario-buscador" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
                     <input
                       type="text"
                       placeholder="Buscar por código o descripción..."
                       value={c.busquedaResumenRollos}
                       onChange={(e) => c.buscarResumenRollos(e.target.value)}
+                      style={{ flex: "1 1 240px" }}
                     />
+                    <select aria-label="Filtrar por color" value={c.colorResumenRollos}
+                      onChange={(e) => c.filtrarColorResumenRollos(e.target.value)} style={{ flex: "0 0 auto" }}>
+                      <option value="">Todos los colores</option>
+                      {c.coloresResumenRollos.map((color) => <option key={color} value={color}>{color.charAt(0).toUpperCase() + color.slice(1)}</option>)}
+                      <option value={SIN_COLOR}>Sin color</option>
+                    </select>
                   </div>
                   <div className="inventario-tabla-contenedor inventario-tabla-fija">
                     <table className="inventario-tabla">
@@ -428,7 +435,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                       <tbody>
                         {c.rollosResumenPagina.length === 0 ? (
                           <tr><td colSpan={bodegas.length + (c.empresaResumen ? 7 : 9)} className="inventario-vacio">
-                            {c.busquedaResumenRollos ? "Sin resultados para tu búsqueda." : "Sin datos."}
+                            {c.busquedaResumenRollos || c.colorResumenRollos ? "Sin resultados para tu búsqueda." : "Sin datos."}
                           </td></tr>
                         ) : (
                           c.rollosResumenPagina.map((f) => {

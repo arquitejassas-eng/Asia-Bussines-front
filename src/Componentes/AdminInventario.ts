@@ -55,6 +55,9 @@ function paginar<T>(items: T[], pagina: number) {
   };
 }
 
+// Opción "Sin color" del filtro de color de Rollos en toda la empresa.
+export const SIN_COLOR = "__sin_color__";
+
 /** Controlador de la página "Inventario total" de Admin Inventario: resumen
  * comparativo entre sedes (con detalle expandible por rollo individual) y
  * despacho de material propio (envíos). El vendedor usa la misma página en
@@ -158,13 +161,24 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   const [busquedaResumenRollos, setBusquedaResumenRollos] = useState("");
   const [busquedaResumenProductos, setBusquedaResumenProductos] = useState("");
 
+  // Filtro por color ("" = todos; SIN_COLOR = los que no tienen color).
+  const [colorResumenRollos, setColorResumenRollos] = useState("");
+  const coloresResumenRollos = useMemo(() => [...new Set(comparativo.rollos
+    .map((f) => normalizarTexto(f.colorMaterial || "")).filter(Boolean))].sort(), [comparativo.rollos]);
+
   const rollosResumenFiltrados = useMemo(() => {
     const termino = normalizarTexto(busquedaResumenRollos);
-    if (!termino) return comparativo.rollos;
     return comparativo.rollos.filter((f) =>
-      normalizarTexto(f.codigo).includes(termino) || normalizarTexto(f.descripcion).includes(termino)
+      (!termino || normalizarTexto(f.codigo).includes(termino) || normalizarTexto(f.descripcion).includes(termino))
+      && (!colorResumenRollos || (colorResumenRollos === SIN_COLOR ? !normalizarTexto(f.colorMaterial || "")
+        : normalizarTexto(f.colorMaterial || "") === colorResumenRollos))
     );
-  }, [comparativo.rollos, busquedaResumenRollos]);
+  }, [comparativo.rollos, busquedaResumenRollos, colorResumenRollos]);
+
+  function filtrarColorResumenRollos(color: string) {
+    setColorResumenRollos(color);
+    setPaginaRollos(1);
+  }
 
   const productosResumenFiltrados = useMemo(() => {
     const termino = normalizarTexto(busquedaResumenProductos);
@@ -387,6 +401,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     rollosResumenPagina, paginacionRollos, paginaRollos, setPaginaRollos,
     productosResumenPagina, paginacionProductos, paginaProductos, setPaginaProductos, gruposResumenProductos,
     busquedaResumenRollos, buscarResumenRollos, busquedaResumenProductos, buscarResumenProductos,
+    colorResumenRollos, coloresResumenRollos, filtrarColorResumenRollos,
 
     codigoRolloExpandido, rollosDelCodigoExpandido, cargandoRollosExpandido, alternarExpandirCodigoRollo,
 
