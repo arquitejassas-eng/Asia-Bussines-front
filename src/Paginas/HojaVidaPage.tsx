@@ -60,6 +60,10 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   // Filtro por rollo: la referencia (o parte de ella) de un rollo usado en la producción.
   const [rolloFiltro, setRolloFiltro] = useState("");
   const rolloBuscado = rolloFiltro.trim().toUpperCase();
+  // Filtro por código del material (ej. LR30020,33): junto con los kilos, separa
+  // rollos que pesan lo mismo pero son de otro código.
+  const [codigoFiltro, setCodigoFiltro] = useState("");
+  const codigoBuscado = codigoFiltro.trim().toUpperCase();
   // Como en Bodegas: "4458" o "4.458" encuentra el rollo de 4458 kg.
   const kilosBuscados = rolloBuscado.replace(/[.,\s]/g, "");
   const coincideRollo = (r: { identificadorRollo: string; kilosRollo?: number | null }) =>
@@ -75,10 +79,26 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   const misProducciones = (p.misProducciones as ProduccionRegistro[])
     .filter((prod) => !bodegaFiltro || String(prod.bodegaId) === bodegaFiltro)
     .filter((prod) => !cotizacionFiltro || numeroCotizacion(prod.cotizacion) === cotizacionFiltro)
+    .filter((prod) => !codigoBuscado || (prod.codigoClasificacion || "").toUpperCase().includes(codigoBuscado))
     .filter((prod) => !rolloBuscado || prod.rollosUtilizados.some(coincideRollo));
   const clienteFiltro = cotizacionFiltro ? misProducciones.find((prod) => prod.clienteApartado)?.clienteApartado : undefined;
 
   const notificaciones = contarNotificaciones(almacen, sesion);
+
+  // Con el filtro de rollo: por cada rollo que coincide, cuántos metros se le
+  // sacaron en total y en cuántas producciones (una producción puede usar varios rollos).
+  const resumenRollos = (() => {
+    if (!rolloBuscado) return [];
+    const porRollo = new Map<string, { identificador: string; kilos: number | null; producciones: number; metros: number }>();
+    for (const prod of misProducciones) {
+      for (const r of prod.rollosUtilizados.filter(coincideRollo)) {
+        const fila = porRollo.get(r.identificadorRollo) || { identificador: r.identificadorRollo, kilos: r.kilosRollo ?? null, producciones: 0, metros: 0 };
+        fila.producciones += 1; fila.metros = redondear(fila.metros + r.metrosConsumidos);
+        porRollo.set(r.identificadorRollo, fila);
+      }
+    }
+    return [...porRollo.values()];
+  })();
 
   // Las mismas filas de la tabla (cada producción y su stock adicional), una por línea.
   function exportarExcel() {
@@ -88,7 +108,8 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
         Cotización: prod.cotizacion || "", Cliente: prod.clienteApartado || "", Tipo: "Producción",
         "Producto fabricado": prod.productoFabricado, Modelo: prod.modelo, Medida: prod.medidaProducto,
         Cantidad: Number(prod.cantidadProductos) || 0,
-        Rollos: prod.rollosUtilizados.map((r) => r.identificadorRollo).join(", "),
+        Rollos: prod.rollosUtilizados.map((r) => `${r.identificadorRollo} (${redondear(r.metrosConsumidos)} m)`).join(", "),
+        ...(rolloBuscado ? { "Metros del rollo buscado": redondear(prod.rollosUtilizados.filter(coincideRollo).reduce((s, r) => s + r.metrosConsumidos, 0)) } : {}),
         "Código material": prod.codigoClasificacion, "Metros usados": Number(prod.totalMetrosConsumidos) || 0,
         "Saldo del código (m)": Number(prod.saldoCodigo) || 0, Responsable: prod.responsable,
         "Código producción": prod.codigoUnico, Observaciones: prod.observaciones || "",
@@ -105,7 +126,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
           "Código producción": fila.codigoProduccion, Observaciones: fila.observaciones || "",
         })),
     ]);
-    exportarArregloAExcel(filasExcel, `Hoja_de_vida${cotizacionFiltro ? `_cotizacion_${cotizacionFiltro}` : ""}${rolloBuscado ? `_rollo_${rolloBuscado.replace(/[^A-Z0-9,.-]/g, "")}` : ""}.xlsx`, "Hoja de vida");
+    exportarArregloAExcel(filasExcel, `Hoja_de_vida${cotizacionFiltro ? `_cotizacion_${cotizacionFiltro}` : ""}${codigoBuscado ? `_${codigoBuscado.replace(/[^A-Z0-9,.-]/g, "")}` : ""}${rolloBuscado ? `_rollo_${rolloBuscado.replace(/[^A-Z0-9,.-]/g, "")}` : ""}.xlsx`, "Hoja de vida");
   }
 
   const totalProducciones = misProducciones.length;
@@ -126,7 +147,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
 
   const celdasDeProduccion = (fila: {
     fecha: string; cotizacion?: string; cliente?: string; producto: string; detalle: string; cantidad: number | string;
-    rollos: string; metros: number | string | null; saldo: string; responsable: string; codigo: string;
+    rollos: { referencia: string; metros?: number; buscado?: boolean }[]; metros: number | string | null; saldo: string; responsable: string; codigo: string;
     observaciones?: string; esStock?: boolean; prod?: ProduccionRegistro; esDetalle: boolean; bodegaId: number;
   }) => (
     <>
@@ -146,7 +167,18 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
         {fila.detalle && <span className="hv-sub">{fila.detalle}</span>}
       </td>
       <td className="num hv-cantidad">{fila.cantidad}</td>
-      <td className="hv-col-rollo">{fila.rollos ? <span className="hv-codigo-rollo">{fila.rollos}</span> : "—"}</td>
+      <td className="hv-col-rollo">
+        {fila.rollos.length === 0 ? "—" : (
+          // Un rollo por línea, con los metros que se le sacaron (el buscado, resaltado).
+          <span className="hv-rollos-lista">
+            {fila.rollos.map((r, i) => (
+              <span key={`${r.referencia}-${i}`} className={`hv-codigo-rollo${r.buscado ? " hv-rollo-buscado" : ""}`}>
+                {r.referencia}{r.metros != null && <strong className="hv-rollo-metros">{redondear(r.metros)} m</strong>}
+              </span>
+            ))}
+          </span>
+        )}
+      </td>
       <td className="num hv-metros">
         {fila.metros == null ? "—" : `${fila.metros} m`}
         {fila.prod && sePuedeCorregir(fila.prod) && (
@@ -167,7 +199,8 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
       {celdasDeProduccion({
         fecha: prod.fecha, cotizacion: prod.cotizacion, cliente: prod.clienteApartado, producto: prod.productoFabricado,
         detalle: segundaLinea(prod.modelo, prod.medidaProducto), cantidad: prod.cantidadProductos,
-        rollos: prod.rollosUtilizados.map((r) => r.identificadorRollo).join(", "), metros: prod.totalMetrosConsumidos,
+        rollos: prod.rollosUtilizados.map((r) => ({ referencia: r.identificadorRollo, metros: r.metrosConsumidos, buscado: Boolean(rolloBuscado) && coincideRollo(r) })),
+        metros: prod.totalMetrosConsumidos,
         saldo: `${prod.saldoCodigo} m`, responsable: prod.responsable, codigo: prod.codigoUnico,
         observaciones: prod.observaciones, prod, esDetalle, bodegaId: prod.bodegaId,
       })}
@@ -178,7 +211,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
       <tr key={fila.key} className={`hv-fila-stock${esDetalle ? " hv-fila-detalle" : ""}`}>
         {celdasDeProduccion({
           fecha: fila.fecha, cotizacion: fila.cotizacion, cliente: fila.cliente, producto: fila.productoFabricado,
-          detalle: segundaLinea(fila.modelo, fila.medida), cantidad: fila.cantidad, rollos: fila.referencia,
+          detalle: segundaLinea(fila.modelo, fila.medida), cantidad: fila.cantidad, rollos: fila.referencia ? [{ referencia: fila.referencia }] : [],
           metros: fila.metrosConsumidos, saldo: `${fila.saldoRestante} m`, responsable: fila.responsable,
           codigo: fila.codigoProduccion, observaciones: fila.observaciones, esStock: true, esDetalle, bodegaId: prod.bodegaId,
         })}
@@ -188,7 +221,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
 
   const filaDeCotizacion = ({ clave, producciones }: FilaHojaVida) => {
     // De una sola cotización (para imprimir) o de un rollo se ve cada producción.
-    const abierta = abiertas.has(clave) || Boolean(cotizacionFiltro) || Boolean(rolloBuscado);
+    const abierta = abiertas.has(clave) || Boolean(cotizacionFiltro) || Boolean(rolloBuscado) || Boolean(codigoBuscado);
     const reciente = producciones[0];
     const lista = (valores: (string | number | undefined)[], plural: string) => {
       const distintos = unicos(valores);
@@ -246,7 +279,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
           <header className="hv-header">
             <div className="hv-header-texto">
               <h1 className="hv-titulo">
-                {cotizacionFiltro ? `Hoja de Vida · Cotización ${cotizacionFiltro}` : "Hoja de Vida"}{rolloBuscado ? ` · Rollo ${rolloFiltro.trim()}` : ""}
+                {cotizacionFiltro ? `Hoja de Vida · Cotización ${cotizacionFiltro}` : "Hoja de Vida"}{codigoBuscado ? ` · ${codigoFiltro.trim().toUpperCase()}` : ""}{rolloBuscado ? ` · Rollo ${rolloFiltro.trim()}` : ""}
               </h1>
               <p className="hv-subtitulo">
                 {cotizacionFiltro
@@ -255,7 +288,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
                     ? "Reporte de control de material: verifica las producciones registradas en todas las bodegas."
                     : "Reporte de control de material: consulta las producciones registradas en tu bodega."}
               </p>
-              {(cotizacionFiltro || rolloBuscado) && (
+              {(cotizacionFiltro || rolloBuscado || codigoBuscado) && (
                 <div className="hv-no-imprimir" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
                   <button type="button" className="inventario-boton" onClick={() => window.print()} disabled={totalProducciones === 0}>
                     Imprimir
@@ -263,7 +296,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
                   <button type="button" className="inventario-boton" onClick={exportarExcel} disabled={totalProducciones === 0}>
                     Exportar a Excel
                   </button>
-                  <button type="button" className="rollos-boton-secundario" onClick={() => { setParametros({}); setRolloFiltro(""); }}>
+                  <button type="button" className="rollos-boton-secundario" onClick={() => { setParametros({}); setRolloFiltro(""); setCodigoFiltro(""); }}>
                     Ver todas las producciones
                   </button>
                 </div>
@@ -272,6 +305,11 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
                 Rollo
                 <input type="search" value={rolloFiltro} onChange={(e) => setRolloFiltro(e.target.value)}
                   placeholder="Referencia o kilos (ej. 4458)" aria-label="Filtrar por rollo: referencia o kilos" style={{ minWidth: 220 }} />
+              </label>
+              <label className="hv-no-imprimir" style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem", marginRight: "1rem" }}>
+                Código
+                <input type="search" value={codigoFiltro} onChange={(e) => setCodigoFiltro(e.target.value)}
+                  placeholder="Ej. LR30020,33" aria-label="Filtrar por código del material" style={{ minWidth: 160 }} />
               </label>
               {esAdminInventario && !cotizacionFiltro && (
                 <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem" }}>
@@ -296,6 +334,29 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
 
           {totalProducciones > 0 ? (
             <section className="hv-card">
+              {rolloBuscado && resumenRollos.length > 0 && (
+                <div className="hv-resumen-rollo" style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--at-border-soft, #EBE2D2)" }}>
+                  <h2 style={{ margin: "0 0 0.5rem" }}>Lo que salió del rollo</h2>
+                  <table className="hv-tabla" style={{ minWidth: 0 }}>
+                    <thead>
+                      <tr><th>Rollo</th><th className="num">Kilos al llegar</th><th className="num">Producciones</th><th className="num">Metros que se le sacaron</th></tr>
+                    </thead>
+                    <tbody>
+                      {resumenRollos.map((r) => (
+                        <tr key={r.identificador}>
+                          <td><span className="hv-codigo-rollo">{r.identificador}</span></td>
+                          <td className="num">{r.kilos != null ? r.kilos.toLocaleString("es-CO") : "—"}</td>
+                          <td className="num">{r.producciones}</td>
+                          <td className="num"><strong>{r.metros.toLocaleString("es-CO", { maximumFractionDigits: 2 })} m</strong></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="hv-sub" style={{ marginTop: "0.5rem" }}>
+                    Abajo, en la columna Rollo, cada producción dice cuántos metros salieron de cada rollo (si usó dos rollos, salen los dos).
+                  </p>
+                </div>
+              )}
               <h2>Historial de Producción</h2>
 
               <div className="hv-tabla-wrap">
@@ -329,7 +390,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
             <div className="hv-vacio">
               <div className="hv-vacio-icono">◎</div>
               <p>
-                {rolloBuscado ? `No hay producciones con el rollo "${rolloFiltro.trim()}"${cotizacionFiltro ? ` en la cotización ${cotizacionFiltro}` : ""}.`
+                {rolloBuscado || codigoBuscado ? `No hay producciones con ${[codigoBuscado && `el código ${codigoFiltro.trim().toUpperCase()}`, rolloBuscado && `el rollo "${rolloFiltro.trim()}"`].filter(Boolean).join(" y ")}${cotizacionFiltro ? ` en la cotización ${cotizacionFiltro}` : ""}.`
                   : cotizacionFiltro ? `La cotización ${cotizacionFiltro} todavía no tiene producciones registradas.`
                   : esAdminInventario
                   ? bodegaFiltro ? "Todavía no hay producciones registradas en esta bodega." : "Todavía no hay producciones registradas en ninguna bodega."

@@ -451,3 +451,9 @@
   .hv-conteo { display: none; }
   @page { size: landscape; margin: 1cm; }
 }
+
+/* Columna Rollo: un rollo por línea con sus metros; el que se buscó, resaltado. */
+.hv-rollos-lista { display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+.hv-rollos-lista .hv-codigo-rollo { white-space: nowrap; }
+.hv-rollo-metros { margin-left: 0.4rem; font-weight: 700; }
+.hv-rollo-buscado { box-shadow: 0 0 0 2px var(--at-terra, #B7451F); }
