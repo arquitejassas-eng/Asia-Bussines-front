@@ -21,6 +21,8 @@ class PrestamoResponse(ModeloConFechasUtc):
     cantidad: float
     unidad: str
     referencia_rollo: str
+    # Kilos con que llegó el rollo (de su etiqueta), si el préstamo es de un rollo.
+    kilos_rollo: int | None = None
     origen: str
     usuario: str
     saldado: bool
@@ -36,6 +38,11 @@ class PrestamoResponse(ModeloConFechasUtc):
         return valor.isoformat().replace("+00:00", "Z")
 
 
+class RolloDeudaResponse(BaseModel):
+    referencia: str
+    kilos: int | None = None
+
+
 class DeudaEmpresaResponse(BaseModel):
     """Lo que `debe` le debe a `presta` de un material, neto (sin saldar)."""
     tipo: str
@@ -45,6 +52,7 @@ class DeudaEmpresaResponse(BaseModel):
     presta: str
     debe: str
     cantidad: float
+    rollos: list[RolloDeudaResponse] = []
 
 
 class SacadoSinExistenciaResponse(ModeloConFechasUtc):
@@ -67,3 +75,14 @@ class ReportePrestamosResponse(BaseModel):
 
 class SaldarPrestamosRequest(BaseModel):
     ids: list[int] = Field(min_length=1)
+
+
+class PrestarATerceroRequest(BaseModel):
+    producto_id: int
+    cantidad: float = Field(gt=0)
+    tercero: str = Field(min_length=1, max_length=150)
+    observaciones: str = Field(default="", max_length=500)
+
+
+class DevolverDeTerceroRequest(BaseModel):
+    cantidad: float = Field(gt=0)

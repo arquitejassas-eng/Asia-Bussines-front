@@ -10,12 +10,15 @@ viejos en préstamos: solo lo que sale por una cotización.
 """
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.apartado import Apartado
+from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.prestamo import PrestamoEmpresa
+from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import Usuario
 from app.services.empresas import EMPRESAS_CONOCIDAS, sigla_empresa_desde_nombre
@@ -76,6 +79,111 @@ def registrar_prestamo_de_rollo(db: Session, *, rollo: Rollo, prestador: str, us
     return prestamo
 
 
+# Lo que Admin Inventario le presta a una empresa de afuera (ej. caballetes):
+# sale del stock de la bodega y queda aquí hasta que lo devuelvan o lo paguen.
+PRESTADO_A_TERCERO = "prestamo_a_tercero"
+DEVUELTO_POR_TERCERO = "devuelto_por_tercero"
+
+
+def nombre_presta(p: PrestamoEmpresa) -> str:
+    return p.prestador if p.empresa_presta == PRESTADOR_EXTERNO and p.prestador else p.empresa_presta
+
+
+def nombre_recibe(p: PrestamoEmpresa) -> str:
+    return p.prestador if p.empresa_recibe == PRESTADOR_EXTERNO and p.prestador else p.empresa_recibe
+
+
+def prestar_a_tercero(
+    db: Session, *, producto_id: int, cantidad: float, tercero: str, observaciones: str, usuario: Usuario,
+) -> PrestamoEmpresa:
+    """Unidades de un producto que salen prestadas a una empresa externa: se
+    descuentan del stock (sin tocar lo apartado) y quedan sin saldar."""
+    from app.services.apartados import validar_reserva_producto
+
+    nombre = " ".join((tercero or "").split())
+    if not nombre:
+        raise HTTPException(status_code=400, detail="Escribe a quién se le presta (empresa o persona).")
+    if sigla_empresa_desde_nombre(nombre):
+        raise HTTPException(status_code=400, detail="Entre Arquitejas y Asia Business el préstamo se hace con una cotización: aquí solo empresas de afuera.")
+    cantidad = round(float(cantidad or 0), 2)
+    if cantidad <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor que 0.")
+    producto = db.query(Producto).filter(Producto.id == producto_id).with_for_update().first()
+    if producto is None or producto.bodega_id is None:
+        raise HTTPException(status_code=404, detail="Producto no encontrado en esa bodega. Recarga la lista.")
+    if cantidad > round(float(producto.stock), 2) + 0.005:
+        raise HTTPException(status_code=400, detail=f"Solo hay {float(producto.stock):g} de {producto.codigo} en esa bodega.")
+    validar_reserva_producto(db, producto=producto, cantidad=cantidad)
+    producto.stock -= Decimal(str(cantidad))
+    ahora = datetime.now(timezone.utc)
+    db.add(Movimiento(
+        fecha=ahora, tipo=TipoMovimiento.SALIDA, motivo=PRESTADO_A_TERCERO, producto_codigo=producto.codigo,
+        producto_descripcion=producto.descripcion, bodega_origen_id=producto.bodega_id, cantidad=cantidad,
+        usuario=usuario.correo, empresa_externa=nombre[:150],
+        observaciones=(observaciones or "").strip() or f"Prestado a {nombre}: debe devolverlo.",
+    ))
+    prestamo = PrestamoEmpresa(
+        fecha=ahora, empresa_presta=(producto.empresa or "").strip().upper(), empresa_recibe=PRESTADOR_EXTERNO,
+        prestador=nombre[:150], bodega_id=producto.bodega_id, apartado_id=None, numero_cotizacion="", tipo=PRODUCTO,
+        codigo=producto.codigo, descripcion=(producto.descripcion or "")[:255], cantidad=cantidad, unidad="und",
+        referencia_rollo="", origen=PRESTADO_A_TERCERO, usuario=usuario.correo,
+    )
+    db.add(prestamo)
+    return prestamo
+
+
+def devolver_de_tercero(db: Session, prestamo_id: int, cantidad: float, usuario: Usuario) -> PrestamoEmpresa:
+    """La empresa externa devolvió todo o parte: vuelve al stock de la bodega
+    de donde salió. Lo devuelto queda saldado; lo que falta sigue pendiente."""
+    prestamo = db.query(PrestamoEmpresa).filter(PrestamoEmpresa.id == prestamo_id).with_for_update().first()
+    if prestamo is None or prestamo.origen != PRESTADO_A_TERCERO or prestamo.saldado:
+        raise HTTPException(status_code=404, detail="Ese préstamo ya no está pendiente. Recarga la lista.")
+    cantidad = round(float(cantidad or 0), 2)
+    if cantidad <= 0 or cantidad > prestamo.cantidad + 0.005:
+        raise HTTPException(status_code=400, detail=f"Escribe cuánto devolvieron: más de 0 y máximo {prestamo.cantidad:g}.")
+    producto = (
+        db.query(Producto)
+        .filter(Producto.bodega_id == prestamo.bodega_id, Producto.codigo == prestamo.codigo,
+                Producto.empresa == prestamo.empresa_presta)
+        .with_for_update().first()
+    )
+    if producto is not None:
+        producto.stock += Decimal(str(cantidad))
+    else:
+        from app.services.productos import nuevo_producto_en_bodega
+
+        plantilla = (
+            db.query(Producto).filter(Producto.codigo == prestamo.codigo, Producto.empresa == prestamo.empresa_presta)
+            .order_by(Producto.id).first()
+        )
+        db.add(nuevo_producto_en_bodega(plantilla, bodega_id=prestamo.bodega_id, cantidad=cantidad) if plantilla else Producto(
+            bodega_id=prestamo.bodega_id, codigo=prestamo.codigo, descripcion=prestamo.descripcion,
+            empresa=prestamo.empresa_presta, entrada=cantidad, stock=cantidad,
+        ))
+    ahora = datetime.now(timezone.utc)
+    db.add(Movimiento(
+        fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo=DEVUELTO_POR_TERCERO, producto_codigo=prestamo.codigo,
+        producto_descripcion=prestamo.descripcion, bodega_destino_id=prestamo.bodega_id, cantidad=cantidad,
+        usuario=usuario.correo, empresa_externa=prestamo.prestador,
+        observaciones=f"{prestamo.prestador} devolvió lo prestado (préstamo #{prestamo.id}).",
+    ))
+    if cantidad < prestamo.cantidad - 0.005:
+        # Devolución parcial: lo devuelto queda aparte como saldado; el resto sigue pendiente.
+        prestamo.cantidad = round(prestamo.cantidad - cantidad, 2)
+        devuelto = PrestamoEmpresa(
+            fecha=prestamo.fecha, empresa_presta=prestamo.empresa_presta, empresa_recibe=prestamo.empresa_recibe,
+            prestador=prestamo.prestador, bodega_id=prestamo.bodega_id, apartado_id=None, numero_cotizacion="",
+            tipo=prestamo.tipo, codigo=prestamo.codigo, descripcion=prestamo.descripcion, cantidad=cantidad,
+            unidad=prestamo.unidad, referencia_rollo="", origen=DEVUELTO_POR_TERCERO, usuario=prestamo.usuario,
+            saldado=True, saldado_por=usuario.correo, fecha_saldado=ahora,
+        )
+        db.add(devuelto)
+        return devuelto
+    prestamo.origen = DEVUELTO_POR_TERCERO
+    prestamo.saldado, prestamo.saldado_por, prestamo.fecha_saldado = True, usuario.correo, ahora
+    return prestamo
+
+
 def listar(
     db: Session, *, empresa: str = "", bodega_id: int | None = None, desde: datetime | None = None,
     hasta: datetime | None = None, incluir_saldados: bool = False,
@@ -101,14 +209,18 @@ def resumen(prestamos: list[PrestamoEmpresa]) -> list[dict]:
     # (tipo, código, unidad) -> {(presta, recibe): cantidad}
     por_codigo: dict[tuple[str, str, str], dict[tuple[str, str], float]] = {}
     descripciones: dict[tuple[str, str, str], str] = {}
+    # Rollos de cada material y par, con los kilos con que llegaron (la ruta pone kilos_rollo).
+    rollos: dict[tuple, dict[str, int | None]] = {}
     for p in prestamos:
         if p.saldado:
             continue
         clave = (p.tipo, p.codigo, p.unidad)
         pares = por_codigo.setdefault(clave, {})
         # Un tercero va por su nombre: lo que se le debe no se cruza con nadie más.
-        par = (p.prestador or p.empresa_presta, p.empresa_recibe)
+        par = (nombre_presta(p), nombre_recibe(p))
         pares[par] = pares.get(par, 0) + p.cantidad
+        if p.referencia_rollo:
+            rollos.setdefault((clave, par), {})[p.referencia_rollo] = getattr(p, "kilos_rollo", None)
         descripciones[clave] = descripciones.get(clave) or p.descripcion
     filas = []
     for (tipo, codigo, unidad), pares in por_codigo.items():
@@ -121,8 +233,10 @@ def resumen(prestamos: list[PrestamoEmpresa]) -> list[dict]:
             if abs(neto) <= 0.005:
                 continue
             acreedora, deudora = (presta, recibe) if neto > 0 else (recibe, presta)
+            de_la_fila = rollos.get(((tipo, codigo, unidad), (acreedora, deudora)), {})
             filas.append({"tipo": tipo, "codigo": codigo, "descripcion": descripciones[(tipo, codigo, unidad)],
-                          "unidad": unidad, "presta": acreedora, "debe": deudora, "cantidad": abs(neto)})
+                          "unidad": unidad, "presta": acreedora, "debe": deudora, "cantidad": abs(neto),
+                          "rollos": [{"referencia": ref, "kilos": kilos} for ref, kilos in sorted(de_la_fila.items())]})
     return sorted(filas, key=lambda f: (f["debe"], f["tipo"], f["codigo"]))
 
 

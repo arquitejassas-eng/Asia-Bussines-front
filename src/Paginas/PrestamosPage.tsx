@@ -11,9 +11,14 @@ import type { AlmacenGlobal, Sesion } from "../types/dominio";
 type Prestamo = {
   id: number; fecha: string; empresa_presta: string; empresa_recibe: string; prestador: string; bodega_id: number | null;
   numero_cotizacion: string; tipo: string; codigo: string; descripcion: string; cantidad: number; unidad: string;
-  referencia_rollo: string; origen: string; usuario: string; saldado: boolean; saldado_por: string; fecha_saldado: string | null;
+  referencia_rollo: string; kilos_rollo: number | null; origen: string; usuario: string; saldado: boolean; saldado_por: string;
+  fecha_saldado: string | null;
 };
-type Deuda = { tipo: string; codigo: string; descripcion: string; unidad: string; presta: string; debe: string; cantidad: number };
+type Deuda = {
+  tipo: string; codigo: string; descripcion: string; unidad: string; presta: string; debe: string; cantidad: number;
+  rollos: { referencia: string; kilos: number | null }[];
+};
+type ProductoBodega = { id: number; codigo: string; descripcion: string; empresa: string; stock: number; rollo_id?: number | null };
 type Sacado = {
   fecha: string; bodega_id: number | null; producto_codigo: string; producto_descripcion: string; cantidad: number;
   cotizacion: string; usuario: string; observaciones: string;
@@ -23,8 +28,14 @@ type Reporte = { resumen: Deuda[]; prestamos: Prestamo[]; sacado_sin_existencia:
 const ORIGEN: Record<string, string> = {
   produccion: "Producción (Planta)", fin_produccion: "Producción terminada", salida: "Salida (Admin Inventario)",
   stock_planta: "Planta sacó de stock", union_cotizacion: "Al unir la cotización", ingreso_rollo: "Ingreso del rollo (prestado)",
+  prestamo_a_tercero: "Prestado a empresa externa", devuelto_por_tercero: "Prestado a empresa externa (devuelto)",
 };
-const nombre = (sigla: string) => EMPRESAS[sigla] || sigla;
+const EXTERNA = "EXT";
+const nombre = (sigla: string) => EMPRESAS[sigla] || sigla || "Sin empresa";
+// Un tercero (empresa de afuera) va por su nombre, preste o reciba.
+const quienPresta = (p: Prestamo) => (p.empresa_presta === EXTERNA && p.prestador ? p.prestador : nombre(p.empresa_presta));
+const quienRecibe = (p: Prestamo) => (p.empresa_recibe === EXTERNA && p.prestador ? p.prestador : nombre(p.empresa_recibe));
+const kilosTexto = (kilos: number | null) => (kilos != null ? `${kilos.toLocaleString("es-CO")} kg al llegar` : "sin kilos");
 const cantidadTexto = (cantidad: number, unidad: string) =>
   `${cantidad.toLocaleString("es-CO", { maximumFractionDigits: 2 })} ${unidad === "m" ? "m" : "und"}`;
 
@@ -43,6 +54,74 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const [seleccion, setSeleccion] = useState<Set<number>>(new Set());
   const [saldando, setSaldando] = useState(false);
   const nombreBodega = (id: number | null) => almacen.bodegas.find((b) => b.id === id)?.nombre || "—";
+
+  // Prestar a una empresa externa (ej. caballetes): sale del stock y queda aquí hasta que lo devuelvan.
+  const [mostrarPrestar, setMostrarPrestar] = useState(false);
+  const [prestarBodega, setPrestarBodega] = useState("");
+  const [productosBodega, setProductosBodega] = useState<ProductoBodega[]>([]);
+  const [buscarProducto, setBuscarProducto] = useState("");
+  const [prestarProducto, setPrestarProducto] = useState("");
+  const [prestarCantidad, setPrestarCantidad] = useState("");
+  const [prestarTercero, setPrestarTercero] = useState("");
+  const [prestarObservaciones, setPrestarObservaciones] = useState("");
+  const [prestando, setPrestando] = useState(false);
+  const [errorPrestar, setErrorPrestar] = useState("");
+  const [aviso, setAviso] = useState("");
+
+  useEffect(() => {
+    setProductosBodega([]);
+    setPrestarProducto("");
+    if (!prestarBodega) return;
+    let vigente = true;
+    api.get<ProductoBodega[]>(`/bodegas/${prestarBodega}/inventario`)
+      .then((datos) => { if (vigente) setProductosBodega((datos || []).filter((p) => !p.rollo_id && Number(p.stock) > 0)); })
+      .catch((err) => { if (vigente) setErrorPrestar(err instanceof ErrorApi ? err.message : "No se pudo cargar el inventario de esa bodega."); });
+    return () => { vigente = false; };
+  }, [prestarBodega]);
+
+  const terminoProducto = buscarProducto.trim().toLowerCase();
+  const productosFiltrados = productosBodega.filter((p) => !terminoProducto
+    || p.codigo.toLowerCase().includes(terminoProducto) || p.descripcion.toLowerCase().includes(terminoProducto));
+  const productoElegido = productosBodega.find((p) => String(p.id) === prestarProducto);
+
+  async function prestar(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorPrestar("");
+    const cantidad = Number(prestarCantidad);
+    if (!productoElegido) { setErrorPrestar("Elige el producto que vas a prestar."); return; }
+    if (!(cantidad > 0)) { setErrorPrestar("Escribe cuántos vas a prestar."); return; }
+    if (cantidad > Number(productoElegido.stock)) { setErrorPrestar(`Solo hay ${productoElegido.stock} en esa bodega.`); return; }
+    if (!prestarTercero.trim()) { setErrorPrestar("Escribe a qué empresa se le presta."); return; }
+    setPrestando(true);
+    try {
+      await api.post("/prestamos/a-tercero", {
+        producto_id: productoElegido.id, cantidad, tercero: prestarTercero.trim(), observaciones: prestarObservaciones.trim(),
+      });
+      setAviso(`Listo: ${cantidad} de ${productoElegido.codigo} quedaron prestados a ${prestarTercero.trim()}.`);
+      setMostrarPrestar(false);
+      setPrestarBodega(""); setBuscarProducto(""); setPrestarCantidad(""); setPrestarTercero(""); setPrestarObservaciones("");
+      await cargar();
+    } catch (err) {
+      setErrorPrestar(err instanceof ErrorApi ? err.message : "No se pudo registrar el préstamo.");
+    } finally {
+      setPrestando(false);
+    }
+  }
+
+  async function devolver(p: Prestamo) {
+    const texto = window.prompt(`¿Cuántos ${p.codigo} devolvió ${p.prestador}? (prestados sin devolver: ${p.cantidad})`, String(p.cantidad));
+    if (texto == null) return;
+    const cantidad = Number(texto.replace(",", "."));
+    if (!(cantidad > 0) || cantidad > p.cantidad) { setError(`Escribe una cantidad entre 1 y ${p.cantidad}.`); return; }
+    setError("");
+    try {
+      await api.post(`/prestamos/${p.id}/devolver`, { cantidad });
+      setAviso(`Listo: ${cantidad} de ${p.codigo} volvieron a ${nombreBodega(p.bodega_id)}.`);
+      await cargar();
+    } catch (err) {
+      setError(err instanceof ErrorApi ? err.message : "No se pudo registrar la devolución.");
+    }
+  }
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -82,13 +161,15 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     exportarHojasAExcel([
       { nombre: "Lo que se deben", filas: reporte.resumen.map((d) => ({
         "Quién debe": nombre(d.debe), "A quién": nombre(d.presta), "Material": d.codigo,
-        "Tipo": d.tipo === "lamina" ? "lámina" : "producto", "Descripción": d.descripcion, "Cantidad": d.cantidad,
-        "Unidad": d.unidad === "m" ? "m" : "und",
+        "Tipo": d.tipo === "lamina" ? "lámina" : "producto", "Descripción": d.descripcion,
+        "Rollos (kilos al llegar)": d.rollos.map((r) => `${r.referencia} (${kilosTexto(r.kilos)})`).join(", "),
+        "Cantidad": d.cantidad, "Unidad": d.unidad === "m" ? "m" : "und",
       })) },
       { nombre: "Detalle", filas: reporte.prestamos.map((p) => ({
-        "Fecha": formatearFechaColombia(p.fecha), "Presta": p.prestador || nombre(p.empresa_presta),
-        "Recibe": nombre(p.empresa_recibe), "Cotización": p.numero_cotizacion, "Bodega": nombreBodega(p.bodega_id),
-        "Material": p.codigo, "Descripción": p.descripcion, "Rollo": p.referencia_rollo, "Cantidad": p.cantidad,
+        "Fecha": formatearFechaColombia(p.fecha), "Presta": quienPresta(p),
+        "Recibe": quienRecibe(p), "Cotización": p.numero_cotizacion, "Bodega": nombreBodega(p.bodega_id),
+        "Material": p.codigo, "Descripción": p.descripcion, "Rollo": p.referencia_rollo,
+        "Kilos del rollo al llegar": p.kilos_rollo ?? "", "Cantidad": p.cantidad,
         "Unidad": p.unidad === "m" ? "m" : "und", "Dónde se anotó": ORIGEN[p.origen] || p.origen, "Usuario": p.usuario,
         "Estado": p.saldado ? "Saldado" : "Sin saldar", "Saldado el": p.fecha_saldado ? formatearFechaColombia(p.fecha_saldado) : "",
       })) },
@@ -126,7 +207,75 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             (al producir, al terminar la producción o al dar salida) queda anotado aquí como préstamo. Cuando las empresas
             cuadren cuentas, marca los préstamos como saldados. Los rollos que nos prestan (otra empresa o una persona)
             se anotan al ingresarlos a mano en Rollos almacenados; márcalos como saldados cuando se devuelvan o se paguen.
+            Lo que le prestamos a una <strong>empresa de afuera</strong> (ej. caballetes) se registra con
+            «Prestar a una empresa externa» y vuelve al stock con <strong>Devolver</strong>.
           </p>
+
+          {aviso && <p className="inventario-exito" role="status" onClick={() => setAviso("")}>{aviso}</p>}
+
+          <div style={{ margin: "0.75rem 0" }}>
+            <button type="button" className="inventario-boton" onClick={() => { setMostrarPrestar((v) => !v); setErrorPrestar(""); }}>
+              {mostrarPrestar ? "Cancelar préstamo" : "+ Prestar a una empresa externa"}
+            </button>
+          </div>
+
+          {mostrarPrestar && (
+            <form className="inventario-form" onSubmit={prestar} noValidate>
+              <h2 className="inventario-form-subtitulo">Prestar a una empresa externa</h2>
+              <p className="inventario-carga-ayuda">
+                Las unidades salen del stock de la bodega y quedan abajo como «Sin saldar» hasta que las devuelvan
+                (botón <strong>Devolver</strong>) o las paguen (<strong>Saldar</strong>).
+              </p>
+              <div className="inventario-form-grid">
+                <div>
+                  <label htmlFor="prestar-tercero">¿A qué empresa se le presta? *</label>
+                  <input id="prestar-tercero" maxLength={150} placeholder="Ej. Constructora XYZ" value={prestarTercero}
+                    onChange={(e) => setPrestarTercero(e.target.value)} />
+                </div>
+                <div>
+                  <label htmlFor="prestar-bodega">¿De qué bodega sale? *</label>
+                  <select id="prestar-bodega" value={prestarBodega} onChange={(e) => setPrestarBodega(e.target.value)}>
+                    <option value="">Elige la bodega</option>
+                    {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                  </select>
+                </div>
+                {prestarBodega && (
+                  <div>
+                    <label htmlFor="prestar-buscar">Buscar producto</label>
+                    <input id="prestar-buscar" type="search" placeholder="Código o descripción (ej. caballete)" value={buscarProducto}
+                      onChange={(e) => setBuscarProducto(e.target.value)} />
+                  </div>
+                )}
+                {prestarBodega && (
+                  <div>
+                    <label htmlFor="prestar-producto">Producto *</label>
+                    <select id="prestar-producto" value={prestarProducto} onChange={(e) => setPrestarProducto(e.target.value)}>
+                      <option value="">{productosFiltrados.length ? `Elige (${productosFiltrados.length})` : "Ningún producto con stock coincide"}</option>
+                      {productosFiltrados.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.codigo} · {p.descripcion} · {nombre(p.empresa)} · hay {Number(p.stock).toLocaleString("es-CO")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label htmlFor="prestar-cantidad">Cantidad *</label>
+                  <input id="prestar-cantidad" type="number" min="0" step="any" value={prestarCantidad}
+                    onChange={(e) => setPrestarCantidad(e.target.value)} />
+                </div>
+                <div>
+                  <label htmlFor="prestar-observaciones">Observaciones</label>
+                  <input id="prestar-observaciones" maxLength={500} placeholder="Ej. los recoge Juan, devuelven en 15 días"
+                    value={prestarObservaciones} onChange={(e) => setPrestarObservaciones(e.target.value)} />
+                </div>
+              </div>
+              {errorPrestar && <p className="inventario-error">{errorPrestar}</p>}
+              <div className="inventario-form-botones">
+                <button type="submit" className="inventario-boton" disabled={prestando}>{prestando ? "Guardando..." : "Prestar"}</button>
+              </div>
+            </form>
+          )}
 
           <div className="apartados-filtros">
             <select className={`apartados-select ${empresa ? "apartados-select-activo" : ""}`} aria-label="Empresa"
@@ -160,7 +309,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 <div className="inventario-tabla-contenedor">
                   <table className="inventario-tabla">
                     <thead>
-                      <tr><th>Quién debe</th><th>A quién</th><th>Material</th><th>Descripción</th><th>Cantidad</th></tr>
+                      <tr><th>Quién debe</th><th>A quién</th><th>Material</th><th>Descripción / rollo</th><th>Cantidad</th></tr>
                     </thead>
                     <tbody>
                       {reporte.resumen.map((d) => (
@@ -168,7 +317,14 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           <td><strong>{nombre(d.debe)}</strong></td>
                           <td>{nombre(d.presta)}</td>
                           <td>{d.codigo} <span className="rollos-texto-ayuda" style={{ margin: 0 }}>({d.tipo === "lamina" ? "lámina" : "producto"})</span></td>
-                          <td>{d.descripcion || "—"}</td>
+                          <td>
+                            {d.descripcion || "—"}
+                            {d.rollos.map((r) => (
+                              <span key={r.referencia} className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>
+                                Rollo {r.referencia} · {kilosTexto(r.kilos)}
+                              </span>
+                            ))}
+                          </td>
                           <td><strong>{cantidadTexto(d.cantidad, d.unidad)}</strong></td>
                         </tr>
                       ))}
@@ -208,17 +364,29 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             {!p.saldado && <input type="checkbox" aria-label={`Elegir préstamo ${p.id}`} checked={seleccion.has(p.id)} onChange={() => alternar(p.id)} />}
                           </td>
                           <td>{formatearFechaColombia(p.fecha)}</td>
-                          <td>{p.prestador || nombre(p.empresa_presta)}</td>
-                          <td>{nombre(p.empresa_recibe) || "—"}</td>
+                          <td>{quienPresta(p)}</td>
+                          <td>{quienRecibe(p)}</td>
                           <td>{p.numero_cotizacion || "—"}</td>
                           <td>{nombreBodega(p.bodega_id)}</td>
                           <td>
                             <strong>{p.codigo}</strong> {p.descripcion}
-                            {p.referencia_rollo && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Rollo {p.referencia_rollo}</span>}
+                            {p.referencia_rollo && (
+                              <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>
+                                Rollo {p.referencia_rollo} · {kilosTexto(p.kilos_rollo)}
+                              </span>
+                            )}
                           </td>
                           <td>{cantidadTexto(p.cantidad, p.unidad)}</td>
                           <td>{ORIGEN[p.origen] || p.origen}{p.usuario && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>{p.usuario}</span>}</td>
-                          <td>{p.saldado ? `Saldado${p.fecha_saldado ? ` el ${formatearFechaColombia(p.fecha_saldado)}` : ""}` : "Sin saldar"}</td>
+                          <td>
+                            {p.saldado
+                              ? `${p.origen === "devuelto_por_tercero" ? "Devuelto" : "Saldado"}${p.fecha_saldado ? ` el ${formatearFechaColombia(p.fecha_saldado)}` : ""}`
+                              : "Sin saldar"}
+                            {!p.saldado && p.origen === "prestamo_a_tercero" && (
+                              <button type="button" className="apartados-limpiar" style={{ display: "block", marginTop: "0.35rem" }}
+                                onClick={() => devolver(p)}>Devolver</button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
