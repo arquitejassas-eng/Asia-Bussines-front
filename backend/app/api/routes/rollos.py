@@ -100,7 +100,7 @@ def asignar_peso_actual(db: Session, rollos: list[Rollo]) -> None:
     en vez de una por rollo."""
     espesores = {e.espesor: e for e in db.query(TablaEspesorEquivalencia).all()}
     for rollo in rollos:
-        rollo.peso_actual_toneladas = srv_excel.peso_actual_toneladas(rollo.calibre, rollo.metros_disponibles, espesores)
+        rollo.peso_actual_toneladas = srv_excel.peso_actual_del_rollo(rollo, espesores)
 
 
 @router.get("/{rollo_id}/historial", response_model=list[MovimientoResponse])

@@ -335,6 +335,21 @@ def peso_actual_toneladas(
     return round(metros_disponibles / info_espesor.mt_por_ton, 3)
 
 
+def peso_actual_del_rollo(rollo, espesores: dict[float, "TablaEspesorEquivalencia"]) -> float | None:
+    """Toneladas que pesa HOY un rollo. Si se sabe su peso de llegada, es ese
+    peso en proporción a los metros que le quedan: un rollo sin usar pesa
+    exactamente lo que llegó (con la tabla de espesores salía ~3 % menos,
+    porque la tabla es un promedio). Sin peso de llegada (ej. ingreso manual),
+    se calcula con la tabla."""
+    disponibles = float(rollo.metros_disponibles or 0)
+    total = disponibles + float(rollo.metros_consumidos or 0)
+    neto = float(rollo.peso_neto or 0)
+    if neto > 0 and total > 0.005:
+        toneladas = neto if neto < 100 else neto / 1000  # por debajo de 100 viene en toneladas
+        return round(toneladas * disponibles / total, 3)
+    return peso_actual_toneladas(rollo.calibre, disponibles, espesores)
+
+
 def resumen_verificacion(rollos: list[RolloClasificado]) -> dict:
     return {
         "total_rollos": len(rollos),

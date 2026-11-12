@@ -195,11 +195,11 @@ def kilos_actuales_rollo(db: Session, rollo: Rollo, espesores: dict | None = Non
     """Lo que pesa HOY el rollo: si ya se usó una parte, por los metros que le
     quedan y el peso por metro de su espesor; si está entero, su peso neto (el
     de la etiqueta). `espesores` (tabla_espesores) evita consultarla por rollo."""
-    from app.services.clasificacion import peso_actual_toneladas
+    from app.services.clasificacion import peso_actual_del_rollo
 
     if (rollo.metros_consumidos or 0) > 0.005:
         espesores = espesores if espesores is not None else tabla_espesores(db)
-        toneladas = peso_actual_toneladas(rollo.calibre, rollo.metros_disponibles or 0, espesores)
+        toneladas = peso_actual_del_rollo(rollo, espesores)
         if toneladas is not None:
             return round(toneladas * 1000)
     return kilos_rollo(rollo.peso_neto)

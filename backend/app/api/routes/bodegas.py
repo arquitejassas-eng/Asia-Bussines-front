@@ -13,7 +13,7 @@ from app.models.usuario import RolUsuario, Usuario
 from app.schemas.bodegas import BodegaCrear, BodegaResponse, SolicitudCrear, SolicitudResponse
 from app.schemas.inventario import ProductoResponse
 from app.services import bodegas as srv_bodegas
-from app.services.clasificacion import formatear_calibre, peso_actual_toneladas
+from app.services.clasificacion import formatear_calibre, peso_actual_del_rollo
 from app.services.transferencias import (
     aceptar_solicitud_transferencia,
     crear_solicitud_transferencia,
@@ -66,7 +66,7 @@ def inventario_de_bodega(
     espesores = {e.espesor: e for e in db.query(TablaEspesorEquivalencia).all()}
     filas_rollos = []
     for rollo in rollos:
-        toneladas = peso_actual_toneladas(rollo.calibre, rollo.metros_disponibles, espesores)
+        toneladas = peso_actual_del_rollo(rollo, espesores)
         filas_rollos.append({
             "id": -rollo.id, "bodega_id": rollo.bodega_id, "empresa": rollo.empresa or "",
             "codigo_importacion": rollo.codigo_proveedor or "", "codigo": rollo.codigo_interno,

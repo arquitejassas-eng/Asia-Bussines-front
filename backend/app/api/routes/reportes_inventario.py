@@ -15,7 +15,7 @@ from app.models.material_en_camino import Cargamento, CargamentoRollo
 from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario
-from app.services.clasificacion import peso_actual_toneladas
+from app.services.clasificacion import peso_actual_del_rollo
 from app.services.apartados import EMPRESA_DE_LINEA, ESTADOS_RESERVA_ACTIVA
 from app.services.empresas import AMBAS_EMPRESAS
 from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, Solicitud
@@ -142,7 +142,7 @@ def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
             "kilos": r.peso_neto, "metros_llegada": round(float(r.metros_proveedor or 0) or (disponibles + consumidos), 2),
             # Lo que pesa HOY según los metros que le quedan (None si su calibre
             # no está en la tabla de equivalencias).
-            "kilos_actuales": _kilos(peso_actual_toneladas(r.calibre, disponibles, espesores)),
+            "kilos_actuales": _kilos(peso_actual_del_rollo(r, espesores)),
             "metros_disponibles": round(disponibles, 2),
             "bodega": bodegas.get(r.bodega_id, SIN_BODEGA) if r.bodega_id else SIN_BODEGA,
             "estado": r.estado.value if hasattr(r.estado, "value") else str(r.estado),
