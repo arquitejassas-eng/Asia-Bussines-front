@@ -11,21 +11,40 @@ import { ProductosSinCodigoContexto } from "./Componentes/AvisosProductosSinCodi
 
 // Cada módulo se descarga solo al abrir su ruta. Al crecer la aplicación, una
 // pantalla nueva no penaliza el primer acceso de los demás usuarios.
-const InicioPage = lazy(() => import("./Paginas/InicioPage"));
-const InventarioPage = lazy(() => import("./Paginas/InventarioPage"));
-const ApartadosPage = lazy(() => import("./Paginas/ApartadosPage"));
-const RecepcionVerificacionPage = lazy(() => import("./Paginas/RecepcionverificacionPage"));
-const BodegasPage = lazy(() => import("./Paginas/BodegasPage"));
-const RollosPage = lazy(() => import("./Paginas/RollosPage"));
-const AdminInventarioPage = lazy(() => import("./Paginas/AdminInventarioPage"));
-const ProduccionPage = lazy(() => import("./Paginas/ProduccionPage"));
-const HojaVidaPage = lazy(() => import("./Paginas/HojaVidaPage"));
-const ReportesPage = lazy(() => import("./Paginas/ReportesPage"));
-const IAPage = lazy(() => import("./Paginas/IAPage"));
-const UsuariosPage = lazy(() => import("./Paginas/UsuariosPage"));
-const MermaPage = lazy(() => import("./Paginas/MermaPage"));
-const MermaPlantaPage = lazy(() => import("./Paginas/MermaPlantaPage"));
-const PrestamosPage = lazy(() => import("./Paginas/PrestamosPage"));
+// Después de subir una versión nueva, una pestaña que llevaba horas abierta
+// pide los archivos de la versión vieja, que ya no existen, y la pantalla se
+// quedaba congelada: entonces se recarga una vez para traer la nueva.
+const CLAVE_RECARGA = "arquitejas_recarga_por_version";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pantalla<T extends { default: React.ComponentType<any> }>(importar: () => Promise<T>) {
+  return lazy(() => importar().then((modulo) => {
+    try { sessionStorage.removeItem(CLAVE_RECARGA); } catch { /* sin almacenamiento */ }
+    return modulo;
+  }).catch((error) => {
+    let yaRecargo = false;
+    try { yaRecargo = sessionStorage.getItem(CLAVE_RECARGA) === "1"; sessionStorage.setItem(CLAVE_RECARGA, "1"); } catch { /* sin almacenamiento */ }
+    if (!yaRecargo) {
+      window.location.reload();
+      return new Promise<T>(() => {});
+    }
+    throw error;
+  }));
+}
+const InicioPage = pantalla(() => import("./Paginas/InicioPage"));
+const InventarioPage = pantalla(() => import("./Paginas/InventarioPage"));
+const ApartadosPage = pantalla(() => import("./Paginas/ApartadosPage"));
+const RecepcionVerificacionPage = pantalla(() => import("./Paginas/RecepcionverificacionPage"));
+const BodegasPage = pantalla(() => import("./Paginas/BodegasPage"));
+const RollosPage = pantalla(() => import("./Paginas/RollosPage"));
+const AdminInventarioPage = pantalla(() => import("./Paginas/AdminInventarioPage"));
+const ProduccionPage = pantalla(() => import("./Paginas/ProduccionPage"));
+const HojaVidaPage = pantalla(() => import("./Paginas/HojaVidaPage"));
+const ReportesPage = pantalla(() => import("./Paginas/ReportesPage"));
+const IAPage = pantalla(() => import("./Paginas/IAPage"));
+const UsuariosPage = pantalla(() => import("./Paginas/UsuariosPage"));
+const MermaPage = pantalla(() => import("./Paginas/MermaPage"));
+const MermaPlantaPage = pantalla(() => import("./Paginas/MermaPlantaPage"));
+const PrestamosPage = pantalla(() => import("./Paginas/PrestamosPage"));
 
 const CLAVE_SESION = "arquitejas_sesion";
 
