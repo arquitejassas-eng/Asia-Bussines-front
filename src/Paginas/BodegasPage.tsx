@@ -300,7 +300,7 @@ function BodegasPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCe
                     ))}
                   </select>
                   {b.formularioSolicitud.tipoOperacion === "prestamo" && b.productoSeleccionado.rolloId && (
-                    <p className="rollos-texto-ayuda">
+                    <p className="bodegas-texto-ayuda">
                       El rollo se presta aunque tenga metros apartados en esa bodega (esas cotizaciones esperan mientras
                       tanto). No se puede devolver ni pedir hasta que Admin Inventario lo devuelva.
                     </p>

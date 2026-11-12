@@ -383,11 +383,15 @@
   align-items: center;
   justify-content: center;
   z-index: 50;
+  padding: 1rem;
 }
 
 .bodegas-modal {
   width: 100%;
   max-width: 440px;
+  /* Con avisos largos el formulario no cabía y el botón quedaba fuera de la pantalla. */
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
   padding: 1.9rem;
   background: #FFFFFF;
   border-radius: var(--at-r-lg, 18px);
