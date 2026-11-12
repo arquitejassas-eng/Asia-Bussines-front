@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
+import time
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
@@ -33,6 +35,16 @@ from app.services.empresas import EMPRESAS_CONOCIDAS
 from app.services.seccionados import metros_de_linea
 
 logger = logging.getLogger("arquitejas.siigo")
+
+# Para no crear la misma cotización dos veces en Siigo cuando está lento:
+# - mientras una se está subiendo, otro intento de la misma espera su turno;
+# - si Siigo no confirmó, por unos minutos no se vuelve a crear: solo se
+#   busca si ya aparece (Siigo la termina de crear y tarda en mostrarla).
+# (El servidor es un solo proceso: basta con guardarlo en memoria.)
+_candado_subidas = threading.Lock()
+_subiendo: set[int] = set()
+_sin_confirmar: dict[int, float] = {}  # cotización -> time.monotonic() del intento que no se confirmó
+MINUTOS_SIN_RECREAR = 10
 
 UNIDAD_POR_EMPRESA = {"ABG": "kg", "AR": "cm"}
 # Caballetes y flanches YA HECHOS (de stock) se venden por unidad aunque
@@ -296,12 +308,7 @@ def _enviar(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apa
         if siigo_id:
             respuesta = siigo.actualizar_cotizacion(empresa, siigo_id, cuerpo)
         else:
-            ya_ligadas = {p.siigo_id for p in db.query(Apartado.siigo_id).filter(Apartado.siigo_id != "")}
-            # Al reintentar, primero se busca si el intento anterior sí la creó
-            # (Siigo a veces no alcanza a responder): así no queda dos veces.
-            reintento = apartado.siigo_error and apartado.fecha_creacion is not None
-            respuesta = (siigo.buscar_creada(empresa, cuerpo, ya_ligadas, desde=apartado.fecha_creacion.date()) if reintento else None) \
-                or siigo.crear_cotizacion(empresa, cuerpo, ya_usadas=ya_ligadas)
+            respuesta = _crear_sin_repetir(db, apartado, partes, empresa, cuerpo)
     except siigo.ErrorSiigo as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     ahora = datetime.now(timezone.utc)
@@ -311,6 +318,44 @@ def _enviar(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apa
         parte.siigo_total, parte.fecha_siigo = respuesta.get("total"), ahora
     _recordar_para_la_proxima(db, apartado, items, usuario)
     return partes, respuesta, not siigo_id
+
+
+def _crear_sin_repetir(db: Session, apartado: Apartado, partes: list[Apartado], empresa: str, cuerpo: dict) -> dict:
+    """Crea la cotización en Siigo sin repetirla: al reintentar primero se
+    busca si un intento anterior sí la creó; dos intentos a la vez no se
+    cruzan, y tras un intento sin confirmar no se crea otra por unos minutos."""
+    clave = min(p.id for p in partes)
+    with _candado_subidas:
+        if clave in _subiendo:
+            raise HTTPException(status_code=409, detail="Esta cotización ya se está subiendo a Siigo (Siigo está lento). "
+                                "Espera un par de minutos y recarga: no le des otra vez.")
+        _subiendo.add(clave)
+    try:
+        ya_ligadas = {p.siigo_id for p in db.query(Apartado.siigo_id).filter(Apartado.siigo_id != "")}
+        desde = (apartado.fecha_creacion or datetime.now(timezone.utc)).date()
+        # Al reintentar, primero se busca si el intento anterior sí la creó.
+        if apartado.siigo_error or clave in _sin_confirmar:
+            encontrada = siigo.buscar_creada(empresa, cuerpo, ya_ligadas, desde=desde)
+            if encontrada is not None:
+                _sin_confirmar.pop(clave, None)
+                return encontrada
+        intento = _sin_confirmar.get(clave)
+        if intento is not None and time.monotonic() - intento < MINUTOS_SIN_RECREAR * 60:
+            faltan = max(1, round(MINUTOS_SIN_RECREAR - (time.monotonic() - intento) / 60))
+            raise HTTPException(status_code=409, detail=(
+                "Siigo no confirmó el intento anterior y puede que todavía la esté creando. Para no repetirla, "
+                f"espera unos {faltan} min y vuelve a darle «Subir a Siigo»: si ya quedó creada, se liga sola."))
+        try:
+            respuesta = siigo.crear_cotizacion(empresa, cuerpo, ya_usadas=ya_ligadas)
+        except siigo.ErrorSiigo as error:
+            if error.codigo == "timeout":
+                _sin_confirmar[clave] = time.monotonic()
+            raise
+        _sin_confirmar.pop(clave, None)
+        return respuesta
+    finally:
+        with _candado_subidas:
+            _subiendo.discard(clave)
 
 
 def _recordar_para_la_proxima(db: Session, apartado: Apartado, items: list[ApartadoItem], usuario: Usuario) -> None:

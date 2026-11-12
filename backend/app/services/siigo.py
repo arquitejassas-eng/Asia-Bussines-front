@@ -23,6 +23,12 @@ from app.services.empresas import EMPRESAS_CONOCIDAS
 logger = logging.getLogger("arquitejas.siigo")
 
 TIMEOUT_SEGUNDOS = 60.0
+# Crear una cotización: Siigo a veces tarda más de un minuto y la crea igual.
+TIMEOUT_CREAR_SEGUNDOS = 150.0
+# Si aun así no responde, se busca la que haya quedado creada varias veces
+# (Siigo tarda en mostrarla en la lista): cada cuánto y cuántas veces.
+ESPERA_BUSCAR_CREADA = 10
+VECES_BUSCAR_CREADA = 6
 REINTENTOS_LIMITE = 4      # veces que se espera cuando Siigo dice "muchas consultas" (429)
 ESPERA_MAXIMA_LIMITE = 30  # segundos máximos de cada espera
 
@@ -100,12 +106,13 @@ def _token(cliente: httpx.Client, config: dict, renovar: bool = False) -> str:
         return datos["access_token"]
 
 
-def pedir(empresa: str, metodo: str, ruta: str, *, json: dict | None = None, params: dict | None = None) -> dict | list:
+def pedir(empresa: str, metodo: str, ruta: str, *, json: dict | None = None, params: dict | None = None,
+          timeout: float = TIMEOUT_SEGUNDOS) -> dict | list:
     """Una petición a Siigo con el token de la empresa. Si Siigo pide esperar
     (429) se espera lo que diga; si el token venció (401) se pide otro."""
     config = _config(empresa)
     url = f"{settings.SIIGO_URL.rstrip('/')}{ruta}"
-    with httpx.Client(timeout=TIMEOUT_SEGUNDOS) as cliente:
+    with httpx.Client(timeout=timeout) as cliente:
         token = _token(cliente, config)
         renovado = False
         for _ in range(REINTENTOS_LIMITE + 1):
@@ -254,16 +261,28 @@ def crear_cotizacion(empresa: str, cuerpo: dict, ya_usadas: set[str] = frozenset
     "documento duplicado", se busca la que se acaba de crear (mismo cliente,
     mismas líneas, de hoy y que no esté ya ligada a otra cotización: `ya_usadas`)
     para no crearla dos veces."""
+    inicio = time.monotonic()
     try:
-        return pedir(empresa, "POST", "/v1/quotations", json=cuerpo)
+        respuesta = pedir(empresa, "POST", "/v1/quotations", json=cuerpo, timeout=TIMEOUT_CREAR_SEGUNDOS)
+        logger.info("Siigo: cotización creada en %.1f s.", time.monotonic() - inicio)
+        return respuesta
     except ErrorSiigo as error:
         if error.codigo not in ("timeout", "duplicated_document"):
             raise
-        logger.warning("Siigo: la creación de la cotización no respondió (%s); se busca si quedó creada.", error.codigo)
-        time.sleep(5)
-        encontrada = buscar_creada(empresa, cuerpo, ya_usadas, desde=date.today())
-        if encontrada is not None:
-            return encontrada
+        logger.warning("Siigo: la creación de la cotización no respondió en %.0f s (%s); se busca si quedó creada.",
+                       time.monotonic() - inicio, error.codigo)
+        # Siigo la termina de crear y tarda en mostrarla: se busca varias veces
+        # antes de rendirse (antes, con una sola búsqueda, cada intento nuevo
+        # creaba otra igual: la C-1-4133 quedó cuatro veces).
+        encontrada = None
+        for _ in range(VECES_BUSCAR_CREADA):
+            time.sleep(ESPERA_BUSCAR_CREADA)
+            try:
+                encontrada = buscar_creada(empresa, cuerpo, ya_usadas, desde=date.today())
+            except ErrorSiigo:
+                encontrada = None
+            if encontrada is not None:
+                return encontrada
         if error.codigo == "duplicated_document":
             raise ErrorSiigo("Siigo dice que es igual a otra cotización que se acaba de crear. Espera un minuto y vuelve a intentar.",
                              codigo=error.codigo) from error
