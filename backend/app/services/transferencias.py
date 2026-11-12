@@ -44,20 +44,21 @@ def crear_solicitud_transferencia(
     db: Session, datos: SolicitudCrear, usuario: Usuario
 ) -> Solicitud:
     """Crea una solicitud, aplicando bloqueos y validaciones reutilizables."""
-    if usuario.bodega_id is None:
-        # Admin Inventario no participa del sistema de Solicitudes entre
-        # sedes (además, Solicitud.bodega_solicitante_id es NOT NULL — sin
-        # este guard, intentarlo terminaría en un error de integridad).
-        raise HTTPException(
-            status_code=400,
-            detail="Admin Inventario no usa Solicitudes entre sedes; usa /envios para repartir material.",
-        )
+    # La bodega que lo pide: la del usuario, o la que escoge Admin Inventario
+    # (no tiene bodega: pide en nombre de una, ej. a Santander para Ricaurte).
+    # Después sigue igual: la dueña acepta y despacha, y esa bodega lo recibe.
+    solicitante = usuario.bodega_id
+    if solicitante is None:
+        if datos.bodega_destino_id is None or db.get(Bodega, datos.bodega_destino_id) is None:
+            raise HTTPException(status_code=400, detail="Escoge la bodega para la que pides el traslado.")
+        solicitante = datos.bodega_destino_id
     if datos.rollo_id is not None:
         rollo, rollos_codigo, linea = _rollo_bloqueado_con_su_codigo(db, datos.rollo_id, datos.numero_cotizacion)
         if rollo.metros_disponibles <= 0:
             raise HTTPException(status_code=400, detail="El rollo no tiene metros disponibles.")
-        if rollo.bodega_id == usuario.bodega_id:
-            raise HTTPException(status_code=400, detail="Selecciona un rollo de otra bodega.")
+        if rollo.bodega_id == solicitante:
+            raise HTTPException(status_code=400, detail="El rollo ya está en esa bodega: escoge otra." if usuario.bodega_id is None
+                                else "Selecciona un rollo de otra bodega.")
         _exigir_que_no_este_prestado(db, rollo)
         # Se avisa desde ya (y se vuelve a validar al aceptar): un rollo cuyo
         # material está apartado en la otra bodega no se puede pedir (salvo
@@ -78,7 +79,7 @@ def crear_solicitud_transferencia(
             tipo_operacion=datos.tipo_operacion, cantidad=rollo.metros_disponibles,
             producto_codigo=rollo.codigo_interno,
             producto_descripcion=f"{rollo.descripcion} (rollo {rollo.identificador_rollo})",
-            rollo_id=rollo.id, bodega_solicitante_id=usuario.bodega_id,
+            rollo_id=rollo.id, bodega_solicitante_id=solicitante,
             bodega_propietaria_id=rollo.bodega_id, solicitado_por=usuario.correo,
             observaciones=datos.observaciones, numero_cotizacion=datos.numero_cotizacion.strip(),
         )
@@ -88,7 +89,7 @@ def crear_solicitud_transferencia(
     producto = db.query(Producto).filter(Producto.id == datos.producto_id).with_for_update().first()
     if producto is None:
         raise HTTPException(status_code=404, detail="Producto no encontrado.")
-    if producto.bodega_id == usuario.bodega_id:
+    if producto.bodega_id == solicitante:
         raise HTTPException(status_code=400, detail="Selecciona material de otra bodega.")
     if datos.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a cero.")
@@ -99,7 +100,7 @@ def crear_solicitud_transferencia(
         fecha=datetime.now(timezone.utc), estado=EstadoSolicitud.PENDIENTE,
         tipo_operacion=datos.tipo_operacion, cantidad=datos.cantidad,
         producto_codigo=producto.codigo, producto_descripcion=producto.descripcion, empresa=producto.empresa,
-        rollo_id=None, bodega_solicitante_id=usuario.bodega_id,
+        rollo_id=None, bodega_solicitante_id=solicitante,
         bodega_propietaria_id=producto.bodega_id, solicitado_por=usuario.correo,
         observaciones=datos.observaciones, numero_cotizacion=datos.numero_cotizacion.strip(),
     )

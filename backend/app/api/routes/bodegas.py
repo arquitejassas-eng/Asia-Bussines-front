@@ -98,7 +98,7 @@ def _kilos_coinciden(termino: str, *pesos: float | None) -> bool:
 
 
 @router.post("/solicitudes", response_model=SolicitudResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
 def enviar_solicitud(
     datos: SolicitudCrear, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)
 ) -> Solicitud:

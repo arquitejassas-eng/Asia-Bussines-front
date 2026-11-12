@@ -17,6 +17,7 @@ import PanelEliminarProducto from "../Componentes/PanelEliminarProducto";
 import PanelTrasladosRollos from "../Componentes/PanelTrasladosRollos";
 import PanelProductosSinCodigo from "../Componentes/PanelProductosSinCodigo";
 import PanelRollosPrestados from "../Componentes/PanelRollosPrestados";
+import ModalPedirTraslado from "../Componentes/ModalPedirTraslado";
 import { IconoDescargar } from "../Componentes/Iconos";
 import { pasoDelTraslado } from "../Componentes/AvisosTrasladosRollos";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
@@ -74,6 +75,9 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
   const historial = useHistorialRollo<(typeof c.rollosDelCodigoExpandido)[number]>();
   const bodegas = c.comparativo.bodegas;
   const [mostrarAdminUnidades, setMostrarAdminUnidades] = useState(false);
+  // Rollo que Admin Inventario pide de una bodega para otra (y el aviso de que quedó pedido).
+  const [rolloAPedir, setRolloAPedir] = useState<(typeof c.rollosDelCodigoExpandido)[number] | null>(null);
+  const [avisoPedido, setAvisoPedido] = useState("");
 
   function nombreItemEnvio(item: { rolloId: number | null; descripcion: string; cantidad: number | null; productoCodigo: string | null }) {
     if (item.rolloId != null) return `Rollo: ${item.descripcion}`;
@@ -372,6 +376,11 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
               <PanelProductosSinCodigo productos={almacen?.productosSinCodigo || []}
                 alCambiar={() => Promise.all([almacen?.refrescarProductosSinCodigo(), c.cargarComparativo(true)]).then(() => undefined)} />
               <PanelRollosPrestados alCambiar={() => c.cargarComparativo(true)} />
+              {avisoPedido && <p className="sincodigo-listo" role="status" style={{ margin: "0 0 1rem" }}>{avisoPedido}</p>}
+              {rolloAPedir && (
+                <ModalPedirTraslado rollo={rolloAPedir} bodegas={bodegas} alCerrar={() => setRolloAPedir(null)}
+                  alPedir={(mensaje) => { setRolloAPedir(null); setAvisoPedido(mensaje); void almacen?.refrescarTrasladosRollos(); }} />
+              )}
               <PanelTrasladosRollos traslados={trasladosRollos} verCodigo={verCodigoEnResumen} />
 
               {/* ================== RESUMEN: TOTAL POR CÓDIGO EN TODA LA EMPRESA ================== */}
@@ -545,6 +554,13 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                                     <button type="button" className="rollos-boton-secundario buscar-rollos-historial"
                                                       onClick={() => historial.abrirHistorial(rollo)}>
                                                       Ver historial
+                                                    </button>
+                                                  )}
+                                                  {!c.soloLectura && rollo.metrosDisponibles > 0 && rollo.bodegaId != null
+                                                    && !trasladoDelRollo.has(rollo.id) && (
+                                                    <button type="button" className="rollos-boton-secundario buscar-rollos-historial"
+                                                      onClick={() => { setAvisoPedido(""); setRolloAPedir(rollo); }}>
+                                                      Pedir para otra bodega
                                                     </button>
                                                   )}
                                                 </td>

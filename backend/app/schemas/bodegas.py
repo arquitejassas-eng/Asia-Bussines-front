@@ -25,6 +25,8 @@ class SolicitudCrear(BaseModel):
     observaciones: str = ""
     # Cotización para la que se pide el traslado (opcional).
     numero_cotizacion: str = Field(default="", max_length=32)
+    # Solo Admin Inventario (no tiene bodega): la bodega para la que lo pide.
+    bodega_destino_id: int | None = None
 
 
 class SolicitudResponse(ModeloConFechasUtc):
