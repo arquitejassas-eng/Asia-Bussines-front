@@ -16,7 +16,9 @@ from app.models.producto import Producto
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario
 from app.services.clasificacion import peso_actual_toneladas
-from app.services.apartados import ESTADOS_RESERVA_ACTIVA
+from app.services.apartados import EMPRESA_DE_LINEA, ESTADOS_RESERVA_ACTIVA
+from app.services.empresas import AMBAS_EMPRESAS
+from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, Solicitud
 from app.services.material_en_camino import EN_CAMINO
 
 router = APIRouter(
@@ -79,12 +81,56 @@ def existencias_productos(db: Session = Depends(get_db)) -> list[dict]:
     return filas
 
 
+@router.get("/rollos-apartados")
+def metros_apartados_de_rollos(db: Session = Depends(get_db)) -> list[dict]:
+    """Metros apartados por código, bodega y empresa (cotizaciones activas que
+    piden metros de un código, no un rollo en particular): lo que no está
+    libre para vender aunque los rollos digan "Sin usar". Las líneas sin
+    empresa o de "las dos empresas" cuentan para las dos (como al validar)."""
+    bodegas = _nombres_bodegas(db)
+    filas = (
+        db.query(ApartadoItem.codigo_interno, Apartado.bodega_id, EMPRESA_DE_LINEA, Apartado.numero_cotizacion,
+                 ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos)
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(ApartadoItem.modalidad == ModalidadApartado.POR_ROLLO, ApartadoItem.rollo_id.is_(None),
+                ApartadoItem.codigo_interno.isnot(None), Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+                ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos > 0.005)
+    )
+    grupos: dict[tuple, dict] = {}
+    for codigo, bodega_id, empresa, numero, pendientes in filas:
+        empresas = ("AR", "ABG") if (empresa or "") in ("", AMBAS_EMPRESAS) else (empresa,)
+        for emp in empresas:
+            clave = (codigo, emp, bodega_id)
+            g = grupos.setdefault(clave, {"codigo": codigo, "empresa": emp, "bodega": bodegas.get(bodega_id, SIN_BODEGA),
+                                          "metros_apartados": 0.0, "cotizaciones": []})
+            g["metros_apartados"] = round(g["metros_apartados"] + float(pendientes or 0), 2)
+            if numero not in g["cotizaciones"]:
+                g["cotizaciones"].append(numero)
+    return list(grupos.values())
+
+
 @router.get("/rollos")
 def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
     """Todos los rollos (también los agotados) y los que vienen en camino,
     cada uno con su importación."""
     bodegas = _nombres_bodegas(db)
     espesores = {e.espesor: e for e in db.query(TablaEspesorEquivalencia).all()}
+    # Rollos vendidos completos en una cotización activa y rollos que van en un
+    # traslado: no se pueden ofrecer para otra venta aunque digan "Sin usar".
+    apartados_completos = {
+        rollo_id: f"{numero}{f' ({cliente})' if cliente else ''}"
+        for rollo_id, numero, cliente in (
+            db.query(ApartadoItem.rollo_id, Apartado.numero_cotizacion, Apartado.cliente)
+            .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+            .filter(ApartadoItem.rollo_id.isnot(None), Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+                    ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos > 0.005)
+        )
+    }
+    en_traslado = {
+        rollo_id: bodegas.get(destino, "otra bodega")
+        for rollo_id, destino in db.query(Solicitud.rollo_id, Solicitud.bodega_solicitante_id)
+        .filter(Solicitud.rollo_id.isnot(None), Solicitud.estado.in_(ESTADOS_TRASLADO_EN_CURSO))
+    }
     filas = []
     for r in db.query(Rollo).order_by(Rollo.identificador_rollo):
         disponibles = float(r.metros_disponibles or 0)
@@ -101,6 +147,8 @@ def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
             "bodega": bodegas.get(r.bodega_id, SIN_BODEGA) if r.bodega_id else SIN_BODEGA,
             "estado": r.estado.value if hasattr(r.estado, "value") else str(r.estado),
             "fecha_ingreso": r.fecha_ingreso, "proveedor": r.proveedor or "",
+            "apartado_completo": apartados_completos.get(r.id, ""),
+            "en_traslado_a": en_traslado.get(r.id, ""),
         })
     en_camino = (
         db.query(CargamentoRollo, Cargamento)

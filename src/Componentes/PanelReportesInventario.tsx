@@ -17,7 +17,14 @@ type FilaRollo = {
   importacion: string; referencia: string; codigo: string; descripcion: string; empresa: string; color: string;
   calibre: number; kilos: number | null; kilos_actuales: number | null; metros_llegada: number; metros_disponibles: number; bodega: string;
   estado: string; fecha_ingreso: string | null; proveedor: string;
+  // Vendido completo en una cotización activa ("4118 (CLIENTE)") o yendo en un traslado.
+  apartado_completo?: string; en_traslado_a?: string;
 };
+// Metros que las cotizaciones activas apartan de un código en una bodega (sin rollo fijo).
+type MetrosApartados = { codigo: string; empresa: string; bodega: string; metros_apartados: number; cotizaciones: string[] };
+// Por qué un rollo no se puede ofrecer para otra venta ("" si está libre).
+const apartadoDelRollo = (r: FilaRollo) => r.apartado_completo ? `Rollo completo para la cotización ${r.apartado_completo}`
+  : r.en_traslado_a ? `En traslado a ${r.en_traslado_a}` : "";
 
 const ROLLOS = "__rollos__";
 const TODO_UPVC = "__upvc__";
@@ -66,6 +73,7 @@ function mensajeDeError(error: unknown) {
 function useDatosReporte() {
   const [productos, setProductos] = useState<FilaProducto[]>([]);
   const [rollos, setRollos] = useState<FilaRollo[]>([]);
+  const [apartadosRollos, setApartadosRollos] = useState<MetrosApartados[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -73,19 +81,20 @@ function useDatosReporte() {
     Promise.all([
       api.get<FilaProducto[]>("/reportes-inventario/productos"),
       api.get<FilaRollo[]>("/reportes-inventario/rollos"),
+      api.get<MetrosApartados[]>("/reportes-inventario/rollos-apartados").catch(() => []),
     ])
-      .then(([p, r]) => { if (vigente) { setProductos(p || []); setRollos(r || []); } })
+      .then(([p, r, ap]) => { if (vigente) { setProductos(p || []); setRollos(r || []); setApartadosRollos(ap || []); } })
       .catch((e) => { if (vigente) setError(mensajeDeError(e)); })
       .finally(() => { if (vigente) setCargando(false); });
     return () => { vigente = false; };
   }, []);
-  return { productos, rollos, cargando, error };
+  return { productos, rollos, apartadosRollos, cargando, error };
 }
 
 // ======================= Inventario por tipo de producto =======================
 
 export function ReporteInventarioPorTipo() {
-  const { productos, rollos, cargando, error } = useDatosReporte();
+  const { productos, rollos, apartadosRollos, cargando, error } = useDatosReporte();
   const [tipo, setTipo] = useState("");
   const [empresa, setEmpresa] = useState("");
   const [bodega, setBodega] = useState("");
@@ -151,9 +160,20 @@ export function ReporteInventarioPorTipo() {
       grupos.set(clave, g);
     }
     for (const g of grupos.values()) g.lista.sort(ordenRollos);
-    return [...grupos.values()].sort((a, b) => compararTexto(nombreEmpresa(a.empresa), nombreEmpresa(b.empresa))
+    // Lo apartado: los rollos vendidos completos o en traslado, más los metros
+    // que piden las cotizaciones de ese código en esas bodegas. Libre = lo que
+    // de verdad se puede ofrecer.
+    return [...grupos.values()].map((g) => {
+      const bodegasDelGrupo = new Set(g.lista.map((r) => r.bodega));
+      const porMetros = apartadosRollos.filter((a) => a.codigo === g.codigo && a.empresa === g.empresa && bodegasDelGrupo.has(a.bodega));
+      const enRollos = g.lista.filter((r) => apartadoDelRollo(r));
+      const apartado = Math.min(g.metros, porMetros.reduce((s, a) => s + a.metros_apartados, 0) + enRollos.reduce((s, r) => s + r.metros_disponibles, 0));
+      const cotizaciones = [...new Set([...porMetros.flatMap((a) => a.cotizaciones),
+        ...enRollos.map((r) => r.apartado_completo ? r.apartado_completo.split(" ")[0] : `traslado a ${r.en_traslado_a}`)])];
+      return { ...g, apartado, libre: Math.max(0, g.metros - apartado), cotizaciones };
+    }).sort((a, b) => compararTexto(nombreEmpresa(a.empresa), nombreEmpresa(b.empresa))
       || (a.calibre || 0) - (b.calibre || 0) || compararTexto(a.codigo, b.codigo));
-  }, [rollosFiltrados]);
+  }, [rollosFiltrados, apartadosRollos]);
 
   const nombreTipo = esRollos ? "Rollos de lámina" : tipo === TODO_UPVC ? "Todo UPVC" : tipo || "Todos los productos";
 
@@ -172,13 +192,16 @@ export function ReporteInventarioPorTipo() {
             [`${b} (kg)`, g.porBodega[b] ? Math.round(g.porBodega[b].kilos) : 0],
           ])),
           "Rollos": g.rollos, "Metros": Math.round(g.metros * 100) / 100, "Kilos": Math.round(g.kilos),
+          "Apartado (m)": Math.round(g.apartado * 100) / 100, "Libre para vender (m)": Math.round(g.libre * 100) / 100,
+          "Apartado para": g.cotizaciones.join(", "),
         })) },
         { nombre: "Detalle por rollo", filas: [...rollosFiltrados].sort(ordenRollos).map((r) => ({
           "Empresa": nombreEmpresa(r.empresa), "Bodega": r.bodega, "Código": r.codigo, "Espesor (mm)": espesorDe(r),
           "Color": colorDe(r) ? nombreColor(colorDe(r)) : "", "Referencia": r.referencia,
           ...(conDescripcion ? { "Descripción": r.descripcion } : {}),
           "Metros disponibles": r.metros_disponibles, "Kilos hoy": r.kilos_actuales ?? "", "Kilos al llegar": r.kilos ?? "",
-          "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado, "Importación": nombreImportacion(r.importacion),
+          "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado, "Apartado": apartadoDelRollo(r) || "Libre",
+          "Importación": nombreImportacion(r.importacion),
         })) },
       ], `Inventario ${sufijo}.xlsx`);
     } else {
@@ -275,7 +298,8 @@ export function ReporteInventarioPorTipo() {
                       {!esRollos && <th>Tipo</th>}
                       <th>Empresa</th>
                       {columnasBodega.map((b) => <th key={b} className="reportes-num">{b}</th>)}
-                      {esRollos ? <><th className="reportes-num">Rollos</th><th className="reportes-num">Metros</th><th className="reportes-num">Kilos</th></>
+                      {esRollos ? <><th className="reportes-num">Rollos</th><th className="reportes-num">Metros</th><th className="reportes-num">Kilos</th>
+                        <th className="reportes-num">Apartado</th><th className="reportes-num">Libre</th></>
                         : <><th className="reportes-num">Total</th><th className="reportes-num">Apartado</th><th className="reportes-num">Libre</th></>}
                     </tr>
                   </thead>
@@ -303,15 +327,20 @@ export function ReporteInventarioPorTipo() {
                             <td className="reportes-num"><strong>{g.rollos}</strong></td>
                             <td className="reportes-num"><strong>{numero.format(g.metros)}</strong></td>
                             <td className="reportes-num"><strong>{numero.format(Math.round(g.kilos))}</strong></td>
+                            <td className="reportes-num" title={g.cotizaciones.length ? `Apartado para: ${g.cotizaciones.join(", ")}` : undefined}>
+                              {g.apartado > 0.005 ? <>{numero.format(g.apartado)} m
+                                <span className="reportes-sub">{g.cotizaciones.slice(0, 3).join(", ")}{g.cotizaciones.length > 3 ? ` y ${g.cotizaciones.length - 3} más` : ""}</span></> : "—"}
+                            </td>
+                            <td className="reportes-num"><strong>{numero.format(g.libre)} m</strong></td>
                           </tr>
                           {abierto && (
                             <tr className="reportes-detalle-importacion">
-                              <td colSpan={columnasBodega.length + 7}>
+                              <td colSpan={columnasBodega.length + 9}>
                                 <table className="reportes-tabla reportes-tabla-interna">
                                   <thead>
                                     <tr>
                                       <th>Referencia</th><th>Bodega</th><th className="reportes-num">Kilos al llegar</th>
-                                      <th className="reportes-num">Kilos hoy</th><th className="reportes-num">Metros</th><th>Estado</th><th>Importación</th>
+                                      <th className="reportes-num">Kilos hoy</th><th className="reportes-num">Metros</th><th>Estado</th><th>Apartado</th><th>Importación</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -323,6 +352,7 @@ export function ReporteInventarioPorTipo() {
                                         <td className="reportes-num"><strong>{r.kilos_actuales != null ? numero.format(r.kilos_actuales) : "—"}</strong></td>
                                         <td className="reportes-num">{numero.format(r.metros_disponibles)}</td>
                                         <td><span className={`reportes-estado-rollo estado-${r.estado}`}>{ETIQUETAS_ESTADO[r.estado] || r.estado}</span></td>
+                                        <td>{apartadoDelRollo(r) ? <strong style={{ color: "var(--at-terra, #B7451F)" }}>{apartadoDelRollo(r)}</strong> : "Libre"}</td>
                                         <td>{nombreImportacion(r.importacion)}</td>
                                       </tr>
                                     ))}
