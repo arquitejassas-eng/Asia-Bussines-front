@@ -416,7 +416,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   // bodegas (en el backend es una parte por bodega, con el mismo número).
   // Las bodegas siguen viendo solo su parte.
   const gruposFiltrados = useMemo(() => {
-    if (!veTodasLasBodegas) return apartadosFiltrados.map((ap) => [ap]);
+    if (!veTodasLasBodegas) {
+      // La bodega ve la cotización completa: su parte primero y, al lado, lo
+      // que sale de otras bodegas (solo para mirar).
+      return apartadosFiltrados.map((ap) => [ap, ...a.partesDeOtrasBodegas
+        .filter((otra) => numeroSinEmpresa(otra.numeroCotizacion) === numeroSinEmpresa(ap.numeroCotizacion) && otra.empresa === ap.empresa)
+        .sort((x, y) => x.id - y.id)]);
+    }
     const porNumero = new Map<string, ApartadoDeLista[]>();
     for (const ap of apartadosFiltrados) {
       const clave = numeroSinEmpresa(ap.numeroCotizacion);
@@ -425,7 +431,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     }
     // La parte principal (la que se creó primero) va arriba.
     return [...porNumero.values()].map((grupo) => [...grupo].sort((x, y) => x.id - y.id));
-  }, [apartadosFiltrados, veTodasLasBodegas]);
+  }, [apartadosFiltrados, veTodasLasBodegas, a.partesDeOtrasBodegas]);
   const totalPaginas = Math.max(1, Math.ceil(gruposFiltrados.length / APARTADOS_POR_PAGINA));
   const paginaSegura = Math.min(paginaApartados, totalPaginas);
   const gruposPagina = gruposFiltrados.slice((paginaSegura - 1) * APARTADOS_POR_PAGINA, paginaSegura * APARTADOS_POR_PAGINA);
@@ -1681,9 +1687,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                 <button onClick={() => abrirEdicion(partesActivas)}>Editar</button>
                               )}
                               {puedeImprimir && grupo.some((parte) => parte.items.length > 0) && (
-                                <button onClick={() => imprimir(grupo)} title="Hoja sin precios: solo la descripción de cada línea">Imprimir</button>
+                                <button onClick={() => imprimir(veTodasLasBodegas ? grupo : [ap])}
+                                  title={veTodasLasBodegas ? "Hoja sin precios: solo la descripción de cada línea" : `Hoja sin precios: solo lo que sale de ${ap.bodegaNombre}`}>
+                                  Imprimir
+                                </button>
                               )}
-                              {variasBodegas ? accionesDeCotizacion(grupo) : accionesDeParte(ap)}
+                              {/* La bodega solo actúa sobre su parte (la primera del grupo). */}
+                              {variasBodegas && veTodasLasBodegas ? accionesDeCotizacion(grupo) : accionesDeParte(ap)}
                             </td>
                           </tr>
                           {lineasExpandidas.has(ap.id) && (variasBodegas ? unida : ap).items.length > LINEAS_VISIBLES && (

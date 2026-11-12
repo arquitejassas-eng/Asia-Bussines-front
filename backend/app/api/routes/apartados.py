@@ -426,13 +426,17 @@ def listar_apartados(
     # en cada recarga gastaba datos de Supabase sin razón.
     estados: list[EstadoApartado] = Query(default=[]),
     bodega_id: int | None = None,
+    # Solo la pantalla de Apartados de una bodega: también las partes de sus
+    # cotizaciones que salen de OTRAS bodegas, para verlas completas (solo
+    # mirar: imprime y envía a producción solo lo suyo).
+    con_otras_partes: bool = False,
     db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> list[Apartado]:
-    consulta = (
-        db.query(Apartado)
-        .options(joinedload(Apartado.items).joinedload(ApartadoItem.producciones), joinedload(Apartado.items).joinedload(ApartadoItem.rollo),
-                 joinedload(Apartado.items).joinedload(ApartadoItem.producto), joinedload(Apartado.bodega))
-    )
+    def consulta_base():
+        return db.query(Apartado).options(
+            joinedload(Apartado.items).joinedload(ApartadoItem.producciones), joinedload(Apartado.items).joinedload(ApartadoItem.rollo),
+            joinedload(Apartado.items).joinedload(ApartadoItem.producto), joinedload(Apartado.bodega))
+    consulta = consulta_base()
     # Admin Inventario ve los de todas las bodegas (puede filtrar por una);
     # el vendedor, solo los que creó; los demás roles, solo los de su bodega.
     if usuario.rol in (RolUsuario.ADMIN_INVENTARIO, RolUsuario.VENDEDOR):
@@ -443,7 +447,20 @@ def listar_apartados(
     if estado: consulta = consulta.filter(Apartado.estado == estado)
     if estados: consulta = consulta.filter(Apartado.estado.in_(estados))
     if numero_cotizacion: consulta = consulta.filter(Apartado.numero_cotizacion.ilike(f"%{numero_cotizacion}%"))
-    return _con_faltantes(db, consulta.order_by(Apartado.fecha_creacion.desc()).all())
+    propios = consulta.order_by(Apartado.fecha_creacion.desc()).all()
+    if con_otras_partes and usuario.rol == RolUsuario.ADMINISTRATIVO and propios:
+        numeros = {srv.numero_sin_empresa(a.numero_cotizacion).upper() for a in propios if not a.orden_interna and not a.traslado_a}
+        variantes = [f"{n}{sufijo}" for n in numeros for sufijo in ("", "-AR", "-ABG")]
+        otras = []
+        for i in range(0, len(variantes), 500):
+            otras += (
+                consulta_base()
+                .filter(Apartado.bodega_id != usuario.bodega_id, Apartado.estado != EstadoApartado.CANCELADO,
+                        func.upper(Apartado.numero_cotizacion).in_(variantes[i:i + 500]))
+                .all()
+            )
+        propios += otras
+    return _con_faltantes(db, propios)
 
 
 @router.get("/{apartado_id}", response_model=ApartadoResponse)

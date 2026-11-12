@@ -162,6 +162,11 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
   const puedeMarcarEntregado = sesion?.rol === "administrativo";
 
   const [apartados, setApartados] = useState<Apartado[]>([]);
+  // Bodega: las partes de sus cotizaciones que salen de OTRAS bodegas (solo
+  // para ver la cotización completa; no cuentan en nada más).
+  const [partesDeOtrasBodegas, setPartesDeOtrasBodegas] = useState<Apartado[]>([]);
+  const esBodega = sesion?.rol === "administrativo";
+  const miBodega = sesion?.bodegaId ?? null;
   const [cargandoApartados, setCargandoApartados] = useState(true);
   const [errorApartados, setErrorApartados] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
@@ -180,16 +185,19 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
     try {
       const parametros = new URLSearchParams();
       if (filtroEstado) parametros.set("estado", filtroEstado);
+      if (esBodega) parametros.set("con_otras_partes", "true");
       const cadena = parametros.toString();
       const datos = await api.get(`/apartados${cadena ? `?${cadena}` : ""}`);
       if (consulta !== ultimaConsulta.current) return;
-      setApartados((datos as Record<string, unknown>[]).map(apartadoDesdeApi));
+      const todos = (datos as Record<string, unknown>[]).map(apartadoDesdeApi);
+      setApartados(esBodega ? todos.filter((ap) => ap.bodegaId === miBodega) : todos);
+      setPartesDeOtrasBodegas(esBodega ? todos.filter((ap) => ap.bodegaId !== miBodega) : []);
     } catch {
       if (!silenciosa && consulta === ultimaConsulta.current) setErrorApartados("No se pudieron cargar los apartados.");
     } finally {
       if (consulta === ultimaConsulta.current) setCargandoApartados(false);
     }
-  }, [filtroEstado]);
+  }, [filtroEstado, esBodega, miBodega]);
 
   // Tras un cambio también se avisa a App (alCambiarApartados) para que el
   // contador de "Apartados" en la barra lateral se actualice de una vez.
@@ -894,7 +902,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
 
   return {
     puedeCrearApartados, puedeCrearOrdenInterna, puedeCrearTraslado, bodegaFija, darSalidaTraslado, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeQuitarDeProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
-    apartados, cargandoApartados, errorApartados, cargarApartados,
+    apartados, partesDeOtrasBodegas, cargandoApartados, errorApartados, cargarApartados,
     filtroEstado, setFiltroEstado,
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
