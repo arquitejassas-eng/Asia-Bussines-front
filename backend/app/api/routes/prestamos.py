@@ -1,6 +1,6 @@
 from datetime import date, datetime, time, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
@@ -70,9 +70,15 @@ def saldar_prestamos(datos: SaldarPrestamosRequest, db: Session = Depends(get_db
 
 @router.post("/a-tercero", response_model=PrestamoResponse)
 def prestar_a_tercero(datos: PrestarATerceroRequest, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)):
-    """Presta unidades de un producto (ej. caballetes) a una empresa de afuera."""
-    prestamo = srv.prestar_a_tercero(db, producto_id=datos.producto_id, cantidad=datos.cantidad, tercero=datos.tercero,
-                                     observaciones=datos.observaciones, usuario=usuario)
+    """Presta a una empresa de afuera unidades de un producto (ej. caballetes) o un rollo completo."""
+    if datos.rollo_id is not None:
+        prestamo = srv.prestar_rollo_a_tercero(db, rollo_id=datos.rollo_id, tercero=datos.tercero,
+                                               observaciones=datos.observaciones, usuario=usuario)
+    elif datos.producto_id is not None:
+        prestamo = srv.prestar_a_tercero(db, producto_id=datos.producto_id, cantidad=datos.cantidad, tercero=datos.tercero,
+                                         observaciones=datos.observaciones, usuario=usuario)
+    else:
+        raise HTTPException(status_code=400, detail="Elige el producto o el rollo que vas a prestar.")
     db.commit()
     db.refresh(prestamo)
     return prestamo

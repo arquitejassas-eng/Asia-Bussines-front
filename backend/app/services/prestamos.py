@@ -100,11 +100,7 @@ def prestar_a_tercero(
     descuentan del stock (sin tocar lo apartado) y quedan sin saldar."""
     from app.services.apartados import validar_reserva_producto
 
-    nombre = " ".join((tercero or "").split())
-    if not nombre:
-        raise HTTPException(status_code=400, detail="Escribe a quién se le presta (empresa o persona).")
-    if sigla_empresa_desde_nombre(nombre):
-        raise HTTPException(status_code=400, detail="Entre Arquitejas y Asia Business el préstamo se hace con una cotización: aquí solo empresas de afuera.")
+    nombre = _nombre_tercero(tercero)
     cantidad = round(float(cantidad or 0), 2)
     if cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor que 0.")
@@ -132,6 +128,60 @@ def prestar_a_tercero(
     return prestamo
 
 
+def prestar_rollo_a_tercero(db: Session, *, rollo_id: int, tercero: str, observaciones: str, usuario: Usuario) -> PrestamoEmpresa:
+    """El rollo COMPLETO sale prestado a una empresa externa: sus metros salen
+    de la bodega (queda agotado, como en la salida externa) y quedan aquí sin
+    saldar hasta que lo devuelvan (vuelve el mismo rollo) o lo paguen."""
+    from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
+    from app.services.transferencias import _exigir_que_no_este_prestado, traslado_en_curso_del_rollo
+
+    nombre = _nombre_tercero(tercero)
+    rollo = db.get(Rollo, rollo_id)
+    if rollo is None or rollo.bodega_id is None:
+        raise HTTPException(status_code=404, detail="Rollo no encontrado en esa bodega. Recarga la lista.")
+    rollos_codigo = bloquear_rollos_codigo(db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno)
+    rollo = next((r for r in rollos_codigo if r.id == rollo_id), None)
+    if rollo is None or rollo.metros_disponibles <= 0:
+        raise HTTPException(status_code=400, detail="Ese rollo ya no tiene metros en la bodega. Recarga la lista.")
+    if traslado_en_curso_del_rollo(db, rollo.id) is not None:
+        raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} tiene un traslado en curso: termínalo o recházalo primero.")
+    _exigir_que_no_este_prestado(db, rollo)
+    exigir_rollo_libre(db, rollo)
+    validar_reserva_rollos(
+        db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno, metros_salen=rollo.metros_disponibles,
+        rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
+    )
+    metros = round(rollo.metros_disponibles, 2)
+    rollo.metros_consumidos = round(rollo.metros_consumidos + metros, 2)
+    rollo.metros_disponibles = 0
+    rollo.recalcular_estado()
+    ahora = datetime.now(timezone.utc)
+    descripcion = f"{rollo.descripcion} (rollo {rollo.identificador_rollo})"
+    db.add(Movimiento(
+        fecha=ahora, tipo=TipoMovimiento.SALIDA, motivo=PRESTADO_A_TERCERO, producto_codigo=rollo.codigo_interno,
+        producto_descripcion=descripcion, rollo_id=rollo.id, identificador_rollo=rollo.identificador_rollo,
+        bodega_origen_id=rollo.bodega_id, cantidad=metros, usuario=usuario.correo, empresa_externa=nombre[:150],
+        observaciones=(observaciones or "").strip() or f"Rollo completo prestado a {nombre}: debe devolverlo.",
+    ))
+    prestamo = PrestamoEmpresa(
+        fecha=ahora, empresa_presta=(rollo.empresa or "").strip().upper(), empresa_recibe=PRESTADOR_EXTERNO,
+        prestador=nombre[:150], bodega_id=rollo.bodega_id, apartado_id=None, numero_cotizacion="", tipo=LAMINA,
+        codigo=rollo.codigo_interno, descripcion=(rollo.descripcion or "")[:255], cantidad=metros, unidad="m",
+        referencia_rollo=(rollo.identificador_rollo or "")[:60], origen=PRESTADO_A_TERCERO, usuario=usuario.correo,
+    )
+    db.add(prestamo)
+    return prestamo
+
+
+def _nombre_tercero(tercero: str) -> str:
+    nombre = " ".join((tercero or "").split())
+    if not nombre:
+        raise HTTPException(status_code=400, detail="Escribe a quién se le presta (empresa o persona).")
+    if sigla_empresa_desde_nombre(nombre):
+        raise HTTPException(status_code=400, detail="Entre Arquitejas y Asia Business el préstamo se hace con una cotización: aquí solo empresas de afuera.")
+    return nombre
+
+
 def devolver_de_tercero(db: Session, prestamo_id: int, cantidad: float, usuario: Usuario) -> PrestamoEmpresa:
     """La empresa externa devolvió todo o parte: vuelve al stock de la bodega
     de donde salió. Lo devuelto queda saldado; lo que falta sigue pendiente."""
@@ -141,6 +191,51 @@ def devolver_de_tercero(db: Session, prestamo_id: int, cantidad: float, usuario:
     cantidad = round(float(cantidad or 0), 2)
     if cantidad <= 0 or cantidad > prestamo.cantidad + 0.005:
         raise HTTPException(status_code=400, detail=f"Escribe cuánto devolvieron: más de 0 y máximo {prestamo.cantidad:g}.")
+    if prestamo.tipo == LAMINA:
+        _devolver_al_rollo(db, prestamo, cantidad, usuario)
+    else:
+        _devolver_al_stock(db, prestamo, cantidad, usuario)
+    ahora = datetime.now(timezone.utc)
+    if cantidad < prestamo.cantidad - 0.005:
+        # Devolución parcial: lo devuelto queda aparte como saldado; el resto sigue pendiente.
+        prestamo.cantidad = round(prestamo.cantidad - cantidad, 2)
+        devuelto = PrestamoEmpresa(
+            fecha=prestamo.fecha, empresa_presta=prestamo.empresa_presta, empresa_recibe=prestamo.empresa_recibe,
+            prestador=prestamo.prestador, bodega_id=prestamo.bodega_id, apartado_id=None, numero_cotizacion="",
+            tipo=prestamo.tipo, codigo=prestamo.codigo, descripcion=prestamo.descripcion, cantidad=cantidad,
+            unidad=prestamo.unidad, referencia_rollo=prestamo.referencia_rollo, origen=DEVUELTO_POR_TERCERO,
+            usuario=prestamo.usuario, saldado=True, saldado_por=usuario.correo, fecha_saldado=ahora,
+        )
+        db.add(devuelto)
+        return devuelto
+    prestamo.origen = DEVUELTO_POR_TERCERO
+    prestamo.saldado, prestamo.saldado_por, prestamo.fecha_saldado = True, usuario.correo, ahora
+    return prestamo
+
+
+def _devolver_al_rollo(db: Session, prestamo: PrestamoEmpresa, metros: float, usuario: Usuario) -> None:
+    """Vuelve el mismo rollo: recupera los metros que trae, en su bodega."""
+    rollo = (
+        db.query(Rollo)
+        .filter(Rollo.bodega_id == prestamo.bodega_id, Rollo.identificador_rollo == prestamo.referencia_rollo)
+        .with_for_update().first()
+    )
+    if rollo is None:
+        raise HTTPException(status_code=404, detail=f"No encuentro el rollo {prestamo.referencia_rollo} en su bodega.")
+    metros = min(metros, round(rollo.metros_consumidos, 2))
+    rollo.metros_disponibles = round(rollo.metros_disponibles + metros, 2)
+    rollo.metros_consumidos = round(rollo.metros_consumidos - metros, 2)
+    rollo.recalcular_estado()
+    db.add(Movimiento(
+        fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.ENTRADA, motivo=DEVUELTO_POR_TERCERO,
+        producto_codigo=rollo.codigo_interno, producto_descripcion=f"{rollo.descripcion} (rollo {rollo.identificador_rollo})",
+        rollo_id=rollo.id, identificador_rollo=rollo.identificador_rollo, bodega_destino_id=rollo.bodega_id,
+        cantidad=metros, usuario=usuario.correo, empresa_externa=prestamo.prestador,
+        observaciones=f"{prestamo.prestador} devolvió el rollo prestado (préstamo #{prestamo.id}).",
+    ))
+
+
+def _devolver_al_stock(db: Session, prestamo: PrestamoEmpresa, cantidad: float, usuario: Usuario) -> None:
     producto = (
         db.query(Producto)
         .filter(Producto.bodega_id == prestamo.bodega_id, Producto.codigo == prestamo.codigo,
@@ -160,28 +255,12 @@ def devolver_de_tercero(db: Session, prestamo_id: int, cantidad: float, usuario:
             bodega_id=prestamo.bodega_id, codigo=prestamo.codigo, descripcion=prestamo.descripcion,
             empresa=prestamo.empresa_presta, entrada=cantidad, stock=cantidad,
         ))
-    ahora = datetime.now(timezone.utc)
     db.add(Movimiento(
-        fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo=DEVUELTO_POR_TERCERO, producto_codigo=prestamo.codigo,
-        producto_descripcion=prestamo.descripcion, bodega_destino_id=prestamo.bodega_id, cantidad=cantidad,
-        usuario=usuario.correo, empresa_externa=prestamo.prestador,
+        fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.ENTRADA, motivo=DEVUELTO_POR_TERCERO,
+        producto_codigo=prestamo.codigo, producto_descripcion=prestamo.descripcion, bodega_destino_id=prestamo.bodega_id,
+        cantidad=cantidad, usuario=usuario.correo, empresa_externa=prestamo.prestador,
         observaciones=f"{prestamo.prestador} devolvió lo prestado (préstamo #{prestamo.id}).",
     ))
-    if cantidad < prestamo.cantidad - 0.005:
-        # Devolución parcial: lo devuelto queda aparte como saldado; el resto sigue pendiente.
-        prestamo.cantidad = round(prestamo.cantidad - cantidad, 2)
-        devuelto = PrestamoEmpresa(
-            fecha=prestamo.fecha, empresa_presta=prestamo.empresa_presta, empresa_recibe=prestamo.empresa_recibe,
-            prestador=prestamo.prestador, bodega_id=prestamo.bodega_id, apartado_id=None, numero_cotizacion="",
-            tipo=prestamo.tipo, codigo=prestamo.codigo, descripcion=prestamo.descripcion, cantidad=cantidad,
-            unidad=prestamo.unidad, referencia_rollo="", origen=DEVUELTO_POR_TERCERO, usuario=prestamo.usuario,
-            saldado=True, saldado_por=usuario.correo, fecha_saldado=ahora,
-        )
-        db.add(devuelto)
-        return devuelto
-    prestamo.origen = DEVUELTO_POR_TERCERO
-    prestamo.saldado, prestamo.saldado_por, prestamo.fecha_saldado = True, usuario.correo, ahora
-    return prestamo
 
 
 def listar(

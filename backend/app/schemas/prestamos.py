@@ -78,8 +78,10 @@ class SaldarPrestamosRequest(BaseModel):
 
 
 class PrestarATerceroRequest(BaseModel):
-    producto_id: int
-    cantidad: float = Field(gt=0)
+    """Un producto (con cantidad) o un rollo completo (rollo_id)."""
+    producto_id: int | None = None
+    rollo_id: int | None = None
+    cantidad: float = Field(default=0, ge=0)
     tercero: str = Field(min_length=1, max_length=150)
     observaciones: str = Field(default="", max_length=500)
 

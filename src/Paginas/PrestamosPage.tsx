@@ -6,6 +6,7 @@ import { formatearFechaColombia } from "../Utils/fechas";
 import { exportarHojasAExcel } from "../Utils/exportarExcel";
 import "../Style/Inventario.css";
 import "../Style/Merma.css";
+import "../Style/Rollos.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
 type Prestamo = {
@@ -18,7 +19,12 @@ type Deuda = {
   tipo: string; codigo: string; descripcion: string; unidad: string; presta: string; debe: string; cantidad: number;
   rollos: { referencia: string; kilos: number | null }[];
 };
-type ProductoBodega = { id: number; codigo: string; descripcion: string; empresa: string; stock: number; rollo_id?: number | null };
+type ProductoBodega = {
+  id: number; codigo: string; descripcion: string; empresa: string; stock: number; rollo_id?: number | null;
+  identificador_rollo?: string; peso_neto?: number | null; peso_actual_kg?: number | null;
+};
+// Kilos con que llegó un rollo: por debajo de 100 viene en toneladas.
+const kilosDeLlegada = (peso: number | null | undefined) => (peso && peso > 0 ? Math.round(peso < 100 ? peso * 1000 : peso) : null);
 type Sacado = {
   fecha: string; bodega_id: number | null; producto_codigo: string; producto_descripcion: string; cantidad: number;
   cotizacion: string; usuario: string; observaciones: string;
@@ -57,6 +63,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
   // Prestar a una empresa externa (ej. caballetes): sale del stock y queda aquí hasta que lo devuelvan.
   const [mostrarPrestar, setMostrarPrestar] = useState(false);
+  const [prestarQue, setPrestarQue] = useState<"producto" | "rollo">("producto");
   const [prestarBodega, setPrestarBodega] = useState("");
   const [productosBodega, setProductosBodega] = useState<ProductoBodega[]>([]);
   const [buscarProducto, setBuscarProducto] = useState("");
@@ -74,30 +81,41 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     if (!prestarBodega) return;
     let vigente = true;
     api.get<ProductoBodega[]>(`/bodegas/${prestarBodega}/inventario`)
-      .then((datos) => { if (vigente) setProductosBodega((datos || []).filter((p) => !p.rollo_id && Number(p.stock) > 0)); })
+      .then((datos) => { if (vigente) setProductosBodega((datos || []).filter((p) => Number(p.stock) > 0)); })
       .catch((err) => { if (vigente) setErrorPrestar(err instanceof ErrorApi ? err.message : "No se pudo cargar el inventario de esa bodega."); });
     return () => { vigente = false; };
   }, [prestarBodega]);
 
   const terminoProducto = buscarProducto.trim().toLowerCase();
-  const productosFiltrados = productosBodega.filter((p) => !terminoProducto
-    || p.codigo.toLowerCase().includes(terminoProducto) || p.descripcion.toLowerCase().includes(terminoProducto));
+  // Por kilos: "4458" o "4.458" encuentra el rollo de 4458 kg.
+  const kilosBuscados = terminoProducto.replace(/[.,\s]/g, "");
+  const productosFiltrados = productosBodega
+    .filter((p) => (prestarQue === "rollo" ? !!p.rollo_id : !p.rollo_id))
+    .filter((p) => !terminoProducto
+      || p.codigo.toLowerCase().includes(terminoProducto) || p.descripcion.toLowerCase().includes(terminoProducto)
+      || (p.identificador_rollo || "").toLowerCase().includes(terminoProducto)
+      || (/^\d+$/.test(kilosBuscados) && String(kilosDeLlegada(p.peso_neto) ?? "").includes(kilosBuscados)));
   const productoElegido = productosBodega.find((p) => String(p.id) === prestarProducto);
 
   async function prestar(e: React.FormEvent) {
     e.preventDefault();
     setErrorPrestar("");
-    const cantidad = Number(prestarCantidad);
-    if (!productoElegido) { setErrorPrestar("Elige el producto que vas a prestar."); return; }
+    const esRollo = prestarQue === "rollo";
+    const cantidad = esRollo ? Number(productoElegido?.stock) : Number(prestarCantidad);
+    if (!productoElegido) { setErrorPrestar(esRollo ? "Elige el rollo que vas a prestar." : "Elige el producto que vas a prestar."); return; }
     if (!(cantidad > 0)) { setErrorPrestar("Escribe cuántos vas a prestar."); return; }
     if (cantidad > Number(productoElegido.stock)) { setErrorPrestar(`Solo hay ${productoElegido.stock} en esa bodega.`); return; }
     if (!prestarTercero.trim()) { setErrorPrestar("Escribe a qué empresa se le presta."); return; }
+    if (esRollo && !window.confirm(`¿Prestar el rollo completo ${productoElegido.identificador_rollo} (${cantidad} m) a ${prestarTercero.trim()}? Sale de la bodega hasta que lo devuelvan.`)) return;
     setPrestando(true);
     try {
       await api.post("/prestamos/a-tercero", {
-        producto_id: productoElegido.id, cantidad, tercero: prestarTercero.trim(), observaciones: prestarObservaciones.trim(),
+        ...(esRollo ? { rollo_id: productoElegido.rollo_id } : { producto_id: productoElegido.id, cantidad }),
+        tercero: prestarTercero.trim(), observaciones: prestarObservaciones.trim(),
       });
-      setAviso(`Listo: ${cantidad} de ${productoElegido.codigo} quedaron prestados a ${prestarTercero.trim()}.`);
+      setAviso(esRollo
+        ? `Listo: el rollo ${productoElegido.identificador_rollo} (${cantidad} m) quedó prestado a ${prestarTercero.trim()}.`
+        : `Listo: ${cantidad} de ${productoElegido.codigo} quedaron prestados a ${prestarTercero.trim()}.`);
       setMostrarPrestar(false);
       setPrestarBodega(""); setBuscarProducto(""); setPrestarCantidad(""); setPrestarTercero(""); setPrestarObservaciones("");
       await cargar();
@@ -109,14 +127,18 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   }
 
   async function devolver(p: Prestamo) {
-    const texto = window.prompt(`¿Cuántos ${p.codigo} devolvió ${p.prestador}? (prestados sin devolver: ${p.cantidad})`, String(p.cantidad));
+    const texto = window.prompt(p.unidad === "m"
+      ? `¿Con cuántos metros volvió el rollo ${p.referencia_rollo}? (se prestaron ${p.cantidad} m; si volvió entero, déjalo así)`
+      : `¿Cuántos ${p.codigo} devolvió ${p.prestador}? (prestados sin devolver: ${p.cantidad})`, String(p.cantidad));
     if (texto == null) return;
     const cantidad = Number(texto.replace(",", "."));
     if (!(cantidad > 0) || cantidad > p.cantidad) { setError(`Escribe una cantidad entre 1 y ${p.cantidad}.`); return; }
     setError("");
     try {
       await api.post(`/prestamos/${p.id}/devolver`, { cantidad });
-      setAviso(`Listo: ${cantidad} de ${p.codigo} volvieron a ${nombreBodega(p.bodega_id)}.`);
+      setAviso(p.unidad === "m"
+        ? `Listo: el rollo ${p.referencia_rollo} volvió a ${nombreBodega(p.bodega_id)} con ${cantidad} m.`
+        : `Listo: ${cantidad} de ${p.codigo} volvieron a ${nombreBodega(p.bodega_id)}.`);
       await cargar();
     } catch (err) {
       setError(err instanceof ErrorApi ? err.message : "No se pudo registrar la devolución.");
@@ -223,9 +245,18 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             <form className="inventario-form" onSubmit={prestar} noValidate>
               <h2 className="inventario-form-subtitulo">Prestar a una empresa externa</h2>
               <p className="inventario-carga-ayuda">
-                Las unidades salen del stock de la bodega y quedan abajo como «Sin saldar» hasta que las devuelvan
-                (botón <strong>Devolver</strong>) o las paguen (<strong>Saldar</strong>).
+                Lo prestado sale de la bodega y queda abajo como «Sin saldar» hasta que lo devuelvan
+                (botón <strong>Devolver</strong>) o lo paguen (<strong>Saldar</strong>). Un rollo se presta completo.
               </p>
+              <div className="rollo-prestado-opciones" role="radiogroup" aria-label="¿Qué prestas?" style={{ marginBottom: "0.75rem" }}>
+                {([["producto", "Producto (ej. caballetes)"], ["rollo", "Rollo completo"]] as const).map(([valor, texto]) => (
+                  <label key={valor} className={prestarQue === valor ? "rollo-prestado-activo" : ""}>
+                    <input type="radio" name="prestar-que" value={valor} checked={prestarQue === valor}
+                      onChange={() => { setPrestarQue(valor); setPrestarProducto(""); setBuscarProducto(""); }} />
+                    {texto}
+                  </label>
+                ))}
+              </div>
               <div className="inventario-form-grid">
                 <div>
                   <label htmlFor="prestar-tercero">¿A qué empresa se le presta? *</label>
@@ -242,28 +273,33 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 {prestarBodega && (
                   <div>
                     <label htmlFor="prestar-buscar">Buscar producto</label>
-                    <input id="prestar-buscar" type="search" placeholder="Código o descripción (ej. caballete)" value={buscarProducto}
+                    <input id="prestar-buscar" type="search" value={buscarProducto}
+                      placeholder={prestarQue === "rollo" ? "Referencia, código o kilos (ej. 4458)" : "Código o descripción (ej. caballete)"}
                       onChange={(e) => setBuscarProducto(e.target.value)} />
                   </div>
                 )}
                 {prestarBodega && (
                   <div>
-                    <label htmlFor="prestar-producto">Producto *</label>
+                    <label htmlFor="prestar-producto">{prestarQue === "rollo" ? "Rollo *" : "Producto *"}</label>
                     <select id="prestar-producto" value={prestarProducto} onChange={(e) => setPrestarProducto(e.target.value)}>
-                      <option value="">{productosFiltrados.length ? `Elige (${productosFiltrados.length})` : "Ningún producto con stock coincide"}</option>
+                      <option value="">{productosFiltrados.length ? `Elige (${productosFiltrados.length})` : prestarQue === "rollo" ? "Ningún rollo coincide" : "Ningún producto con stock coincide"}</option>
                       {productosFiltrados.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.codigo} · {p.descripcion} · {nombre(p.empresa)} · hay {Number(p.stock).toLocaleString("es-CO")}
+                          {p.rollo_id
+                            ? `${p.identificador_rollo} · ${p.codigo} · ${nombre(p.empresa)} · ${Number(p.stock).toLocaleString("es-CO")} m · ${kilosTexto(kilosDeLlegada(p.peso_neto))}`
+                            : `${p.codigo} · ${p.descripcion} · ${nombre(p.empresa)} · hay ${Number(p.stock).toLocaleString("es-CO")}`}
                         </option>
                       ))}
                     </select>
                   </div>
                 )}
-                <div>
-                  <label htmlFor="prestar-cantidad">Cantidad *</label>
-                  <input id="prestar-cantidad" type="number" min="0" step="any" value={prestarCantidad}
-                    onChange={(e) => setPrestarCantidad(e.target.value)} />
-                </div>
+                {prestarQue === "producto" && (
+                  <div>
+                    <label htmlFor="prestar-cantidad">Cantidad *</label>
+                    <input id="prestar-cantidad" type="number" min="0" step="any" value={prestarCantidad}
+                      onChange={(e) => setPrestarCantidad(e.target.value)} />
+                  </div>
+                )}
                 <div>
                   <label htmlFor="prestar-observaciones">Observaciones</label>
                   <input id="prestar-observaciones" maxLength={500} placeholder="Ej. los recoge Juan, devuelven en 15 días"
