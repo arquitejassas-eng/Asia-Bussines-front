@@ -508,9 +508,9 @@ def editar_apartado(
         # Se quitaron todas las líneas de esta parte (o todas pasan a otra
         # bodega): la parte se borra y queda lo de las otras bodegas.
         origen = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
-        numero, bodega_nombre = origen.numero_cotizacion, origen.bodega_nombre
+        numero, bodega_nombre, creador = origen.numero_cotizacion, origen.bodega_nombre, origen.creado_por
         srv.quitar_parte(db, apartado_id, usuario, pasa_a_otra_bodega=bool(por_bodega))
-        _pasar_a_otras_bodegas(db, numero, bodega_nombre, por_bodega, datos, usuario)
+        _pasar_a_otras_bodegas(db, numero, bodega_nombre, por_bodega, datos, usuario, creador)
         db.commit()
         restante = (
             db.query(Apartado)
@@ -527,7 +527,7 @@ def editar_apartado(
             restante = db.get(Apartado, restante.id)
         return _con_faltantes(db, [restante])[0]
     apartado = srv.editar_apartado(db, apartado_id, datos.model_copy(update={"items": propias}), usuario)
-    _pasar_a_otras_bodegas(db, apartado.numero_cotizacion, apartado.bodega_nombre, por_bodega, datos, usuario)
+    _pasar_a_otras_bodegas(db, apartado.numero_cotizacion, apartado.bodega_nombre, por_bodega, datos, usuario, apartado.creado_por)
     if de_siigo:
         siigo_cotizacion.sincronizar(db, apartado, usuario)
         apartado = db.get(Apartado, apartado.id)
@@ -654,6 +654,9 @@ def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEd
             observaciones=f"Parte de la cotización {base_nueva} con material de {nombre}.",
             items=lineas,
         ), usuario)))
+        # Sigue siendo del vendedor que la creó (si no, al moverla Admin
+        # Inventario de bodega, el vendedor dejaba de verla).
+        nuevas[-1].creado_por = principal.creado_por
     db.flush()
     principal_sigue = next((p for c, p in parte_por_clave.items() if p.id == principal.id and c in por_parte), None)
     if principal_sigue is not None:
@@ -664,6 +667,7 @@ def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEd
 
 def _pasar_a_otras_bodegas(
     db: Session, numero: str, bodega_nombre: str, por_bodega: dict[int, list], datos: ApartadoEditar, usuario: Usuario,
+    creado_por: str,
 ) -> None:
     """Las líneas que al editar pasan a otra bodega se suman a la misma
     cotización en esa bodega, o se crea ahí."""
@@ -690,13 +694,14 @@ def _pasar_a_otras_bodegas(
                     orden_interna=hermana.orden_interna, items=actuales + lineas,
                 ), usuario)
             else:
-                srv.crear_apartado(db, ApartadoCrear(
+                nueva = srv.crear_apartado(db, ApartadoCrear(
                     bodega_id=otra, material_en_camino=datos.material_en_camino, numero_cotizacion=numero,
                     empresa=datos.empresa, cliente=datos.cliente, orden_interna=datos.orden_interna,
                     observaciones=f"Parte de la cotización {numero} de {bodega_nombre} "
                     f"con material de {nombre}.",
                     items=lineas,
                 ), usuario)
+                nueva.creado_por = creado_por or nueva.creado_por
         except HTTPException as exc:
             raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
 
