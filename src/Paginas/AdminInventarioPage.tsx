@@ -16,6 +16,7 @@ import PanelNuevoProducto from "../Componentes/PanelNuevoProducto";
 import PanelEliminarProducto from "../Componentes/PanelEliminarProducto";
 import PanelTrasladosRollos from "../Componentes/PanelTrasladosRollos";
 import PanelProductosSinCodigo from "../Componentes/PanelProductosSinCodigo";
+import PanelRollosPrestados from "../Componentes/PanelRollosPrestados";
 import { IconoDescargar } from "../Componentes/Iconos";
 import { pasoDelTraslado } from "../Componentes/AvisosTrasladosRollos";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
@@ -370,6 +371,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
             <>
               <PanelProductosSinCodigo productos={almacen?.productosSinCodigo || []}
                 alCambiar={() => Promise.all([almacen?.refrescarProductosSinCodigo(), c.cargarComparativo(true)]).then(() => undefined)} />
+              <PanelRollosPrestados alCambiar={() => c.cargarComparativo(true)} />
               <PanelTrasladosRollos traslados={trasladosRollos} verCodigo={verCodigoEnResumen} />
 
               {/* ================== RESUMEN: TOTAL POR CÓDIGO EN TODA LA EMPRESA ================== */}

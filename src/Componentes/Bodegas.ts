@@ -7,7 +7,7 @@ import type { AlmacenGlobal, Bodega, Envio, EnvioApi, Producto, Sesion, Solicitu
 
 const TIPOS_OPERACION = [
   { valor: "solicitud", etiqueta: "Solicitud" },
-  { valor: "prestamo", etiqueta: "Préstamo" },
+  { valor: "prestamo", etiqueta: "Préstamo (el rollo vuelve)" },
   { valor: "intercambio", etiqueta: "Intercambio" },
 ];
 

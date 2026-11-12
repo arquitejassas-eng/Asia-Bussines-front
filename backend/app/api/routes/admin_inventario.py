@@ -19,6 +19,7 @@ from app.services.apartados import EMPRESA_DE_LINEA, ESTADOS_RESERVA_ACTIVA, de_
 from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.services.clasificacion import formatear_calibre
 from app.services import codigo_provisional as srv_codigo
+from app.services import transferencias as srv_transferencias
 from app.services.merma_rollo import asignar_merma_y_sobrante, rollos_con_merma_o_sobrante
 
 # Todo este router es de solo lectura, por eso VENDEDOR también entra: es su
@@ -389,6 +390,19 @@ def productos_sin_codigo(db: Session = Depends(get_db)) -> list[dict]:
     """Lo que Planta mandó al stock sin que existiera el producto: tiene un
     código provisional de la producción y le falta el código real."""
     return srv_codigo.productos_sin_codigo(db)
+
+
+@router.get("/rollos-prestados", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def rollos_prestados(db: Session = Depends(get_db)) -> list[dict]:
+    """Rollos que una bodega le prestó a otra: vuelven solo cuando Admin Inventario dice."""
+    return srv_transferencias.rollos_prestados(db)
+
+
+@router.post("/rollos-prestados/{rollo_id}/devolver", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def devolver_rollo_prestado(rollo_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> dict:
+    rollo = srv_transferencias.devolver_prestamo(db, rollo_id, usuario)
+    db.commit()
+    return {"rollo_id": rollo.id, "bodega_id": rollo.bodega_id}
 
 
 class PonerCodigoRequest(BaseModel):

@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.producto import Producto
 from app.models.rollo import Rollo
-from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, EstadoSolicitud, Solicitud
+from app.models.bodega import Bodega
+from app.models.solicitud import ESTADOS_TRASLADO_EN_CURSO, EstadoSolicitud, Solicitud, TipoOperacionSolicitud
 from app.models.usuario import Usuario
 from app.schemas.bodegas import SolicitudCrear
 from app.services.apartados import (
@@ -57,14 +58,17 @@ def crear_solicitud_transferencia(
             raise HTTPException(status_code=400, detail="El rollo no tiene metros disponibles.")
         if rollo.bodega_id == usuario.bodega_id:
             raise HTTPException(status_code=400, detail="Selecciona un rollo de otra bodega.")
+        _exigir_que_no_este_prestado(db, rollo)
         # Se avisa desde ya (y se vuelve a validar al aceptar): un rollo cuyo
-        # material está apartado en la otra bodega no se puede pedir.
-        validar_reserva_rollos(
-            db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
-            metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
-            # El de su misma cotización sale de la reserva de esa cotización.
-            metros_reserva_propia=rollo.metros_disponibles if linea else 0.0, apartado_item_id=linea.id if linea else None,
-        )
+        # material está apartado en la otra bodega no se puede pedir (salvo
+        # prestado: vuelve, y mientras tanto esas cotizaciones esperan).
+        if datos.tipo_operacion != TipoOperacionSolicitud.PRESTAMO:
+            validar_reserva_rollos(
+                db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
+                metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
+                # El de su misma cotización sale de la reserva de esa cotización.
+                metros_reserva_propia=rollo.metros_disponibles if linea else 0.0, apartado_item_id=linea.id if linea else None,
+            )
         if db.query(Solicitud.id).filter(
             Solicitud.rollo_id == rollo.id, Solicitud.estado == EstadoSolicitud.PENDIENTE
         ).first() is not None:
@@ -139,12 +143,13 @@ def aceptar_solicitud_transferencia(
         if rollo.bodega_id != solicitud.bodega_propietaria_id:
             raise HTTPException(status_code=400, detail="El rollo ya no esta disponible en esta bodega.")
         # El rollo sale completo de esta bodega: no puede llevarse metros apartados
-        # aquí (salvo los de la cotización para la que se traslada).
-        validar_reserva_rollos(
-            db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
-            metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
-            metros_reserva_propia=rollo.metros_disponibles if linea else 0.0, apartado_item_id=linea.id if linea else None,
-        )
+        # aquí (salvo los de la cotización para la que se traslada, o prestado).
+        if solicitud.tipo_operacion != TipoOperacionSolicitud.PRESTAMO:
+            validar_reserva_rollos(
+                db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
+                metros_salen=rollo.metros_disponibles, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",
+                metros_reserva_propia=rollo.metros_disponibles if linea else 0.0, apartado_item_id=linea.id if linea else None,
+            )
         solicitud.cantidad = rollo.metros_disponibles
     else:
         producto_origen = _producto_de(db, solicitud, solicitud.bodega_propietaria_id)
@@ -268,6 +273,79 @@ def _identificador(db: Session, solicitud: Solicitud) -> str:
         return ""
     rollo = db.get(Rollo, solicitud.rollo_id)
     return rollo.identificador_rollo if rollo else ""
+
+
+def prestamo_vigente(db: Session, rollo: Rollo) -> Solicitud | None:
+    """El préstamo por el que el rollo está en otra bodega: su último traslado
+    recibido fue un préstamo y sigue en la bodega que lo pidió. Vuelve solo
+    cuando Admin Inventario lo devuelve (ver devolver_prestamo)."""
+    ultimo = (
+        db.query(Solicitud)
+        .filter(Solicitud.rollo_id == rollo.id, Solicitud.estado == EstadoSolicitud.RECIBIDA)
+        .order_by(Solicitud.fecha_recibida.desc().nullslast(), Solicitud.id.desc())
+        .first()
+    )
+    if ultimo is None or ultimo.tipo_operacion != TipoOperacionSolicitud.PRESTAMO or rollo.bodega_id != ultimo.bodega_solicitante_id:
+        return None
+    return ultimo
+
+
+def _exigir_que_no_este_prestado(db: Session, rollo: Rollo) -> None:
+    prestamo = prestamo_vigente(db, rollo)
+    if prestamo is not None:
+        duena = db.get(Bodega, prestamo.bodega_propietaria_id)
+        raise HTTPException(
+            status_code=400,
+            detail=f"El rollo {rollo.identificador_rollo} está prestado de {duena.nombre if duena else 'otra bodega'}: "
+            "solo Admin Inventario lo devuelve (en Admin Inventario → Rollos prestados).",
+        )
+
+
+def rollos_prestados(db: Session) -> list[dict]:
+    """Los rollos que están prestados en otra bodega, para que Admin Inventario los devuelva."""
+    bodegas = {b.id: b.nombre for b in db.query(Bodega).all()}
+    candidatos = (
+        db.query(Rollo)
+        .join(Solicitud, Solicitud.rollo_id == Rollo.id)
+        .filter(Solicitud.tipo_operacion == TipoOperacionSolicitud.PRESTAMO, Solicitud.estado == EstadoSolicitud.RECIBIDA,
+                Rollo.bodega_id == Solicitud.bodega_solicitante_id)
+        .distinct().all()
+    )
+    filas = []
+    for rollo in candidatos:
+        prestamo = prestamo_vigente(db, rollo)
+        if prestamo is None:
+            continue
+        filas.append({
+            "rollo_id": rollo.id, "identificador_rollo": rollo.identificador_rollo, "codigo_interno": rollo.codigo_interno,
+            "descripcion": rollo.descripcion, "empresa": rollo.empresa or "", "metros_disponibles": rollo.metros_disponibles,
+            "metros_al_salir": prestamo.cantidad, "esta_en": bodegas.get(rollo.bodega_id, ""),
+            "vuelve_a": bodegas.get(prestamo.bodega_propietaria_id, ""), "cotizacion": prestamo.numero_cotizacion or "",
+            "fecha_recibido": prestamo.fecha_recibida, "en_traslado": traslado_en_curso_del_rollo(db, rollo.id) is not None,
+        })
+    return sorted(filas, key=lambda f: f["identificador_rollo"])
+
+
+def devolver_prestamo(db: Session, rollo_id: int, usuario: Usuario) -> Rollo:
+    """Admin Inventario dice que el rollo prestado ya vuelve: regresa a la
+    bodega dueña con los metros que le quedan."""
+    rollo = db.query(Rollo).filter(Rollo.id == rollo_id).with_for_update().first()
+    prestamo = prestamo_vigente(db, rollo) if rollo is not None else None
+    if prestamo is None:
+        raise HTTPException(status_code=404, detail="Ese rollo ya no está prestado. Recarga la lista.")
+    if traslado_en_curso_del_rollo(db, rollo.id) is not None:
+        raise HTTPException(status_code=400, detail="El rollo tiene un traslado en curso: termínalo o recházalo primero.")
+    prestado_en = rollo.bodega_id
+    rollo.bodega_id = prestamo.bodega_propietaria_id
+    db.add(Movimiento(
+        fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.TRANSFERENCIA, motivo="devolucion_prestamo",
+        producto_codigo=rollo.codigo_interno, producto_descripcion=f"{rollo.descripcion} (rollo {rollo.identificador_rollo})",
+        rollo_id=rollo.id, identificador_rollo=rollo.identificador_rollo,
+        bodega_origen_id=prestado_en, bodega_destino_id=prestamo.bodega_propietaria_id,
+        cantidad=rollo.metros_disponibles, usuario=usuario.correo, cotizacion=prestamo.numero_cotizacion or "",
+        observaciones=f"Devuelto por Admin Inventario: estaba prestado (traslado #{prestamo.id}).",
+    ))
+    return rollo
 
 
 def traslado_en_curso_del_rollo(db: Session, rollo_id: int) -> Solicitud | None:
