@@ -214,7 +214,7 @@ export function produccionDesdeApi(p: RegistroApi) {
     codigoClasificacion: texto(p.codigo_clasificacion), totalMetrosConsumidos: numero(p.total_metros_consumidos),
     saldoCodigo: numero(p.saldo_codigo), metrosExcedente: numero(p.metros_excedente), observaciones: texto(p.observaciones),
     apartadoItemId: p.apartado_item_id == null ? null : numero(p.apartado_item_id), clienteApartado: texto(p.cliente_apartado),
-    rollosUtilizados: rollos.map((r) => ({ rolloId: numero(r.rollo_id), identificadorRollo: texto(r.identificador_rollo), metrosConsumidos: numero(r.metros_consumidos) })),
+    rollosUtilizados: rollos.map((r) => ({ rolloId: numero(r.rollo_id), identificadorRollo: texto(r.identificador_rollo), metrosConsumidos: numero(r.metros_consumidos), kilosRollo: r.kilos_rollo == null ? null : numero(r.kilos_rollo) })),
     productosStock: productosStock.map((s) => ({
       id: numero(s.id), codigo: texto(s.codigo), descripcion: texto(s.descripcion), stock: numero(s.stock),
       calidad: texto(s.calidad), motivoSegunda: texto(s.motivo_segunda), color: texto(s.color), ral: texto(s.ral),

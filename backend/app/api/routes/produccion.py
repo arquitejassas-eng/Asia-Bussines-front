@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session, joinedload, selectinload
 from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
 from app.models.apartado import ApartadoItem
-from app.models.produccion import Produccion
+from app.models.produccion import Produccion, RolloUtilizadoProduccion
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.produccion import (
     ConversionLaminaResponse, ConversionPendienteResponse, ConvertirLaminaLisa, CorregirMetrosProduccion, ProduccionCrear,
@@ -54,7 +54,7 @@ def listar_producciones(db: Session = Depends(get_db), usuario: Usuario = Depend
     # consultas por cada producción (rollos, stock generado, cliente del
     # apartado) -- 43 consultas para 20 producciones, cada 20 s en pantalla.
     consulta = db.query(Produccion).options(
-        selectinload(Produccion.rollos_utilizados),
+        selectinload(Produccion.rollos_utilizados).joinedload(RolloUtilizadoProduccion.rollo),
         selectinload(Produccion.productos_stock),
         joinedload(Produccion.apartado_item).joinedload(ApartadoItem.apartado),
     )

@@ -14,7 +14,7 @@ import type { AlmacenGlobal, Sesion } from "../types/dominio";
 type ProduccionRegistro = {
   id: number | string; bodegaId: number; codigoUnico: string; cotizacion?: string; clienteApartado?: string; fecha: string;
   responsable: string; productoFabricado: string; modelo: string; medidaProducto: string;
-  cantidadProductos: number; rollosUtilizados: { rolloId: number; identificadorRollo: string; metrosConsumidos: number }[];
+  cantidadProductos: number; rollosUtilizados: { rolloId: number; identificadorRollo: string; metrosConsumidos: number; kilosRollo?: number | null }[];
   tipoProducto?: string;
   codigoClasificacion: string; totalMetrosConsumidos: number; saldoCodigo: number; observaciones?: string;
 };
@@ -57,6 +57,14 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   // "Ver hoja de vida" desde Apartados: solo las producciones de esa cotización, para imprimirlas.
   const [parametros, setParametros] = useSearchParams();
   const cotizacionFiltro = numeroCotizacion(parametros.get("cotizacion") || "");
+  // Filtro por rollo: la referencia (o parte de ella) de un rollo usado en la producción.
+  const [rolloFiltro, setRolloFiltro] = useState("");
+  const rolloBuscado = rolloFiltro.trim().toUpperCase();
+  // Como en Bodegas: "4458" o "4.458" encuentra el rollo de 4458 kg.
+  const kilosBuscados = rolloBuscado.replace(/[.,\s]/g, "");
+  const coincideRollo = (r: { identificadorRollo: string; kilosRollo?: number | null }) =>
+    r.identificadorRollo.toUpperCase().includes(rolloBuscado)
+    || (/^\d+$/.test(kilosBuscados) && r.kilosRollo != null && String(Math.round(r.kilosRollo)).includes(kilosBuscados));
   // "Corregir metros": la producción que se está corrigiendo y el aviso al terminar.
   const [corrigiendo, setCorrigiendo] = useState<ProduccionRegistro | null>(null);
   const [aviso, setAviso] = useState("");
@@ -66,7 +74,8 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   const nombreBodega = (id: number) => (almacen?.bodegas || []).find((b) => b.id === id)?.nombre || `Bodega ${id}`;
   const misProducciones = (p.misProducciones as ProduccionRegistro[])
     .filter((prod) => !bodegaFiltro || String(prod.bodegaId) === bodegaFiltro)
-    .filter((prod) => !cotizacionFiltro || numeroCotizacion(prod.cotizacion) === cotizacionFiltro);
+    .filter((prod) => !cotizacionFiltro || numeroCotizacion(prod.cotizacion) === cotizacionFiltro)
+    .filter((prod) => !rolloBuscado || prod.rollosUtilizados.some(coincideRollo));
   const clienteFiltro = cotizacionFiltro ? misProducciones.find((prod) => prod.clienteApartado)?.clienteApartado : undefined;
 
   const notificaciones = contarNotificaciones(almacen, sesion);
@@ -96,7 +105,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
           "Código producción": fila.codigoProduccion, Observaciones: fila.observaciones || "",
         })),
     ]);
-    exportarArregloAExcel(filasExcel, cotizacionFiltro ? `Hoja_de_vida_cotizacion_${cotizacionFiltro}.xlsx` : "Hoja_de_vida.xlsx", "Hoja de vida");
+    exportarArregloAExcel(filasExcel, `Hoja_de_vida${cotizacionFiltro ? `_cotizacion_${cotizacionFiltro}` : ""}${rolloBuscado ? `_rollo_${rolloBuscado.replace(/[^A-Z0-9,.-]/g, "")}` : ""}.xlsx`, "Hoja de vida");
   }
 
   const totalProducciones = misProducciones.length;
@@ -178,8 +187,8 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   ];
 
   const filaDeCotizacion = ({ clave, producciones }: FilaHojaVida) => {
-    // De una sola cotización (para imprimir) se ve cada producción.
-    const abierta = abiertas.has(clave) || Boolean(cotizacionFiltro);
+    // De una sola cotización (para imprimir) o de un rollo se ve cada producción.
+    const abierta = abiertas.has(clave) || Boolean(cotizacionFiltro) || Boolean(rolloBuscado);
     const reciente = producciones[0];
     const lista = (valores: (string | number | undefined)[], plural: string) => {
       const distintos = unicos(valores);
@@ -237,7 +246,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
           <header className="hv-header">
             <div className="hv-header-texto">
               <h1 className="hv-titulo">
-                {cotizacionFiltro ? `Hoja de Vida · Cotización ${cotizacionFiltro}` : "Hoja de Vida"}
+                {cotizacionFiltro ? `Hoja de Vida · Cotización ${cotizacionFiltro}` : "Hoja de Vida"}{rolloBuscado ? ` · Rollo ${rolloFiltro.trim()}` : ""}
               </h1>
               <p className="hv-subtitulo">
                 {cotizacionFiltro
@@ -246,7 +255,7 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
                     ? "Reporte de control de material: verifica las producciones registradas en todas las bodegas."
                     : "Reporte de control de material: consulta las producciones registradas en tu bodega."}
               </p>
-              {cotizacionFiltro && (
+              {(cotizacionFiltro || rolloBuscado) && (
                 <div className="hv-no-imprimir" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
                   <button type="button" className="inventario-boton" onClick={() => window.print()} disabled={totalProducciones === 0}>
                     Imprimir
@@ -254,11 +263,16 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
                   <button type="button" className="inventario-boton" onClick={exportarExcel} disabled={totalProducciones === 0}>
                     Exportar a Excel
                   </button>
-                  <button type="button" className="rollos-boton-secundario" onClick={() => setParametros({})}>
+                  <button type="button" className="rollos-boton-secundario" onClick={() => { setParametros({}); setRolloFiltro(""); }}>
                     Ver todas las producciones
                   </button>
                 </div>
               )}
+              <label className="hv-no-imprimir" style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem", marginRight: "1rem" }}>
+                Rollo
+                <input type="search" value={rolloFiltro} onChange={(e) => setRolloFiltro(e.target.value)}
+                  placeholder="Referencia o kilos (ej. 4458)" aria-label="Filtrar por rollo: referencia o kilos" style={{ minWidth: 220 }} />
+              </label>
               {esAdminInventario && !cotizacionFiltro && (
                 <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem" }}>
                   Bodega
@@ -315,7 +329,8 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
             <div className="hv-vacio">
               <div className="hv-vacio-icono">◎</div>
               <p>
-                {cotizacionFiltro ? `La cotización ${cotizacionFiltro} todavía no tiene producciones registradas.`
+                {rolloBuscado ? `No hay producciones con el rollo "${rolloFiltro.trim()}"${cotizacionFiltro ? ` en la cotización ${cotizacionFiltro}` : ""}.`
+                  : cotizacionFiltro ? `La cotización ${cotizacionFiltro} todavía no tiene producciones registradas.`
                   : esAdminInventario
                   ? bodegaFiltro ? "Todavía no hay producciones registradas en esta bodega." : "Todavía no hay producciones registradas en ninguna bodega."
                   : "Todavía no hay producciones registradas en tu bodega."}

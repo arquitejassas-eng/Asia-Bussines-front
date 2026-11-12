@@ -167,6 +167,7 @@ class RolloUtilizadoResponse(BaseModel):
     rollo_id: int
     identificador_rollo: str
     metros_consumidos: float
+    kilos_rollo: float | None = None
 
 
 class StockAdicionalGeneradoResponse(BaseModel):

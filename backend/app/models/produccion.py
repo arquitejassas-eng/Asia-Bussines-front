@@ -78,3 +78,12 @@ class RolloUtilizadoProduccion(Base):
     metros_consumidos: Mapped[float] = mapped_column(Float, nullable=False)
 
     produccion = relationship("Produccion", back_populates="rollos_utilizados")
+    rollo = relationship("Rollo")
+
+    @property
+    def kilos_rollo(self) -> float | None:
+        """Peso de llegada del rollo en kg (Hoja de Vida lo busca por kilos)."""
+        neto = self.rollo.peso_neto if self.rollo is not None else None
+        if not neto or neto <= 0:
+            return None
+        return round(neto * 1000 if neto < 100 else neto)
