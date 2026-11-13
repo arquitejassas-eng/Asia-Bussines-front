@@ -36,6 +36,8 @@ const ITEM_VACIO = {
   // CAPUCHON AZUL"): descuenta su inventario pero no sube a Siigo.
   siigoIncluido: false,
 };
+const CAMPOS_QUE_CAMBIAN_LA_CANTIDAD_SIIGO: string[] = ["cantidad", "medida", "codigoInterno", "tipoProducto"];
+
 const FORMULARIO_VACIO = {
   bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", ordenInterna: false,
   // Traslado a una bodega sin inventario en el sistema (ej. "San Gil"); "" = cotización.
@@ -452,7 +454,13 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
   function actualizarItemApartado(indice: number, campo: keyof ItemFormulario, valor: string | boolean) {
     setFormulario((actual) => ({
       ...actual,
-      items: actual.items.map((item, i) => (i === indice ? { ...item, [campo]: valor } : item)),
+      items: actual.items.map((item, i) => (i === indice ? {
+        ...item, [campo]: valor,
+        // Cambió lo que define cuánto material lleva: los kilos/cm de Siigo se
+        // recalculan aunque los hubieran escrito a mano (o vinieran guardados),
+        // si no, 2 tejas de 4 m quedaban con los kilos de 1.
+        ...(CAMPOS_QUE_CAMBIAN_LA_CANTIDAD_SIIGO.includes(campo) ? { siigoCantidadManual: false } : {}),
+      } : item)),
     }));
   }
 
