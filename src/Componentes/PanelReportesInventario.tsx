@@ -104,19 +104,23 @@ export function ReporteInventarioPorTipo() {
 
   const familias = useMemo(() => [...new Set(productos.map((p) => p.familia))].sort(), [productos]);
   const esRollos = tipo === ROLLOS;
+  // "Todos los productos" también trae la lámina (en el Excel, en sus propias hojas).
+  const conLamina = tipo === "";
   // Solo lo que está en inventario: ni agotados ni lo que viene en camino.
   const rollosEnInventario = useMemo(() => rollos.filter((r) => r.estado !== EN_CAMINO && r.metros_disponibles > 0), [rollos]);
   const bodegasDisponibles = useMemo(() => {
-    const nombres = new Set((esRollos ? rollosEnInventario : productos).map((f) => f.bodega));
+    const filas: { bodega: string }[] = esRollos ? rollosEnInventario : conLamina ? [...productos, ...rollosEnInventario] : productos;
+    const nombres = new Set(filas.map((f) => f.bodega));
     return [...nombres].sort((a, b) => (a === SIN_BODEGA ? 1 : b === SIN_BODEGA ? -1 : a.localeCompare(b)));
-  }, [esRollos, rollosEnInventario, productos]);
+  }, [esRollos, conLamina, rollosEnInventario, productos]);
 
   // Los colores que hay en el tipo escogido (rollos o productos de ese tipo).
   const coloresDisponibles = useMemo(() => {
     const filas = esRollos ? rollosEnInventario
       : productos.filter((p) => !tipo || (tipo === TODO_UPVC ? p.familia.includes("UPVC") : p.familia === tipo));
-    return [...new Set(filas.map(colorDe).filter(Boolean))].sort();
-  }, [esRollos, rollosEnInventario, productos, tipo]);
+    const todas = [...filas.map(colorDe), ...(conLamina ? rollosEnInventario.map(colorDe) : [])];
+    return [...new Set(todas.filter(Boolean))].sort();
+  }, [esRollos, conLamina, rollosEnInventario, productos, tipo]);
 
   const termino = buscar.trim().toUpperCase();
   const coincide = useMemo(() => (f: { codigo: string; descripcion: string; empresa: string; bodega: string; color?: string }) =>
@@ -182,12 +186,13 @@ export function ReporteInventarioPorTipo() {
 
   function exportar() {
     const sufijo = [nombreTipo, empresa && nombreEmpresa(empresa), bodega, color && nombreColor(color)].filter(Boolean).join(" - ");
-    if (esRollos) {
-      exportarHojasAExcel([
-        { nombre: "Resumen por código", filas: filasRollos.map((g) => ({
+    // Las columnas por bodega de la lámina: solo las bodegas donde hay rollos.
+    const bodegasLamina = bodegasDisponibles.filter((b) => rollosFiltrados.some((r) => r.bodega === b));
+    const hojasLamina = (prefijo: string) => [
+        { nombre: `${prefijo}Resumen por código`, filas: filasRollos.map((g) => ({
           "Empresa": nombreEmpresa(g.empresa), "Código": g.codigo, "Espesor (mm)": espesorDe(g),
           "Color": g.color ? nombreColor(g.color) : "", ...(conDescripcion ? { "Descripción": g.descripcion } : {}),
-          ...Object.fromEntries(columnasBodega.flatMap((b) => [
+          ...Object.fromEntries(bodegasLamina.flatMap((b) => [
             [`${b} (metros)`, g.porBodega[b] ? Math.round(g.porBodega[b].metros * 100) / 100 : 0],
             [`${b} (kg)`, g.porBodega[b] ? Math.round(g.porBodega[b].kilos) : 0],
           ])),
@@ -195,7 +200,7 @@ export function ReporteInventarioPorTipo() {
           "Apartado (m)": Math.round(g.apartado * 100) / 100, "Libre para vender (m)": Math.round(g.libre * 100) / 100,
           "Apartado para": g.cotizaciones.join(", "),
         })) },
-        { nombre: "Detalle por rollo", filas: [...rollosFiltrados].sort(ordenRollos).map((r) => ({
+        { nombre: `${prefijo}Detalle por rollo`, filas: [...rollosFiltrados].sort(ordenRollos).map((r) => ({
           "Empresa": nombreEmpresa(r.empresa), "Bodega": r.bodega, "Código": r.codigo, "Espesor (mm)": espesorDe(r),
           "Color": colorDe(r) ? nombreColor(colorDe(r)) : "", "Referencia": r.referencia,
           ...(conDescripcion ? { "Descripción": r.descripcion } : {}),
@@ -203,7 +208,9 @@ export function ReporteInventarioPorTipo() {
           "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado, "Apartado": apartadoDelRollo(r) || "Libre",
           "Importación": nombreImportacion(r.importacion),
         })) },
-      ], `Inventario ${sufijo}.xlsx`);
+    ];
+    if (esRollos) {
+      exportarHojasAExcel(hojasLamina(""), `Inventario ${sufijo}.xlsx`);
     } else {
       exportarHojasAExcel([
         { nombre: "Inventario", filas: filasProductos.map((g) => ({
@@ -218,6 +225,7 @@ export function ReporteInventarioPorTipo() {
             "Bodega": p.bodega, "Código": p.codigo, "Descripción": p.descripcion, "Tipo": p.familia,
             "Empresa": nombreEmpresa(p.empresa), "Cantidad": p.stock, "Apartado": p.apartado, "Libre": p.libre,
           })) },
+        ...(conLamina && filasRollos.length ? hojasLamina("Lámina - ") : []),
       ], `Inventario ${sufijo}.xlsx`);
     }
   }
@@ -276,7 +284,7 @@ export function ReporteInventarioPorTipo() {
             </button>
           )}
           <button type="button" className="reportes-boton-secundario" onClick={exportar}
-            disabled={esRollos ? filasRollos.length === 0 : filasProductos.length === 0}>
+            disabled={esRollos ? filasRollos.length === 0 : filasProductos.length === 0 && !(conLamina && filasRollos.length)}>
             📥 Exportar a Excel
           </button>
         </div>
@@ -293,7 +301,11 @@ export function ReporteInventarioPorTipo() {
                 {esRollos
                   ? `${filasRollos.length} códigos · ${rollosFiltrados.length} rollos · ${numero.format(totalMetros)} metros · ${numero.format(Math.round(totalKilos))} kg. `
                     + "Solo rollos con material (sin agotados ni lo que viene en camino). Toca un código para ver cada rollo con sus kilos."
-                  : `${filasProductos.length} productos · ${numero.format(totalUnidades)} unidades en total.`}
+                  : `${filasProductos.length} productos · ${numero.format(totalUnidades)} unidades en total.`
+                    + (conLamina && filasRollos.length
+                      ? ` Lámina: ${rollosFiltrados.length} rollos · ${numero.format(totalMetros)} metros · ${numero.format(Math.round(totalKilos))} kg `
+                        + "(sale en el Excel en sus propias hojas; para verla aquí escoge «Rollos de lámina»)."
+                      : "")}
               </p>
               <div className="reportes-tabla-wrap">
                 <table className="reportes-tabla">
