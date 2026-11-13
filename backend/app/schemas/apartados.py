@@ -114,6 +114,8 @@ class ApartadoCrear(BaseModel):
     orden_interna: bool = False
     # Traslado a una bodega sin inventario en el sistema (ej. "San Gil"); "" = cotización.
     traslado_a: str = Field(default="", max_length=60)
+    # Traslado: la cotización que se hizo directo en Siigo para ese material (ej. "C-1-4140").
+    siigo_numero_traslado: str = Field(default="", max_length=30)
     items: list[ApartadoItemCrear]
     # Siigo Nube: cédula/NIT del cliente, impuestos que lleva y vendedor de Siigo.
     cliente_identificacion: str = Field(default="", max_length=20)

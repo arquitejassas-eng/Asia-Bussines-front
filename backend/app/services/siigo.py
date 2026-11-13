@@ -231,6 +231,32 @@ def buscar_cliente(empresa: str, identificacion: str) -> dict | None:
     }
 
 
+def buscar_cotizacion(empresa: str, numero: str) -> dict | None:
+    """La cotización de Siigo con ese número ("C-1-4140", o solo "4140": se
+    busca como C-1 y C-2), con su cliente y sus líneas. Solo lectura."""
+    numero = re.sub(r"\s+", "", numero or "").upper()
+    if not numero:
+        return None
+    nombres = [numero] if not numero.isdigit() else [f"C-1-{numero}", f"C-2-{numero}"]
+    for nombre in nombres:
+        respuesta = pedir(empresa, "GET", "/v1/quotations", params={"name": nombre, "page_size": 5})
+        resultados = respuesta.get("results") if isinstance(respuesta, dict) else respuesta
+        cotizacion = next((q for q in resultados or [] if (q.get("name") or "").upper() == nombre), None)
+        if cotizacion is None:
+            continue
+        identificacion = (cotizacion.get("customer") or {}).get("identification") or ""
+        cliente = buscar_cliente(empresa, identificacion) if identificacion else None
+        return {
+            "id": cotizacion.get("id") or "", "consecutivo": str(cotizacion.get("number") or ""),
+            "numero": cotizacion.get("name") or nombre, "fecha": cotizacion.get("date") or "",
+            "cliente_identificacion": identificacion, "cliente": cliente["nombre"] if cliente else "",
+            "total": cotizacion.get("total"), "enlace": cotizacion.get("public_url") or "",
+            "items": [{"codigo": i.get("code") or "", "descripcion": i.get("description") or "",
+                       "cantidad": i.get("quantity")} for i in cotizacion.get("items") or []],
+        }
+    return None
+
+
 def buscar_producto(empresa: str, codigo: str) -> dict | None:
     """El producto de Siigo con ese código exacto, o None."""
     codigo = (codigo or "").strip()

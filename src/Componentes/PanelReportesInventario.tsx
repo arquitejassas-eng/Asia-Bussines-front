@@ -208,9 +208,16 @@ export function ReporteInventarioPorTipo() {
       exportarHojasAExcel([
         { nombre: "Inventario", filas: filasProductos.map((g) => ({
           "Código": g.codigo, "Descripción": g.descripcion, "Tipo": g.familia, "Empresa": nombreEmpresa(g.empresa),
-          ...Object.fromEntries(columnasBodega.map((b) => [b, g.porBodega[b] ?? 0])),
+          ...Object.fromEntries(columnasBodega.map((b) => [`En ${b}`, g.porBodega[b] ?? 0])),
           "Total": g.total, "Apartado": g.apartado, "Libre": g.libre,
         })) },
+        // Una fila por producto y bodega: dice en qué bodega está cada cosa.
+        { nombre: "Por bodega", filas: [...productosFiltrados]
+          .sort((a, b) => compararTexto(a.bodega, b.bodega) || a.familia.localeCompare(b.familia) || a.codigo.localeCompare(b.codigo))
+          .map((p) => ({
+            "Bodega": p.bodega, "Código": p.codigo, "Descripción": p.descripcion, "Tipo": p.familia,
+            "Empresa": nombreEmpresa(p.empresa), "Cantidad": p.stock, "Apartado": p.apartado, "Libre": p.libre,
+          })) },
       ], `Inventario ${sufijo}.xlsx`);
     }
   }

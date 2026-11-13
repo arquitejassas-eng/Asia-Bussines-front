@@ -9,6 +9,8 @@ export type CotizacionParaImprimir = {
   // Traslado a una bodega sin inventario (San Gil): la hoja va con el camión,
   // dice para dónde va y lleva firmas de quien despacha, el conductor y quien recibe.
   trasladoA?: string;
+  // Traslado: la cotización hecha directo en Siigo para ese material.
+  cotizacionSiigo?: string;
 };
 
 const escapar = (texto: string) =>
@@ -33,7 +35,7 @@ export function imprimirCotizacion(ventana: Window, c: CotizacionParaImprimir) {
   const dato = (etiqueta: string, valor: string) => valor ? `<div><span>${etiqueta}:</span> ${escapar(valor)}</div>` : "";
   const tipo = c.trasladoA ? "Traslado" : "Cotización";
   const datos = c.trasladoA
-    ? `${dato("Sale de", c.bodegas)}${dato("Va para", c.trasladoA)}${dato("Fecha", c.fecha)}${dato("Creado por", c.vendedor)}`
+    ? `${dato("Sale de", c.bodegas)}${dato("Va para", c.trasladoA)}${c.cotizacionSiigo ? dato("Cotización Siigo", c.cotizacionSiigo) : ""}${dato("Fecha", c.fecha)}${dato("Creado por", c.vendedor)}`
     : `${dato("Cliente", c.cliente)}${dato("Fecha", c.fecha)}${dato("Vendedor", c.vendedor)}${dato(c.bodegas.includes("+") ? "Bodegas" : "Bodega", c.bodegas)}`;
   const firmas = c.trasladoA
     ? `<div class="firmas"><div>Despachó</div><div>Conductor / placa</div><div>Recibió en ${escapar(c.trasladoA)}</div></div>` : "";

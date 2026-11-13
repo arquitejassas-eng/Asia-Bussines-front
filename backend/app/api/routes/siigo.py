@@ -170,6 +170,23 @@ def sugerencias(datos: SugerenciasRequest, db: Session = Depends(get_db)) -> lis
     return respuesta
 
 
+class EnlazarSiigoRequest(BaseModel):
+    numero: str = Field(min_length=1, max_length=30)
+
+
+@router.post("/cotizaciones/{apartado_id}/enlazar", response_model=ApartadoResponse)
+def enlazar_cotizacion(apartado_id: int, datos: EnlazarSiigoRequest, db: Session = Depends(get_db),
+                       usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    """La cotización pendiente se hizo a mano en Siigo: se enlaza con esa (no crea nada allá)."""
+    apartado = srv_apartados.apartado_de_mi_bodega(db, apartado_id, usuario)
+    if not apartado.siigo_pendiente or apartado.traslado_a or apartado.orden_interna:
+        raise HTTPException(status_code=400, detail="Solo se enlaza una cotización que quedó pendiente de Siigo.")
+    siigo_cotizacion.enlazar_con_la_de_siigo(db, apartado, datos.numero)
+    db.commit()
+    return (db.query(Apartado).options(selectinload(Apartado.items).selectinload(ApartadoItem.producciones))
+            .filter(Apartado.id == apartado_id).populate_existing().one())
+
+
 @router.post("/cotizaciones/{apartado_id}", response_model=ApartadoResponse)
 def subir_cotizacion(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
     """Vuelve a intentar subir (o actualizar) en Siigo una cotización que quedó

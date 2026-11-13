@@ -414,6 +414,39 @@ def guardar_o_deshacer_en_siigo(db: Session, apartado: Apartado, siigo_id_antes:
         raise
 
 
+def enlazar_con_la_de_siigo(db: Session, apartado: Apartado, numero: str) -> dict:
+    """La cotización quedó pendiente (Siigo no la recibió) y la hicieron a mano
+    en Siigo: se enlaza con esa, SIN crear nada allá. Toma su número
+    (PEND-146 -> 4140). Devuelve lo que dice Siigo. No hace commit."""
+    from app.services import apartados as srv
+
+    if apartado.siigo_id:
+        raise HTTPException(status_code=400, detail=f"Esta cotización ya está enlazada con {apartado.siigo_numero} de Siigo.")
+    partes = partes_de_la_cotizacion(db, apartado) or [apartado]
+    try:
+        encontrada = siigo.buscar_cotizacion(apartado.empresa, numero)
+    except siigo.ErrorSiigo as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    if encontrada is None:
+        raise HTTPException(status_code=404, detail=f"No encuentro la cotización {numero} en el Siigo de {EMPRESAS_CONOCIDAS[apartado.empresa]}.")
+    otra = db.query(Apartado).filter(Apartado.siigo_id == encontrada["id"], Apartado.id.notin_([p.id for p in partes])).first()
+    if otra is not None:
+        raise HTTPException(status_code=400, detail=f"{encontrada['numero']} de Siigo ya está enlazada con la cotización {otra.numero_cotizacion}.")
+    nit = re.sub(r"[^0-9A-Za-z]", "", apartado.cliente_identificacion or "")
+    if nit and encontrada["cliente_identificacion"] and nit != re.sub(r"[^0-9A-Za-z]", "", encontrada["cliente_identificacion"]):
+        raise HTTPException(status_code=400, detail=(
+            f"{encontrada['numero']} de Siigo es de otro cliente ({encontrada['cliente'] or encontrada['cliente_identificacion']}), "
+            f"no del NIT/cédula {apartado.cliente_identificacion}. Revisa el número."))
+    consecutivo = encontrada["consecutivo"] or encontrada["numero"]
+    srv.exigir_numero_libre_en_la_empresa(db, consecutivo, apartado.empresa, excepto=[p.id for p in partes])
+    ahora = datetime.now(timezone.utc)
+    for parte in partes:
+        parte.siigo_id, parte.siigo_numero, parte.siigo_total = encontrada["id"], encontrada["numero"], encontrada["total"]
+        parte.fecha_siigo, parte.numero_cotizacion = ahora, consecutivo
+        parte.siigo_pendiente, parte.siigo_error = False, ""
+    return encontrada
+
+
 def sincronizar(db: Session, apartado: Apartado, usuario: Usuario) -> str:
     """Pasa la cotización a Siigo (la crea o la actualiza). Si Siigo falla, la
     cotización queda guardada en el programa marcada "pendiente de Siigo" con

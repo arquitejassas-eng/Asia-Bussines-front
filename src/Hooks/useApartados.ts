@@ -40,6 +40,8 @@ const FORMULARIO_VACIO = {
   bodegaId: "", empresa: "", materialEnCamino: false, numeroCotizacion: "", cliente: "", observaciones: "", ordenInterna: false,
   // Traslado a una bodega sin inventario en el sistema (ej. "San Gil"); "" = cotización.
   trasladoA: "",
+  // Traslado: la cotización que se hizo directo en Siigo (ej. "C-1-4140").
+  siigoNumeroTraslado: "",
   // Siigo: si va a Siigo (toda cotización nueva de una empresa conectada; el
   // número lo pone Siigo), cédula/NIT, vendedor e impuestos.
   deSiigo: true, clienteIdentificacion: "", siigoVendedor: "", siigoCentroCosto: "", siigoIva: true, siigoRetefuente: false,
@@ -72,6 +74,7 @@ type FormularioApartado = {
   ordenInterna: boolean;
   // Traslado a una bodega sin inventario (San Gil): sin cliente, precios ni Siigo.
   trasladoA: string;
+  siigoNumeroTraslado: string;
   deSiigo: boolean; clienteIdentificacion: string; siigoVendedor: string; siigoCentroCosto: string; siigoIva: boolean; siigoRetefuente: boolean;
   items: ItemFormulario[];
 };
@@ -262,7 +265,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
     const empresaCotizacion = (partes.find((p) => p.numeroCotizacion === numeroSinEmpresa(p.numeroCotizacion)) ?? ap).empresa;
     esOrdenInterna.current = ap.ordenInterna;
     setFormulario({
-      ordenInterna: ap.ordenInterna, trasladoA: ap.trasladoA || "",
+      ordenInterna: ap.ordenInterna, trasladoA: ap.trasladoA || "", siigoNumeroTraslado: ap.trasladoA ? ap.siigoNumero : "",
       bodegaId: String(ap.bodegaId), empresa: empresaCotizacion, materialEnCamino: partes.some((p) => (p.faltantes?.length ?? 0) > 0),
       numeroCotizacion: numeroSinEmpresa(ap.numeroCotizacion), cliente: ap.cliente, observaciones: ap.observaciones,
       deSiigo: Boolean(ap.siigoId || ap.siigoPendiente), clienteIdentificacion: ap.clienteIdentificacion || "", siigoVendedor: ap.siigoVendedor ? String(ap.siigoVendedor) : "",
@@ -713,6 +716,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
         // El de un traslado lo pone el sistema ("TR-0001").
         numero_cotizacion: esTraslado ? "TR" : enSiigo && !editandoId ? "SIIGO" : formulario.numeroCotizacion.trim(),
         traslado_a: formulario.trasladoA.trim(),
+        siigo_numero_traslado: esTraslado ? formulario.siigoNumeroTraslado.trim() : "",
         empresa: formulario.empresa,
         cliente: formulario.cliente.trim(),
         observaciones: formulario.observaciones,
@@ -808,6 +812,26 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
     } catch (err) {
       setErrorAccionApartado(err instanceof ErrorApi ? err.message : "No se pudo subir la cotización a Siigo.");
       await cargarApartados();
+    } finally {
+      setSubiendoASiigo(null);
+    }
+  }
+
+  // Pendiente que se hizo a mano en Siigo: se enlaza con esa sin crear otra.
+  async function enlazarApartadoConSiigo(id: number, numeroActual: string) {
+    const numero = window.prompt(
+      `¿Qué número quedó en Siigo para la ${numeroActual}? (ej. 4140 o C-1-4140)\n`
+      + "Se enlaza con esa cotización de Siigo sin crear otra; la cotización toma ese número.");
+    if (!numero || !numero.trim()) return;
+    setErrorAccionApartado("");
+    setAvisoSiigo(null);
+    setSubiendoASiigo(id);
+    try {
+      const enlazada = await api.post<{ numero_cotizacion: string; siigo_numero: string }>(`/siigo/cotizaciones/${id}/enlazar`, { numero: numero.trim() });
+      if (enlazada) setAvisoSiigo({ tipo: "ok", texto: `${numeroActual} quedó enlazada con ${enlazada.siigo_numero} de Siigo: ahora es la ${enlazada.numero_cotizacion}.` });
+      await cargarApartados();
+    } catch (err) {
+      setErrorAccionApartado(err instanceof ErrorApi ? err.message : "No se pudo enlazar con Siigo.");
     } finally {
       setSubiendoASiigo(null);
     }
@@ -913,7 +937,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
     disponibilidadItems, consultarDisponibilidadItem,
     resultadosBusquedaProducto, buscarProductoParaItem, seleccionarProductoParaItem,
 
-    siigo, subirApartadoASiigo, subiendoASiigo, avisoSiigo, setAvisoSiigo,
+    siigo, subirApartadoASiigo, enlazarApartadoConSiigo, subiendoASiigo, avisoSiigo, setAvisoSiigo,
     errorAccionApartado, cancelarApartado, eliminarApartado, enviarApartadoAProduccion, devolverLineaABodega,
     cancelarVarios, enviarVariosAProduccion, quitarVariosDeProduccion, eliminarVarios,
     marcarApartadoProduccionTerminada, marcarApartadoEntregado,

@@ -1151,6 +1151,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                  else datos.cliente or ("Orden interna (stock)" if datos.orden_interna else "")),
         orden_interna=datos.orden_interna,
         traslado_a=datos.traslado_a,
+        # Solo un traslado lleva aquí el número de Siigo sin estar subido por el programa (siigo_id vacío).
+        siigo_numero=_numero_siigo_del_traslado(db, datos),
         creado_por=usuario.correo,
         fecha_creacion=ahora,
         estado=EstadoApartado.APARTADO,
@@ -1184,6 +1186,24 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
             ))
 
     return apartado
+
+
+def _numero_siigo_del_traslado(db: Session, datos: ApartadoCrear) -> str:
+    """La cotización de Siigo de un traslado: "4140" queda "C-1-4140". Una
+    misma cotización no puede ir en dos traslados."""
+    numero = re.sub(r"\s+", "", datos.siigo_numero_traslado or "").upper()
+    if not numero or not datos.traslado_a:
+        return ""
+    if numero.isdigit():
+        numero = f"C-1-{numero}"
+    repetido = (
+        db.query(Apartado)
+        .filter(Apartado.traslado_a != "", Apartado.siigo_numero == numero, Apartado.estado != EstadoApartado.CANCELADO)
+        .first()
+    )
+    if repetido is not None:
+        raise HTTPException(status_code=400, detail=f"La cotización {numero} de Siigo ya está en el traslado {repetido.numero_cotizacion}.")
+    return numero
 
 
 def datos_siigo_cotizacion(datos: ApartadoCrear) -> dict:

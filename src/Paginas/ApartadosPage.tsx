@@ -6,6 +6,7 @@ import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
 import { IconoSubir } from "../Componentes/Iconos";
 import ModalDefinirConversion from "../Componentes/ModalDefinirConversion";
+import { CampoCotizacionSiigoTraslado, VerCotizacionSiigoTraslado } from "../Componentes/CotizacionSiigoTraslado";
 import "../Style/Rollos.css";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { EMPRESAS, AMBAS_EMPRESAS, nombreMaterial } from "../Utils/empresas";
@@ -567,7 +568,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       // Sin kilos ni vendedor de Siigo: la hoja sale igual.
     }
     imprimirCotizacion(ventana, {
-      numero: ap.siigoNumero || ap.numeroCotizacion,
+      numero: ap.trasladoA ? ap.numeroCotizacion : ap.siigoNumero || ap.numeroCotizacion,
+      cotizacionSiigo: ap.trasladoA ? ap.siigoNumero || undefined : undefined,
       empresa: (EMPRESAS[ap.empresa] || ap.empresa || "").toUpperCase(),
       cliente: ap.cliente,
       fecha: formatearFechaColombia(ap.fechaCreacion, false),
@@ -751,6 +753,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         <button title={ap.siigoError} disabled={a.subiendoASiigo === ap.id} onClick={() => a.subirApartadoASiigo(ap.id)}>
           {a.subiendoASiigo === ap.id ? "Enviando a Siigo..." : ap.siigoId ? "Actualizar en Siigo" : "Subir a Siigo"}
         </button>
+      )}
+      {a.puedeEditarApartados && ap.siigoPendiente && !ap.siigoId && ap.estado !== "cancelado" && (
+        <button title="Si ya la hicieron a mano en Siigo: se enlaza con esa, sin crear otra" disabled={a.subiendoASiigo === ap.id}
+          onClick={() => a.enlazarApartadoConSiigo(ap.id, ap.numeroCotizacion)}>Enlazar con una de Siigo</button>
       )}
       {a.puedeCancelarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
@@ -1031,6 +1037,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     <input id="traslado-destino" value={a.formulario.trasladoA}
                       onChange={(e) => a.actualizarCampoApartado("trasladoA", e.target.value || " ")} />
                   </div>
+                )}
+                {a.formulario.trasladoA && !a.editandoId && (
+                  <CampoCotizacionSiigoTraslado empresa={a.formulario.empresa} numero={a.formulario.siigoNumeroTraslado}
+                    alCambiar={(valor) => a.actualizarCampoApartado("siigoNumeroTraslado", valor)} />
                 )}
                 {/* La que va a Siigo no lleva número aquí: lo pone Siigo. Un traslado lleva el suyo ("TR-0001"). */}
                 {!a.siigo.enSiigo && !a.formulario.trasladoA && (
@@ -1648,6 +1658,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                 <span className="siigo-etiqueta siigo-etiqueta-pendiente" title={ap.siigoError}>
                                   {ap.siigoId ? "Siigo sin actualizar" : "Pendiente de Siigo"}
                                 </span>
+                              ) : ap.trasladoA && ap.siigoNumero ? (
+                                <VerCotizacionSiigoTraslado empresa={ap.empresa} numero={ap.siigoNumero} />
                               ) : ap.siigoNumero && (
                                 <span className="siigo-etiqueta" title={ap.siigoTotal != null ? `Total en Siigo: ${ap.siigoTotal.toLocaleString("es-CO", { style: "currency", currency: "COP" })}` : undefined}>
                                   Siigo {ap.siigoNumero}

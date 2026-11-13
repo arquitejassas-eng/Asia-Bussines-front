@@ -229,6 +229,21 @@ def listar_reservas_por_codigo(
     return srv.metros_reservados_por_bodega(db, bodega_id=usuario.bodega_id)
 
 
+@router.get("/cotizacion-siigo", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
+def cotizacion_de_siigo(empresa: str, numero: str) -> dict:
+    """Muestra una cotización hecha directo en Siigo (para los traslados a San Gil). Solo lectura."""
+    empresa = (empresa or "").strip().upper()
+    if empresa not in siigo.EMPRESAS_CONOCIDAS:
+        raise HTTPException(status_code=400, detail="Elige primero de qué empresa es el material.")
+    try:
+        cotizacion = siigo.buscar_cotizacion(empresa, numero)
+    except siigo.ErrorSiigo as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    if cotizacion is None:
+        raise HTTPException(status_code=404, detail=f"No encuentro la cotización {numero} en el Siigo de {siigo.EMPRESAS_CONOCIDAS[empresa]}.")
+    return cotizacion
+
+
 @router.get("/impresion", dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
 def datos_para_imprimir(ids: str = Query(..., description="ids de las partes de la cotización, separados por coma"),
                         db: Session = Depends(get_db)) -> dict:
