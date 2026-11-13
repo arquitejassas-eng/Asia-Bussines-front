@@ -2,7 +2,7 @@
 // cliente, fecha, vendedor, bodega) y la descripción de cada línea. Se abre en
 // una ventana aparte y se manda a imprimir.
 
-export type LineaParaImprimir = { descripcion: string; detalle?: string };
+export type LineaParaImprimir = { descripcion: string; detalle?: string; cantidad?: string };
 export type CotizacionParaImprimir = {
   numero: string; empresa: string; cliente: string; fecha: string; vendedor: string; bodegas: string;
   lineas: LineaParaImprimir[]; kilos: number; lineasSinPeso: number;
@@ -31,7 +31,7 @@ export function imprimirCotizacion(ventana: Window, c: CotizacionParaImprimir) {
       + (c.lineasSinPeso ? ` <span>(sin contar ${c.lineasSinPeso} línea${c.lineasSinPeso === 1 ? "" : "s"} de lámina sin peso)</span>` : "") + "</p>"
     : "";
   const filas = c.lineas.map((l, i) => `
-    <tr><td class="num">${i + 1}</td><td>${escapar(l.descripcion)}${l.detalle ? `<div class="detalle">${escapar(l.detalle)}</div>` : ""}</td></tr>`).join("");
+    <tr><td class="num">${i + 1}</td><td>${escapar(l.descripcion)}${l.detalle ? `<div class="detalle">${escapar(l.detalle)}</div>` : ""}</td><td class="cantidad">${escapar(l.cantidad || "")}</td></tr>`).join("");
   const dato = (etiqueta: string, valor: string) => valor ? `<div><span>${etiqueta}:</span> ${escapar(valor)}</div>` : "";
   const tipo = c.trasladoA ? "Traslado" : "Cotización";
   const datos = c.trasladoA
@@ -53,6 +53,7 @@ export function imprimirCotizacion(ventana: Window, c: CotizacionParaImprimir) {
   th, td { border-bottom: 1px solid #bbb; padding: 7px 6px; text-align: left; vertical-align: top; }
   th { background: #eee; font-size: 12px; text-transform: uppercase; }
   td.num, th.num { width: 32px; text-align: center; }
+  td.cantidad, th.cantidad { width: 1%; white-space: nowrap; text-align: right; font-weight: bold; }
   .detalle { font-size: 11px; color: #444; margin-top: 2px; }
   .kilos { margin-top: 14px; font-size: 14px; }
   .kilos span { font-size: 12px; color: #444; }
@@ -64,7 +65,7 @@ export function imprimirCotizacion(ventana: Window, c: CotizacionParaImprimir) {
 <div class="datos">
   ${datos}
 </div>
-<table><thead><tr><th class="num">#</th><th>Descripción</th></tr></thead><tbody>${filas}</tbody></table>
+<table><thead><tr><th class="num">#</th><th>Descripción</th><th class="cantidad">Cantidad</th></tr></thead><tbody>${filas}</tbody></table>
 ${kilos}
 ${firmas}
 </body></html>`);

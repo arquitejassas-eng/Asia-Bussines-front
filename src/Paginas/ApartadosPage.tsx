@@ -559,7 +559,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           variasBodegas ? `Sale de ${parte.bodegaNombre}` : "",
           it.modalidad === "por_stock" && it.medida ? `CORTAR a ${num(it.medida)} m` : "",
         ].filter(Boolean).join(" · ");
-        return { descripcion, detalle };
+        // La cantidad va aparte: muchas descripciones no la dicen (ej. "FIBRA DE VIDRIO ... DE 6").
+        const cantidad = it.rolloId ? "1 rollo" : cantidadLinea(it);
+        return { descripcion, detalle, cantidad };
       });
     let extra = { kilos: 0, lineas_sin_peso: 0, vendedor: "" };
     try {
