@@ -340,6 +340,27 @@ def _repartir_en_orden(items: list[ApartadoItem], pendiente, fisico: float) -> d
     return cubierto
 
 
+def _repartir_lamina(items: list[ApartadoItem], fisico: float) -> dict[int, float]:
+    """Cobertura de las líneas de lámina de un código. Solo los rollos
+    vendidos completos se quedan con su material (por orden de creación);
+    las cotizaciones de cortes NO se bloquean entre ellas: cada una se cubre
+    con lo que dejan los rollos completos, sin importar si es vieja o nueva
+    (una cotización que dura dos meses no frena a las que fabrican ya)."""
+    pendiente = lambda it: max(float((it.metros_requeridos or 0) - (it.metros_consumidos or 0)), 0.0)
+    completos = [it for it in items if it.rollo_id is not None]
+    cubierto = _repartir_en_orden(completos, pendiente, fisico)
+    libre = max(float(fisico) - sum(cubierto.values()), 0.0)
+    usado: dict[int, float] = {}
+    for item in items:
+        if item.rollo_id is not None:
+            continue
+        # Las líneas de una misma cotización sí suman entre ellas.
+        resta = max(libre - usado.get(item.apartado_id, 0.0), 0.0)
+        cubierto[item.id] = round(min(pendiente(item), resta), 2)
+        usado[item.apartado_id] = usado.get(item.apartado_id, 0.0) + cubierto[item.id]
+    return cubierto
+
+
 def cobertura_producto(db: Session, *, producto: Producto) -> dict[int, float]:
     """Unidades realmente cubiertas de cada ítem POR_STOCK activo del producto."""
     items = _items_activos_en_orden(db, bodega_id=producto.bodega_id,
@@ -407,9 +428,7 @@ def faltantes_de_apartados(db: Session, apartados: list[Apartado],
             else:
                 # Cotización sin empresa (antigua): cuenta todo lo del código.
                 lineas, fisico = en_orden.get(clave, []), (fisicos.get(clave, 0.0) if e else fisicos_codigo.get((b, c), 0.0))
-            coberturas[clave] = _repartir_en_orden(
-                lineas, lambda it: (it.metros_requeridos or 0) - (it.metros_consumidos or 0), fisico,
-            )
+            coberturas[clave] = _repartir_lamina(lineas, fisico)
     # Los productos de todas las líneas de stock, de una sola consulta.
     ids_producto = {it.producto_id for a in activos for it in a.items
                     if it.modalidad == ModalidadApartado.POR_STOCK and it.producto_id}
@@ -581,13 +600,12 @@ def validar_reserva_rollos(
         .scalar() or 0), 2)
     # Con material "en camino" lo reservado puede superar lo físico: lo libre
     # nunca baja de 0 y la reserva propia solo cuenta lo que de verdad está
-    # cubierto (por orden de creación), así una cotización anterior produce
-    # aunque una más nueva esté esperando material.
+    # cubierto (ver _repartir_lamina: solo los rollos completos bloquean), así
+    # una cotización produce aunque otra esté esperando material.
     libre = round(max(fisico - reservado, 0), 2)
     if apartado_item_id is not None:
         # Varias líneas producidas juntas: su reserva propia es la de todas.
-        cobertura = _repartir_en_orden(_items_activos_en_orden(db, bodega_id=bodega_id, filtro=filtro),
-                                       lambda it: (it.metros_requeridos or 0) - (it.metros_consumidos or 0), fisico)
+        cobertura = _repartir_lamina(_items_activos_en_orden(db, bodega_id=bodega_id, filtro=filtro), fisico)
         cubierto = sum(cobertura.get(i, 0) for i in (apartado_item_id, *otros_item_ids))
         metros_reserva_propia = min(metros_reserva_propia, cubierto)
     neto = round(metros_salen - metros_reserva_propia, 2)
