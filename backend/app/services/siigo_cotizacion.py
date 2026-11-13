@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.apartado import Apartado, ApartadoItem, ModalidadApartado
+from app.models.apartado import Apartado, ApartadoItem, EstadoApartado, ModalidadApartado
 from app.models.equivalencias import TablaEspesorEquivalencia
 from app.models.producto import Producto
 from app.models.siigo import SiigoPreferencia
@@ -429,7 +429,10 @@ def enlazar_con_la_de_siigo(db: Session, apartado: Apartado, numero: str) -> dic
         raise HTTPException(status_code=502, detail=str(error)) from error
     if encontrada is None:
         raise HTTPException(status_code=404, detail=f"No encuentro la cotización {numero} en el Siigo de {EMPRESAS_CONOCIDAS[apartado.empresa]}.")
-    otra = db.query(Apartado).filter(Apartado.siigo_id == encontrada["id"], Apartado.id.notin_([p.id for p in partes])).first()
+    # Una anulada no cuenta: ej. la 4150 hecha aparte, anulada para separarla
+    # bien de la 4009, deja libre su cotización de Siigo.
+    otra = db.query(Apartado).filter(Apartado.siigo_id == encontrada["id"], Apartado.id.notin_([p.id for p in partes]),
+                                     Apartado.estado != EstadoApartado.CANCELADO).first()
     if otra is not None:
         raise HTTPException(status_code=400, detail=f"{encontrada['numero']} de Siigo ya está enlazada con la cotización {otra.numero_cotizacion}.")
     nit = re.sub(r"[^0-9A-Za-z]", "", apartado.cliente_identificacion or "")

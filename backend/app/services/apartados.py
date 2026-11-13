@@ -1808,6 +1808,8 @@ def separar_apartado(db: Session, apartado_id: int, datos: SepararApartadoReques
         numero_cotizacion=numero,
         empresa=original.empresa,
         cliente=(datos.cliente if datos.cliente is not None else original.cliente).strip(),
+        # Para "Enlazar con una de Siigo": se compara el NIT del cliente.
+        cliente_identificacion=original.cliente_identificacion or "",
         creado_por=usuario.correo,
         fecha_creacion=original.fecha_creacion,
         estado=EstadoApartado.PRODUCCION_TERMINADA if producida else EstadoApartado.APARTADO,

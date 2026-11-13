@@ -756,7 +756,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           {a.subiendoASiigo === ap.id ? "Enviando a Siigo..." : ap.siigoId ? "Actualizar en Siigo" : "Subir a Siigo"}
         </button>
       )}
-      {a.puedeEditarApartados && ap.siigoPendiente && !ap.siigoId && ap.estado !== "cancelado" && (
+      {a.puedeEditarApartados && (ap.siigoPendiente || ap.observaciones.includes("Separada de la cotización"))
+        && !ap.siigoId && ap.estado !== "cancelado" && !ap.trasladoA && !ap.ordenInterna && (
         <button title="Si ya la hicieron a mano en Siigo: se enlaza con esa, sin crear otra" disabled={a.subiendoASiigo === ap.id}
           onClick={() => a.enlazarApartadoConSiigo(ap.id, ap.numeroCotizacion)}>Enlazar con una de Siigo</button>
       )}

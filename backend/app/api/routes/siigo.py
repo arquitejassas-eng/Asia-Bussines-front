@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
-from app.models.apartado import Apartado, ApartadoItem
+from app.models.apartado import Apartado, ApartadoItem, EstadoApartado
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.apartados import ApartadoResponse
 from app.services import apartados as srv_apartados
@@ -179,8 +179,11 @@ def enlazar_cotizacion(apartado_id: int, datos: EnlazarSiigoRequest, db: Session
                        usuario: Usuario = Depends(usuario_actual)) -> Apartado:
     """La cotización pendiente se hizo a mano en Siigo: se enlaza con esa (no crea nada allá)."""
     apartado = srv_apartados.apartado_de_mi_bodega(db, apartado_id, usuario)
-    if not apartado.siigo_pendiente or apartado.traslado_a or apartado.orden_interna:
-        raise HTTPException(status_code=400, detail="Solo se enlaza una cotización que quedó pendiente de Siigo.")
+    # Pendiente de Siigo, o separada de otra (la nueva no queda en Siigo y ya
+    # la habían hecho allá).
+    if (apartado.siigo_id or apartado.traslado_a or apartado.orden_interna
+            or apartado.estado == EstadoApartado.CANCELADO):
+        raise HTTPException(status_code=400, detail="Solo se enlaza una cotización activa que todavía no está en Siigo.")
     siigo_cotizacion.enlazar_con_la_de_siigo(db, apartado, datos.numero)
     db.commit()
     return (db.query(Apartado).options(selectinload(Apartado.items).selectinload(ApartadoItem.producciones))
