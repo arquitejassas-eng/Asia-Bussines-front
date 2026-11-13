@@ -266,6 +266,23 @@ def cuerpo_para_siigo(apartado: Apartado, items: list[ApartadoItem], config: dic
     }
 
 
+def _con_linea_del_error(mensaje: str, items: list[ApartadoItem]) -> str:
+    """Siigo dice la línea como "items[12]" (cuenta desde 0 y solo las que se
+    envían, de todas las bodegas): se cambia por la línea que se ve en pantalla."""
+    enviados = [i for i in items if not i.siigo_incluido]
+
+    def linea(coincidencia: re.Match) -> str:
+        posicion = int(coincidencia.group(1))
+        if posicion >= len(enviados):
+            return coincidencia.group(0)
+        item = enviados[posicion]
+        bodega = item.apartado.bodega_nombre if item.apartado is not None else ""
+        return (f"línea «{(item.descripcion or '').strip()[:80]}»"
+                f"{f' de {bodega}' if bodega else ''}, producto de Siigo {item.siigo_producto or '—'}")
+
+    return re.sub(r"items\[(\d+)\](?:\.\w+)?", linea, mensaje)
+
+
 def es_de_siigo(apartado: Apartado) -> bool:
     """La cotización va (o ya está) en Siigo: se creó en el programa con la
     empresa conectada. Las viejas (hechas en Siigo a mano) no se tocan."""
@@ -310,7 +327,7 @@ def _enviar(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apa
         else:
             respuesta = _crear_sin_repetir(db, apartado, partes, empresa, cuerpo)
     except siigo.ErrorSiigo as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+        raise HTTPException(status_code=502, detail=_con_linea_del_error(str(error), items)) from error
     ahora = datetime.now(timezone.utc)
     for parte in partes:
         parte.siigo_id = str(respuesta.get("id") or siigo_id)

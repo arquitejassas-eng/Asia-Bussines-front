@@ -86,5 +86,10 @@ class PrestarATerceroRequest(BaseModel):
     observaciones: str = Field(default="", max_length=500)
 
 
+class PrestarDesdeCotizacionRequest(BaseModel):
+    numero_cotizacion: str = Field(min_length=1, max_length=32)
+    tercero: str = Field(min_length=1, max_length=150)
+
+
 class DevolverDeTerceroRequest(BaseModel):
     cantidad: float = Field(gt=0)

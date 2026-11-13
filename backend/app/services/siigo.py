@@ -71,6 +71,9 @@ def esta_configurada(empresa: str) -> bool:
 def _mensaje_de_error(respuesta: httpx.Response) -> tuple[str, str]:
     """(código, mensaje) del formato de errores de Siigo:
     {"Errors": [{"Code": "...", "Message": "...", "Params": [...]}]}."""
+    if "<html" in respuesta.text[:500].lower():
+        # Página de error de su firewall (ej. 403 "The request is blocked"), no de la API.
+        return "", f"Siigo no está aceptando conexiones en este momento (error {respuesta.status_code}). Intenta en unos minutos."
     try:
         errores = respuesta.json().get("Errors") or []
     except ValueError:

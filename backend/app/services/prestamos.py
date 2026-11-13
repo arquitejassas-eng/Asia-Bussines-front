@@ -173,6 +173,61 @@ def prestar_rollo_a_tercero(db: Session, *, rollo_id: int, tercero: str, observa
     return prestamo
 
 
+def prestar_desde_cotizacion(db: Session, *, numero: str, tercero: str, usuario: Usuario) -> list[PrestamoEmpresa]:
+    """Hicieron una cotización para el préstamo y ya se le dio salida: lo que
+    salió (productos de stock) queda como préstamo a la empresa externa,
+    enlazado a esa cotización. El stock NO se descuenta otra vez: ya salió."""
+    from app.models.apartado import ApartadoItem, EstadoApartado, ModalidadApartado
+    from app.services.apartados import numero_base
+
+    nombre = _nombre_tercero(tercero)
+    buscado = numero_base(numero)
+    if not buscado:
+        raise HTTPException(status_code=400, detail="Escribe el número de la cotización.")
+    apartados = [
+        a for a in db.query(Apartado).filter(Apartado.numero_cotizacion.like(f"{buscado}%"), Apartado.estado != EstadoApartado.CANCELADO).all()
+        if numero_base(a.numero_cotizacion) == buscado
+    ]
+    if not apartados:
+        raise HTTPException(status_code=404, detail=f"No encuentro la cotización {buscado} (o está cancelada).")
+    ids = [a.id for a in apartados]
+    if db.query(PrestamoEmpresa).filter(PrestamoEmpresa.apartado_id.in_(ids),
+                                        PrestamoEmpresa.origen.in_((PRESTADO_A_TERCERO, DEVUELTO_POR_TERCERO))).first():
+        raise HTTPException(status_code=400, detail=f"La cotización {buscado} ya está anotada como préstamo.")
+    lineas = (
+        db.query(ApartadoItem)
+        .filter(ApartadoItem.apartado_id.in_(ids), ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
+                ApartadoItem.producto_id.isnot(None))
+        .order_by(ApartadoItem.id).all()
+    )
+    if not lineas:
+        raise HTTPException(status_code=400, detail=f"La cotización {buscado} no tiene productos de stock para prestar.")
+    if any(not l.stock_descontado for l in lineas):
+        raise HTTPException(
+            status_code=400,
+            detail=f"La cotización {buscado} todavía no ha salido de la bodega: dale Salida primero y luego anótala aquí "
+                   "(o cancélala y presta el producto directo aquí).",
+        )
+    por_id = {a.id: a for a in apartados}
+    ahora = datetime.now(timezone.utc)
+    prestamos = []
+    for linea in lineas:
+        producto, apartado = linea.producto, por_id[linea.apartado_id]
+        prestamo = PrestamoEmpresa(
+            fecha=ahora, empresa_presta=((producto.empresa if producto else "") or linea.empresa_de_linea or "").strip().upper(),
+            empresa_recibe=PRESTADOR_EXTERNO, prestador=nombre[:150],
+            bodega_id=producto.bodega_id if producto and producto.bodega_id is not None else apartado.bodega_id,
+            apartado_id=apartado.id, numero_cotizacion=apartado.numero_cotizacion, tipo=PRODUCTO,
+            codigo=producto.codigo if producto else (linea.codigo_interno or ""),
+            descripcion=((producto.descripcion if producto else "") or linea.descripcion or "")[:255],
+            cantidad=round(float(linea.cantidad), 2), unidad="und", referencia_rollo="", origen=PRESTADO_A_TERCERO,
+            usuario=usuario.correo,
+        )
+        db.add(prestamo)
+        prestamos.append(prestamo)
+    return prestamos
+
+
 def _nombre_tercero(tercero: str) -> str:
     nombre = " ".join((tercero or "").split())
     if not nombre:

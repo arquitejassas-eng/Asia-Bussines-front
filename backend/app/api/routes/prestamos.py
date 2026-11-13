@@ -8,7 +8,8 @@ from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.prestamos import (
-    DevolverDeTerceroRequest, PrestamoResponse, PrestarATerceroRequest, ReportePrestamosResponse, SaldarPrestamosRequest,
+    DevolverDeTerceroRequest, PrestamoResponse, PrestarATerceroRequest, PrestarDesdeCotizacionRequest,
+    ReportePrestamosResponse, SaldarPrestamosRequest,
 )
 from app.services import prestamos as srv
 from app.services.apartados import MOTIVO_SACADO_SIN_EXISTENCIA, kilos_rollo
@@ -82,6 +83,17 @@ def prestar_a_tercero(datos: PrestarATerceroRequest, db: Session = Depends(get_d
     db.commit()
     db.refresh(prestamo)
     return prestamo
+
+
+@router.post("/desde-cotizacion", response_model=list[PrestamoResponse])
+def prestar_desde_cotizacion(datos: PrestarDesdeCotizacionRequest, db: Session = Depends(get_db),
+                             usuario: Usuario = Depends(usuario_actual)):
+    """Lo que ya salió con una cotización hecha para el préstamo queda como préstamo a la empresa externa."""
+    prestamos = srv.prestar_desde_cotizacion(db, numero=datos.numero_cotizacion, tercero=datos.tercero, usuario=usuario)
+    db.commit()
+    for prestamo in prestamos:
+        db.refresh(prestamo)
+    return prestamos
 
 
 @router.post("/{prestamo_id}/devolver", response_model=PrestamoResponse)

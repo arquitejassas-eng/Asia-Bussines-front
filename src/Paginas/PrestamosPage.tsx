@@ -63,7 +63,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
   // Prestar a una empresa externa (ej. caballetes): sale del stock y queda aquí hasta que lo devuelvan.
   const [mostrarPrestar, setMostrarPrestar] = useState(false);
-  const [prestarQue, setPrestarQue] = useState<"producto" | "rollo">("producto");
+  const [prestarQue, setPrestarQue] = useState<"cotizacion" | "producto" | "rollo">("cotizacion");
+  const [prestarCotizacion, setPrestarCotizacion] = useState("");
   const [prestarBodega, setPrestarBodega] = useState("");
   const [productosBodega, setProductosBodega] = useState<ProductoBodega[]>([]);
   const [buscarProducto, setBuscarProducto] = useState("");
@@ -100,6 +101,26 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   async function prestar(e: React.FormEvent) {
     e.preventDefault();
     setErrorPrestar("");
+    if (prestarQue === "cotizacion") {
+      if (!prestarCotizacion.trim()) { setErrorPrestar("Escribe el número de la cotización del préstamo."); return; }
+      if (!prestarTercero.trim()) { setErrorPrestar("Escribe a qué empresa se le presta."); return; }
+      setPrestando(true);
+      try {
+        const anotados = await api.post<Prestamo[]>("/prestamos/desde-cotizacion", {
+          numero_cotizacion: prestarCotizacion.trim(), tercero: prestarTercero.trim(),
+        }) || [];
+        setAviso(`Listo: la cotización ${prestarCotizacion.trim()} quedó como préstamo a ${prestarTercero.trim()}: `
+          + anotados.map((p) => `${p.cantidad} ${p.codigo}`).join(", ") + ".");
+        setMostrarPrestar(false);
+        setPrestarCotizacion(""); setPrestarTercero("");
+        await cargar();
+      } catch (err) {
+        setErrorPrestar(err instanceof ErrorApi ? err.message : "No se pudo anotar el préstamo.");
+      } finally {
+        setPrestando(false);
+      }
+      return;
+    }
     const esRollo = prestarQue === "rollo";
     const cantidad = esRollo ? Number(productoElegido?.stock) : Number(prestarCantidad);
     if (!productoElegido) { setErrorPrestar(esRollo ? "Elige el rollo que vas a prestar." : "Elige el producto que vas a prestar."); return; }
@@ -249,7 +270,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 (botón <strong>Devolver</strong>) o lo paguen (<strong>Saldar</strong>). Un rollo se presta completo.
               </p>
               <div className="rollo-prestado-opciones" role="radiogroup" aria-label="¿Qué prestas?" style={{ marginBottom: "0.75rem" }}>
-                {([["producto", "Producto (ej. caballetes)"], ["rollo", "Rollo completo"]] as const).map(([valor, texto]) => (
+                {([["cotizacion", "Desde una cotización"], ["producto", "Producto (ej. caballetes)"], ["rollo", "Rollo completo"]] as const).map(([valor, texto]) => (
                   <label key={valor} className={prestarQue === valor ? "rollo-prestado-activo" : ""}>
                     <input type="radio" name="prestar-que" value={valor} checked={prestarQue === valor}
                       onChange={() => { setPrestarQue(valor); setPrestarProducto(""); setBuscarProducto(""); }} />
@@ -257,20 +278,35 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   </label>
                 ))}
               </div>
+              {prestarQue === "cotizacion" && (
+                <p className="inventario-carga-ayuda">
+                  Si hicieron una cotización para el préstamo y <strong>ya se le dio salida</strong>, escribe su número:
+                  lo que salió queda aquí como préstamo, con el número de la cotización, sin descontar el stock otra vez.
+                </p>
+              )}
               <div className="inventario-form-grid">
+                {prestarQue === "cotizacion" && (
+                  <div>
+                    <label htmlFor="prestar-cotizacion">Número de la cotización *</label>
+                    <input id="prestar-cotizacion" maxLength={32} placeholder="Ej. 4140" value={prestarCotizacion}
+                      onChange={(e) => setPrestarCotizacion(e.target.value)} />
+                  </div>
+                )}
                 <div>
                   <label htmlFor="prestar-tercero">¿A qué empresa se le presta? *</label>
                   <input id="prestar-tercero" maxLength={150} placeholder="Ej. Constructora XYZ" value={prestarTercero}
                     onChange={(e) => setPrestarTercero(e.target.value)} />
                 </div>
-                <div>
-                  <label htmlFor="prestar-bodega">¿De qué bodega sale? *</label>
-                  <select id="prestar-bodega" value={prestarBodega} onChange={(e) => setPrestarBodega(e.target.value)}>
-                    <option value="">Elige la bodega</option>
-                    {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-                  </select>
-                </div>
-                {prestarBodega && (
+                {prestarQue !== "cotizacion" && (
+                  <div>
+                    <label htmlFor="prestar-bodega">¿De qué bodega sale? *</label>
+                    <select id="prestar-bodega" value={prestarBodega} onChange={(e) => setPrestarBodega(e.target.value)}>
+                      <option value="">Elige la bodega</option>
+                      {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                    </select>
+                  </div>
+                )}
+                {prestarQue !== "cotizacion" && prestarBodega && (
                   <div>
                     <label htmlFor="prestar-buscar">Buscar producto</label>
                     <input id="prestar-buscar" type="search" value={buscarProducto}
@@ -278,7 +314,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       onChange={(e) => setBuscarProducto(e.target.value)} />
                   </div>
                 )}
-                {prestarBodega && (
+                {prestarQue !== "cotizacion" && prestarBodega && (
                   <div>
                     <label htmlFor="prestar-producto">{prestarQue === "rollo" ? "Rollo *" : "Producto *"}</label>
                     <select id="prestar-producto" value={prestarProducto} onChange={(e) => setPrestarProducto(e.target.value)}>
@@ -300,11 +336,13 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       onChange={(e) => setPrestarCantidad(e.target.value)} />
                   </div>
                 )}
-                <div>
-                  <label htmlFor="prestar-observaciones">Observaciones</label>
-                  <input id="prestar-observaciones" maxLength={500} placeholder="Ej. los recoge Juan, devuelven en 15 días"
-                    value={prestarObservaciones} onChange={(e) => setPrestarObservaciones(e.target.value)} />
-                </div>
+                {prestarQue !== "cotizacion" && (
+                  <div>
+                    <label htmlFor="prestar-observaciones">Observaciones</label>
+                    <input id="prestar-observaciones" maxLength={500} placeholder="Ej. los recoge Juan, devuelven en 15 días"
+                      value={prestarObservaciones} onChange={(e) => setPrestarObservaciones(e.target.value)} />
+                  </div>
+                )}
               </div>
               {errorPrestar && <p className="inventario-error">{errorPrestar}</p>}
               <div className="inventario-form-botones">
