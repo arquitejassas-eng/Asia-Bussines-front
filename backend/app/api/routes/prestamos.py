@@ -85,6 +85,12 @@ def prestar_a_tercero(datos: PrestarATerceroRequest, db: Session = Depends(get_d
     return prestamo
 
 
+@router.get("/desde-cotizacion/vista")
+def vista_prestamo_desde_cotizacion(numero: str, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> dict:
+    """Lo que quedaría como préstamo con esa cotización (antes de guardar)."""
+    return srv.vista_prestamo_desde_cotizacion(db, numero)
+
+
 @router.post("/desde-cotizacion", response_model=list[PrestamoResponse])
 def prestar_desde_cotizacion(datos: PrestarDesdeCotizacionRequest, db: Session = Depends(get_db),
                              usuario: Usuario = Depends(usuario_actual)):

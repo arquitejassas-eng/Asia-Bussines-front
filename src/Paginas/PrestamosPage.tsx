@@ -9,6 +9,10 @@ import "../Style/Merma.css";
 import "../Style/Rollos.css";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
+type VistaCotizacion = {
+  numero_cotizacion: string; cliente: string; salio: boolean;
+  lineas: { codigo: string; descripcion: string; cantidad: number; bodega: string; salio: boolean }[];
+};
 type Prestamo = {
   id: number; fecha: string; empresa_presta: string; empresa_recibe: string; prestador: string; bodega_id: number | null;
   numero_cotizacion: string; tipo: string; codigo: string; descripcion: string; cantidad: number; unidad: string;
@@ -64,6 +68,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   // Prestar a una empresa externa (ej. caballetes): sale del stock y queda aquí hasta que lo devuelvan.
   const [mostrarPrestar, setMostrarPrestar] = useState(false);
   const [prestarQue, setPrestarQue] = useState<"cotizacion" | "producto" | "rollo">("cotizacion");
+  // Lo que se va a anotar como préstamo con la cotización escrita (antes de guardar).
+  const [vistaCotizacion, setVistaCotizacion] = useState<VistaCotizacion | "buscando" | string | null>(null);
   const [prestarCotizacion, setPrestarCotizacion] = useState("");
   const [prestarBodega, setPrestarBodega] = useState("");
   const [productosBodega, setProductosBodega] = useState<ProductoBodega[]>([]);
@@ -97,6 +103,22 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       || (p.identificador_rollo || "").toLowerCase().includes(terminoProducto)
       || (/^\d+$/.test(kilosBuscados) && String(kilosDeLlegada(p.peso_neto) ?? "").includes(kilosBuscados)));
   const productoElegido = productosBodega.find((p) => String(p.id) === prestarProducto);
+
+  useEffect(() => {
+    const numero = prestarCotizacion.trim();
+    if (prestarQue !== "cotizacion" || !numero) { setVistaCotizacion(null); return; }
+    setVistaCotizacion("buscando");
+    let vigente = true;
+    const espera = setTimeout(async () => {
+      try {
+        const vista = await api.get<VistaCotizacion>(`/prestamos/desde-cotizacion/vista?numero=${encodeURIComponent(numero)}`);
+        if (vigente) setVistaCotizacion(vista);
+      } catch (err) {
+        if (vigente) setVistaCotizacion(err instanceof ErrorApi ? err.message : "No se pudo consultar la cotización.");
+      }
+    }, 500);
+    return () => { vigente = false; clearTimeout(espera); };
+  }, [prestarCotizacion, prestarQue]);
 
   async function prestar(e: React.FormEvent) {
     e.preventDefault();
@@ -290,6 +312,31 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     <label htmlFor="prestar-cotizacion">Número de la cotización *</label>
                     <input id="prestar-cotizacion" maxLength={32} placeholder="Ej. 4140" value={prestarCotizacion}
                       onChange={(e) => setPrestarCotizacion(e.target.value)} />
+                  </div>
+                )}
+                {prestarQue === "cotizacion" && vistaCotizacion && (
+                  <div style={{ gridColumn: "1 / -1" }} role="status">
+                    {vistaCotizacion === "buscando" ? <p className="inventario-carga-ayuda">Buscando la cotización...</p>
+                      : typeof vistaCotizacion === "string" ? <p className="inventario-error">{vistaCotizacion}</p>
+                      : (
+                        <>
+                          <p className="inventario-carga-ayuda" style={{ marginBottom: "0.4rem" }}>
+                            <strong>Queda como préstamo</strong> (cotización {vistaCotizacion.numero_cotizacion}
+                            {vistaCotizacion.cliente ? `, ${vistaCotizacion.cliente}` : ""}):
+                          </p>
+                          <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
+                            {vistaCotizacion.lineas.map((l, i) => (
+                              <li key={i}>
+                                <strong>{l.cantidad} × {l.codigo}</strong> {l.descripcion} · {l.bodega}
+                                {!l.salio && <span style={{ color: "#b3261e" }}> (todavía no ha salido)</span>}
+                              </li>
+                            ))}
+                          </ul>
+                          {!vistaCotizacion.salio && (
+                            <p className="inventario-error">Dale Salida a la cotización primero; luego la anotas aquí.</p>
+                          )}
+                        </>
+                      )}
                   </div>
                 )}
                 <div>

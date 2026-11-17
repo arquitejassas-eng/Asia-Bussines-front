@@ -173,14 +173,13 @@ def prestar_rollo_a_tercero(db: Session, *, rollo_id: int, tercero: str, observa
     return prestamo
 
 
-def prestar_desde_cotizacion(db: Session, *, numero: str, tercero: str, usuario: Usuario) -> list[PrestamoEmpresa]:
-    """Hicieron una cotización para el préstamo y ya se le dio salida: lo que
-    salió (productos de stock) queda como préstamo a la empresa externa,
-    enlazado a esa cotización. El stock NO se descuenta otra vez: ya salió."""
+def lineas_para_prestar(db: Session, numero: str):
+    """Las líneas de productos de stock de la cotización `numero` (todas sus
+    partes), las que se anotarían como préstamo. Devuelve (número, partes por
+    id, líneas); falla si no existe, ya es préstamo o no tiene productos."""
     from app.models.apartado import ApartadoItem, EstadoApartado, ModalidadApartado
     from app.services.apartados import numero_base
 
-    nombre = _nombre_tercero(tercero)
     buscado = numero_base(numero)
     if not buscado:
         raise HTTPException(status_code=400, detail="Escribe el número de la cotización.")
@@ -202,13 +201,37 @@ def prestar_desde_cotizacion(db: Session, *, numero: str, tercero: str, usuario:
     )
     if not lineas:
         raise HTTPException(status_code=400, detail=f"La cotización {buscado} no tiene productos de stock para prestar.")
+    return buscado, {a.id: a for a in apartados}, lineas
+
+
+def vista_prestamo_desde_cotizacion(db: Session, numero: str) -> dict:
+    """Lo que quedaría como préstamo con esa cotización, sin guardar nada."""
+    buscado, por_id, lineas = lineas_para_prestar(db, numero)
+    return {
+        "numero_cotizacion": buscado,
+        "cliente": next(iter(por_id.values())).cliente or "",
+        "salio": all(l.stock_descontado for l in lineas),
+        "lineas": [{
+            "codigo": l.producto.codigo if l.producto else (l.codigo_interno or ""),
+            "descripcion": (l.producto.descripcion if l.producto else "") or l.descripcion or "",
+            "cantidad": round(float(l.cantidad), 2), "bodega": por_id[l.apartado_id].bodega_nombre,
+            "salio": bool(l.stock_descontado),
+        } for l in lineas],
+    }
+
+
+def prestar_desde_cotizacion(db: Session, *, numero: str, tercero: str, usuario: Usuario) -> list[PrestamoEmpresa]:
+    """Hicieron una cotización para el préstamo y ya se le dio salida: lo que
+    salió (productos de stock) queda como préstamo a la empresa externa,
+    enlazado a esa cotización. El stock NO se descuenta otra vez: ya salió."""
+    nombre = _nombre_tercero(tercero)
+    buscado, por_id, lineas = lineas_para_prestar(db, numero)
     if any(not l.stock_descontado for l in lineas):
         raise HTTPException(
             status_code=400,
             detail=f"La cotización {buscado} todavía no ha salido de la bodega: dale Salida primero y luego anótala aquí "
                    "(o cancélala y presta el producto directo aquí).",
         )
-    por_id = {a.id: a for a in apartados}
     ahora = datetime.now(timezone.utc)
     prestamos = []
     for linea in lineas:
