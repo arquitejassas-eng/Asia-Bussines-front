@@ -1928,6 +1928,7 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
 .sincodigo-datos > span:not(:last-child)::after { content: "·"; margin: 0 0.5rem; color: var(--at-border, #E1D5C0); }
 .sincodigo-datos strong { color: var(--at-text, #251C14); }
 .sincodigo-segunda { color: var(--at-amber, #B8720A); font-weight: 700; }
+.sincodigo-origen { margin: 0.35rem 0 0; font-size: 0.84rem; color: var(--at-text-2, #4A392C); line-height: 1.45; }
 
 .sincodigo-form { display: grid; gap: 0.35rem; min-width: 0; }
 .sincodigo-label { font-size: 0.8rem; font-weight: 700; color: var(--at-text-2, #4A392C); }

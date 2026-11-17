@@ -58,7 +58,8 @@ export default function HojaVidaPage({ sesion, onCerrarSesion, almacen }: {
   const [parametros, setParametros] = useSearchParams();
   const cotizacionFiltro = numeroCotizacion(parametros.get("cotizacion") || "");
   // Filtro por rollo: la referencia (o parte de ella) de un rollo usado en la producción.
-  const [rolloFiltro, setRolloFiltro] = useState("");
+  // "rollo" en la dirección: viene del aviso de productos sin código.
+  const [rolloFiltro, setRolloFiltro] = useState(parametros.get("rollo") || "");
   const rolloBuscado = rolloFiltro.trim().toUpperCase();
   // Filtro por código del material (ej. LR30020,33): junto con los kilos, separa
   // rollos que pesan lo mismo pero son de otro código.

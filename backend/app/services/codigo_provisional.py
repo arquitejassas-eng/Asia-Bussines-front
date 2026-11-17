@@ -59,6 +59,30 @@ def _parecidos(db: Session, producto: Producto) -> list[dict]:
     return list(vistos.values())
 
 
+def _origen(db: Session, codigo: str) -> dict | None:
+    """De dónde salió: la producción que lo dejó en el stock, qué cotización
+    (u orden interna) se estaba produciendo, con qué rollo y quién. El código
+    provisional es el de la producción + "-<línea>" (la copia trasladada a otra
+    bodega no guarda produccion_id, el código sí)."""
+    from app.models.produccion import Produccion
+
+    produccion = db.query(Produccion).filter(Produccion.codigo_unico == codigo.rsplit("-", 1)[0]).first()
+    if produccion is None:
+        return None
+    item = produccion.apartado_item
+    apartado = item.apartado if item is not None else None
+    return {
+        "produccion": produccion.codigo_unico, "fecha": produccion.fecha,
+        "bodega": (db.get(Bodega, produccion.bodega_id).nombre if db.get(Bodega, produccion.bodega_id) else ""),
+        "cotizacion": produccion.cotizacion or "", "cliente": apartado.cliente if apartado else "",
+        "orden_interna": bool(apartado.orden_interna) if apartado else False,
+        "linea": item.descripcion if item is not None else "",
+        "fabricado": " ".join(x for x in (produccion.producto_fabricado, produccion.modelo, produccion.medida_producto) if x),
+        "responsable": produccion.responsable or "", "registro": produccion.usuario or "",
+        "rollos": [f"{r.identificador_rollo} ({round(float(r.metros_consumidos or 0), 2):g} m)" for r in produccion.rollos_utilizados],
+    }
+
+
 def productos_sin_codigo(db: Session) -> list[dict]:
     """Uno por código provisional con existencias, con las bodegas donde está."""
     productos = (
@@ -75,7 +99,7 @@ def productos_sin_codigo(db: Session) -> list[dict]:
             grupo = grupos[p.codigo] = {
                 "codigo": p.codigo, "descripcion": p.descripcion, "familia": p.familia or "",
                 "empresa": p.empresa or "", "calidad": p.calidad or "", "fecha": p.fecha_produccion,
-                "stock": 0.0, "bodegas": [], "sugerencias": _parecidos(db, p),
+                "stock": 0.0, "bodegas": [], "sugerencias": _parecidos(db, p), "origen": _origen(db, p.codigo),
             }
         grupo["stock"] = round(grupo["stock"] + float(p.stock), 2)
         grupo["bodegas"].append({"nombre": bodegas.get(p.bodega_id, "Admin Inventario"), "stock": float(p.stock)})

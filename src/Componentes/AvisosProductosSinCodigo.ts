@@ -7,6 +7,11 @@ import { createContext } from "react";
 export type ProductoSinCodigo = {
   codigo: string; descripcion: string; familia: string; empresa: string; calidad: string; fecha: string | null;
   stock: number; bodegas: { nombre: string; stock: number }[]; sugerencias: { codigo: string; descripcion: string }[];
+  // La producción que lo dejó en el stock y lo que se estaba produciendo.
+  origen: {
+    produccion: string; fecha: string | null; bodega: string; cotizacion: string; cliente: string; ordenInterna: boolean;
+    linea: string; fabricado: string; responsable: string; registro: string; rollos: string[];
+  } | null;
 };
 
 export function productoSinCodigoDesdeApi(p: Record<string, unknown>): ProductoSinCodigo {
@@ -17,6 +22,19 @@ export function productoSinCodigoDesdeApi(p: Record<string, unknown>): ProductoS
     stock: Number(p.stock ?? 0),
     bodegas: lista(p.bodegas).map((b) => ({ nombre: String(b.nombre ?? ""), stock: Number(b.stock ?? 0) })),
     sugerencias: lista(p.sugerencias).map((s) => ({ codigo: String(s.codigo ?? ""), descripcion: String(s.descripcion ?? "") })),
+    origen: origenDesdeApi(p.origen),
+  };
+}
+
+function origenDesdeApi(valor: unknown): ProductoSinCodigo["origen"] {
+  if (!valor || typeof valor !== "object") return null;
+  const o = valor as Record<string, unknown>;
+  const texto = (v: unknown) => (v == null ? "" : String(v));
+  return {
+    produccion: texto(o.produccion), fecha: o.fecha == null ? null : String(o.fecha), bodega: texto(o.bodega),
+    cotizacion: texto(o.cotizacion), cliente: texto(o.cliente), ordenInterna: Boolean(o.orden_interna),
+    linea: texto(o.linea), fabricado: texto(o.fabricado), responsable: texto(o.responsable), registro: texto(o.registro),
+    rollos: Array.isArray(o.rollos) ? o.rollos.map(String) : [],
   };
 }
 

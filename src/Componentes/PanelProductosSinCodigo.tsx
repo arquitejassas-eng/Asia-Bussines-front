@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { formatearFechaColombia } from "../Utils/fechas";
@@ -49,6 +50,22 @@ function TarjetaSinCodigo({ producto, alGuardar }: { producto: ProductoSinCodigo
           {producto.calidad === "segunda" && <span className="sincodigo-segunda">Segunda</span>}
           {producto.fecha && <span>Producido el {formatearFechaColombia(producto.fecha, false)}</span>}
         </p>
+        {producto.origen && (producto.origen.cotizacion || producto.origen.rollos.length > 0) && (
+          <p className="sincodigo-origen" title={`Producción ${producto.origen.produccion}`}>
+            Sobró de{" "}
+            {producto.origen.cotizacion && (
+              <Link to={`/hoja-vida?cotizacion=${encodeURIComponent(producto.origen.cotizacion)}`}>
+                {producto.origen.ordenInterna ? "orden interna" : "cotización"} {producto.origen.cotizacion}
+              </Link>
+            )}
+            {producto.origen.rollos.map((r) => r.split(" (")[0]).map((rollo) => (
+              <span key={rollo}>
+                {" · "}
+                <Link to={`/hoja-vida?rollo=${encodeURIComponent(rollo)}`}>rollo {rollo}</Link>
+              </span>
+            ))}
+          </p>
+        )}
       </div>
 
       <form className="sincodigo-form" onSubmit={guardar} noValidate>
