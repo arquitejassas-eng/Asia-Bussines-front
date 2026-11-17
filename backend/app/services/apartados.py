@@ -1116,7 +1116,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
     ya_existe = (
         db.query(Apartado.id)
         .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == datos.numero_cotizacion,
-                Apartado.estado != EstadoApartado.CANCELADO)
+                Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA))
         .first()
     )
     if ya_existe:
@@ -1307,7 +1307,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     repetida = (
         db.query(Apartado.id)
         .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == datos.numero_cotizacion,
-                Apartado.estado != EstadoApartado.CANCELADO, Apartado.id != apartado.id)
+                Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), Apartado.id != apartado.id)
         .first()
     )
     if repetida:
@@ -1795,7 +1795,7 @@ def separar_apartado(db: Session, apartado_id: int, datos: SepararApartadoReques
     repetida = (
         db.query(Apartado.id)
         .filter(Apartado.bodega_id == original.bodega_id, Apartado.numero_cotizacion == numero,
-                Apartado.estado != EstadoApartado.CANCELADO)
+                Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA))
         .first()
     )
     if repetida:
@@ -1877,14 +1877,12 @@ def unir_apartado(db: Session, apartado_id: int, datos: UnirApartadoRequest, usu
     líneas solo cambian de cotización. Las dos deben estar en el mismo estado
     (ej. las dos con producción terminada); la encargada de la bodega solo
     puede unir cotizaciones con la producción terminada, como al separar."""
-    from app.models.prestamo import PrestamoEmpresa
-
     destino = apartado_de_mi_bodega(db, apartado_id, usuario)
     numero = datos.numero_cotizacion.strip()
     origen = (
         db.query(Apartado)
         .filter(Apartado.bodega_id == destino.bodega_id, Apartado.numero_cotizacion == numero,
-                Apartado.estado != EstadoApartado.CANCELADO)
+                Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA))
         .first()
     )
     if origen is None:
@@ -1912,6 +1910,13 @@ def unir_apartado(db: Session, apartado_id: int, datos: UnirApartadoRequest, usu
         raise HTTPException(status_code=400, detail="Las dos cotizaciones deben ser de la misma empresa para unirlas.")
     if usuario.rol != RolUsuario.ADMIN_INVENTARIO and destino.estado != EstadoApartado.PRODUCCION_TERMINADA:
         raise HTTPException(status_code=403, detail="Solo Admin Inventario puede unir cotizaciones que no han terminado su producción.")
+    return _pasar_lineas_y_anular(db, destino, origen, usuario)
+
+
+def _pasar_lineas_y_anular(db: Session, destino: Apartado, origen: Apartado, usuario: Usuario) -> Apartado:
+    """Lo que hace Unir (ya validado): las líneas de `origen` pasan a
+    `destino` con todo lo que tienen y `origen` queda anulada con una nota."""
+    from app.models.prestamo import PrestamoEmpresa
 
     con_stock = lambda ap: any(it.modalidad == ModalidadApartado.POR_STOCK for it in ap.items)  # noqa: E731
     confirmado = ((destino.stock_separado_confirmado or not con_stock(destino))
@@ -2220,7 +2225,32 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
     # `cantidad_reservada_producto` y vuelven a disponibles automáticamente.
     apartado.estado = EstadoApartado.PRODUCCION_TERMINADA
     cerrar_orden_interna_si_terminó(apartado)
-    return apartado
+    return _unir_a_la_parte_terminada(db, apartado, usuario)
+
+
+def _unir_a_la_parte_terminada(db: Session, apartado: Apartado, usuario: Usuario) -> Apartado:
+    """Si esta bodega ya tenía terminada otra parte de la misma cotización
+    (ej. Ricaurte terminó lo suyo de la 4049 y después le pasaron una línea
+    que salía de Santander), lo recién terminado se une a esa parte: queda una
+    sola 4049 en "Pendientes por dar salida" y la parte que se unió, ya
+    vacía, se borra (no es una cotización anulada). Devuelve la que queda."""
+    if apartado.estado != EstadoApartado.PRODUCCION_TERMINADA or apartado.orden_interna or apartado.traslado_a:
+        return apartado
+    anterior = (
+        db.query(Apartado)
+        .filter(Apartado.bodega_id == apartado.bodega_id, Apartado.numero_cotizacion == apartado.numero_cotizacion,
+                Apartado.empresa == apartado.empresa, Apartado.estado == EstadoApartado.PRODUCCION_TERMINADA,
+                Apartado.id != apartado.id, Apartado.orden_interna.is_(False), Apartado.traslado_a == "")
+        .order_by(Apartado.id)
+        .with_for_update()
+        .first()
+    )
+    if anterior is None:
+        return apartado
+    _pasar_lineas_y_anular(db, anterior, apartado, usuario)
+    db.delete(apartado)
+    db.flush()
+    return anterior
 
 
 def cerrar_orden_interna_si_terminó(apartado: Apartado) -> None:

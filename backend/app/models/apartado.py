@@ -35,10 +35,11 @@ class Apartado(Base):
 
     __tablename__ = "apartados"
     __table_args__ = (
-        # Una cotización activa por bodega; si se cancela, su número se puede
-        # volver a usar (ej. se canceló porque quedó mal y se crea de nuevo).
+        # Una cotización activa por bodega. La anulada, la terminada y la
+        # entregada no cuentan: su número se puede volver a usar (ej. Ricaurte
+        # ya terminó su parte y le pasan otra línea de la misma cotización).
         Index("uq_apartados_bodega_cotizacion_activa", "bodega_id", "numero_cotizacion", unique=True,
-              postgresql_where=text("estado <> 'CANCELADO'"), sqlite_where=text("estado <> 'CANCELADO'")),
+              postgresql_where=text("estado IN ('APARTADO', 'ENVIADO_A_PRODUCCION', 'EN_PRODUCCION')"), sqlite_where=text("estado IN ('APARTADO', 'ENVIADO_A_PRODUCCION', 'EN_PRODUCCION')")),
         Index("ix_apartados_bodega_estado", "bodega_id", "estado"),
     )
 

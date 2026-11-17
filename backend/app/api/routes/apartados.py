@@ -514,9 +514,15 @@ def editar_apartado(
             raise HTTPException(status_code=400, detail="Esta cotización ya es del Siigo de su empresa: no se le puede cambiar la empresa.")
         datos = datos.model_copy(update={"numero_cotizacion": srv.numero_sin_empresa(original.numero_cotizacion)})
     # Si le cambian el número o la empresa, que no choque con otra cotización de
-    # esa empresa (sus propias partes no cuentan).
-    srv.exigir_numero_libre_en_la_empresa(db, datos.numero_cotizacion, datos.empresa,
-                                          excepto=[apartado_id, *datos.otras_partes_ids])
+    # esa empresa. Sus propias partes no cuentan, tampoco las que ya terminaron
+    # (ej. la de Ricaurte en "Pendientes por dar salida", que no viene al editar).
+    sus_partes = [apartado_id, *datos.otras_partes_ids]
+    if datos.empresa == original.empresa and srv.numero_base(datos.numero_cotizacion) == srv.numero_base(original.numero_cotizacion):
+        base = srv.numero_base(original.numero_cotizacion)
+        sus_partes += [a.id for a in db.query(Apartado).filter(
+            Apartado.empresa == original.empresa, Apartado.numero_cotizacion.like(f"{base}%"))
+            if srv.numero_base(a.numero_cotizacion) == base]
+    srv.exigir_numero_libre_en_la_empresa(db, datos.numero_cotizacion, datos.empresa, excepto=sus_partes)
     if datos.items:
         apartado = _editar_cotizacion_completa(db, apartado_id, datos, usuario)
         if de_siigo:
