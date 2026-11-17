@@ -214,13 +214,24 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
   const consultaExpandido = useRef(0);
 
   async function alternarExpandirCodigoRollo(codigo: string) {
-    const consulta = ++consultaExpandido.current;
     if (codigoRolloExpandido === codigo) {
+      ++consultaExpandido.current;
       setCodigoRolloExpandido(null);
       return;
     }
     setCodigoRolloExpandido(codigo);
     setRollosDelCodigoExpandido([]);
+    await cargarRollosDelCodigo(codigo);
+  }
+
+  // Tras una salida externa: vuelve a pedir los rollos del código abierto.
+  async function recargarRollosExpandido() {
+    await cargarComparativo(true);
+    if (codigoRolloExpandido) await cargarRollosDelCodigo(codigoRolloExpandido);
+  }
+
+  async function cargarRollosDelCodigo(codigo: string) {
+    const consulta = ++consultaExpandido.current;
     setCargandoRollosExpandido(true);
     try {
       const datos = await api.get<Record<string, unknown>[]>(
@@ -403,7 +414,7 @@ export function useControladorAdminInventario(sesion: Sesion, almacen: AlmacenGl
     busquedaResumenRollos, buscarResumenRollos, busquedaResumenProductos, buscarResumenProductos,
     colorResumenRollos, coloresResumenRollos, filtrarColorResumenRollos,
 
-    codigoRolloExpandido, rollosDelCodigoExpandido, cargandoRollosExpandido, alternarExpandirCodigoRollo,
+    codigoRolloExpandido, rollosDelCodigoExpandido, cargandoRollosExpandido, alternarExpandirCodigoRollo, recargarRollosExpandido,
 
     misRollos, misProductos, cargandoPropio,
 

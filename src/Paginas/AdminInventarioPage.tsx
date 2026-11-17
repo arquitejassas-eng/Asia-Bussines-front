@@ -9,6 +9,8 @@ import PanelMermaRollo from "../Componentes/PanelMermaRollo";
 import PanelBuscarRollos from "../Componentes/PanelBuscarRollos";
 import ModalHistorialRollo from "../Componentes/ModalHistorialRollo";
 import { useHistorialRollo } from "../Hooks/useHistorialRollo";
+import { useSalidaExternaRollo } from "../Hooks/useSalidaExternaRollo";
+import ModalSalidaExternaRollo from "../Componentes/ModalSalidaExternaRollo";
 import CeldaApartado from "../Componentes/CeldaApartado";
 import PanelResumenProductos from "../Componentes/PanelResumenProductos";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
@@ -73,6 +75,8 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
     .filter((r): r is (typeof c.misRollos)[number] => r !== undefined);
   // "Ver historial" de cada rollo del resumen por código (Admin Inventario).
   const historial = useHistorialRollo<(typeof c.rollosDelCodigoExpandido)[number]>();
+  // "Salida externa" de cada rollo: sale completo a otra empresa y no vuelve.
+  const salida = useSalidaExternaRollo<(typeof c.rollosDelCodigoExpandido)[number]>(c.recargarRollosExpandido);
   const bodegas = c.comparativo.bodegas;
   const [mostrarAdminUnidades, setMostrarAdminUnidades] = useState(false);
   // Rollo que Admin Inventario pide de una bodega para otra (y el aviso de que quedó pedido).
@@ -377,6 +381,9 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                 alCambiar={() => Promise.all([almacen?.refrescarProductosSinCodigo(), c.cargarComparativo(true)]).then(() => undefined)} />
               <PanelRollosPrestados alCambiar={() => c.cargarComparativo(true)} />
               {avisoPedido && <p className="sincodigo-listo" role="status" style={{ margin: "0 0 1rem" }}>{avisoPedido}</p>}
+              {salida.avisoSalidaExterna && (
+                <p className="sincodigo-listo" role="status" style={{ margin: "0 0 1rem" }}>{salida.avisoSalidaExterna}</p>
+              )}
               {rolloAPedir && (
                 <ModalPedirTraslado rollo={rolloAPedir} bodegas={bodegas} alCerrar={() => setRolloAPedir(null)}
                   alPedir={(mensaje) => { setRolloAPedir(null); setAvisoPedido(mensaje); void almacen?.refrescarTrasladosRollos(); }} />
@@ -570,6 +577,13 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                                       Pedir para otra bodega
                                                     </button>
                                                   )}
+                                                  {!c.soloLectura && rollo.metrosDisponibles > 0 && rollo.bodegaId != null
+                                                    && !trasladoDelRollo.has(rollo.id) && (
+                                                    <button type="button" className="rollos-boton-secundario buscar-rollos-historial"
+                                                      onClick={() => salida.abrirSalidaExterna(rollo)}>
+                                                      Salida externa
+                                                    </button>
+                                                  )}
                                                 </td>
                                               </tr>
                                             ))}
@@ -602,6 +616,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                     </table>
                   </div>
                   <Paginacion paginacion={c.paginacionRollos} alCambiarPagina={c.setPaginaRollos} etiqueta="códigos" />
+                  {salida.rolloParaSalidaExterna && <ModalSalidaExternaRollo {...salida} />}
                   {historial.rolloParaHistorial && (
                     <ModalHistorialRollo
                       rolloParaHistorial={historial.rolloParaHistorial}
