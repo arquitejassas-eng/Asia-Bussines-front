@@ -11,11 +11,11 @@ import { exportarHojasAExcel } from "../Utils/exportarExcel";
 
 type FilaProducto = {
   codigo: string; descripcion: string; familia: string; empresa: string; bodega: string;
-  stock: number; apartado: number; libre: number;
+  stock: number; apartado: number; libre: number; ral?: string;
 };
 type FilaRollo = {
   importacion: string; referencia: string; codigo: string; descripcion: string; empresa: string; color: string;
-  calibre: number; kilos: number | null; kilos_actuales: number | null; metros_llegada: number; metros_disponibles: number; bodega: string;
+  calibre: number; ral?: string; kilos: number | null; kilos_actuales: number | null; metros_llegada: number; metros_disponibles: number; bodega: string;
   estado: string; fecha_ingreso: string | null; proveedor: string;
   // Vendido completo en una cotización activa ("4118 (CLIENTE)") o yendo en un traslado.
   apartado_completo?: string; en_traslado_a?: string;
@@ -140,10 +140,10 @@ export function ReporteInventarioPorTipo() {
   }, [esRollos, rollosFiltrados, productosFiltrados, bodegasDisponibles]);
 
   const filasProductos = useMemo(() => {
-    const grupos = new Map<string, { codigo: string; descripcion: string; familia: string; empresa: string; porBodega: Record<string, number>; total: number; apartado: number; libre: number }>();
+    const grupos = new Map<string, { codigo: string; descripcion: string; familia: string; empresa: string; ral: string; porBodega: Record<string, number>; total: number; apartado: number; libre: number }>();
     for (const p of productosFiltrados) {
       const clave = `${p.codigo}|${p.empresa}`;
-      const g = grupos.get(clave) || { codigo: p.codigo, descripcion: p.descripcion, familia: p.familia, empresa: p.empresa, porBodega: {}, total: 0, apartado: 0, libre: 0 };
+      const g = grupos.get(clave) || { codigo: p.codigo, descripcion: p.descripcion, familia: p.familia, empresa: p.empresa, ral: p.ral || "", porBodega: {}, total: 0, apartado: 0, libre: 0 };
       g.porBodega[p.bodega] = (g.porBodega[p.bodega] || 0) + p.stock;
       g.total += p.stock; g.apartado += p.apartado; g.libre += p.libre;
       grupos.set(clave, g);
@@ -152,10 +152,10 @@ export function ReporteInventarioPorTipo() {
   }, [productosFiltrados]);
 
   const filasRollos = useMemo(() => {
-    const grupos = new Map<string, { codigo: string; descripcion: string; empresa: string; calibre: number; color: string; porBodega: Record<string, { rollos: number; metros: number; kilos: number }>; rollos: number; metros: number; kilos: number; lista: FilaRollo[] }>();
+    const grupos = new Map<string, { codigo: string; descripcion: string; empresa: string; calibre: number; ral: string; color: string; porBodega: Record<string, { rollos: number; metros: number; kilos: number }>; rollos: number; metros: number; kilos: number; lista: FilaRollo[] }>();
     for (const r of rollosFiltrados) {
       const clave = `${r.codigo}|${r.empresa}`;
-      const g = grupos.get(clave) || { codigo: r.codigo, descripcion: r.descripcion, empresa: r.empresa, calibre: r.calibre, color: colorDe(r), porBodega: {}, rollos: 0, metros: 0, kilos: 0, lista: [] };
+      const g = grupos.get(clave) || { codigo: r.codigo, descripcion: r.descripcion, empresa: r.empresa, calibre: r.calibre, ral: r.ral || "", color: colorDe(r), porBodega: {}, rollos: 0, metros: 0, kilos: 0, lista: [] };
       const celda = g.porBodega[r.bodega] || { rollos: 0, metros: 0, kilos: 0 };
       celda.rollos += 1; celda.metros += r.metros_disponibles; celda.kilos += r.kilos_actuales ?? 0;
       g.porBodega[r.bodega] = celda;
@@ -182,6 +182,8 @@ export function ReporteInventarioPorTipo() {
   const nombreTipo = esRollos ? "Rollos de lámina" : tipo === TODO_UPVC ? "Todo UPVC" : tipo || "Todos los productos";
 
   // La descripción de los rollos casi siempre viene vacía: solo sale si alguno la tiene.
+  // El RAL de los productos, igual: solo si alguno lo tiene (tejas, caballetes...).
+  const productosConRal = productosFiltrados.some((p) => p.ral);
   const conDescripcion = rollosFiltrados.some((r) => r.descripcion?.trim());
 
   function exportar() {
@@ -191,7 +193,7 @@ export function ReporteInventarioPorTipo() {
     const hojasLamina = (prefijo: string) => [
         { nombre: `${prefijo}Resumen por código`, filas: filasRollos.map((g) => ({
           "Empresa": nombreEmpresa(g.empresa), "Código": g.codigo, "Espesor (mm)": espesorDe(g),
-          "Color": g.color ? nombreColor(g.color) : "", ...(conDescripcion ? { "Descripción": g.descripcion } : {}),
+          "Color": g.color ? nombreColor(g.color) : "", "RAL": g.ral, ...(conDescripcion ? { "Descripción": g.descripcion } : {}),
           ...Object.fromEntries(bodegasLamina.flatMap((b) => [
             [`${b} (metros)`, g.porBodega[b] ? Math.round(g.porBodega[b].metros * 100) / 100 : 0],
             [`${b} (kg)`, g.porBodega[b] ? Math.round(g.porBodega[b].kilos) : 0],
@@ -202,7 +204,7 @@ export function ReporteInventarioPorTipo() {
         })) },
         { nombre: `${prefijo}Detalle por rollo`, filas: [...rollosFiltrados].sort(ordenRollos).map((r) => ({
           "Empresa": nombreEmpresa(r.empresa), "Bodega": r.bodega, "Código": r.codigo, "Espesor (mm)": espesorDe(r),
-          "Color": colorDe(r) ? nombreColor(colorDe(r)) : "", "Referencia": r.referencia,
+          "Color": colorDe(r) ? nombreColor(colorDe(r)) : "", "RAL": r.ral || "", "Referencia": r.referencia,
           ...(conDescripcion ? { "Descripción": r.descripcion } : {}),
           "Metros disponibles": r.metros_disponibles, "Kilos hoy": r.kilos_actuales ?? "", "Kilos al llegar": r.kilos ?? "",
           "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado, "Apartado": apartadoDelRollo(r) || "Libre",
@@ -214,7 +216,8 @@ export function ReporteInventarioPorTipo() {
     } else {
       exportarHojasAExcel([
         { nombre: "Inventario", filas: filasProductos.map((g) => ({
-          "Código": g.codigo, "Descripción": g.descripcion, "Tipo": g.familia, "Empresa": nombreEmpresa(g.empresa),
+          "Código": g.codigo, "Descripción": g.descripcion, "Tipo": g.familia, ...(productosConRal ? { "RAL": g.ral } : {}),
+          "Empresa": nombreEmpresa(g.empresa),
           ...Object.fromEntries(columnasBodega.map((b) => [`En ${b}`, g.porBodega[b] ?? 0])),
           "Total": g.total, "Apartado": g.apartado, "Libre": g.libre,
         })) },
@@ -223,6 +226,7 @@ export function ReporteInventarioPorTipo() {
           .sort((a, b) => compararTexto(a.bodega, b.bodega) || a.familia.localeCompare(b.familia) || a.codigo.localeCompare(b.codigo))
           .map((p) => ({
             "Bodega": p.bodega, "Código": p.codigo, "Descripción": p.descripcion, "Tipo": p.familia,
+            ...(productosConRal ? { "RAL": p.ral || "" } : {}),
             "Empresa": nombreEmpresa(p.empresa), "Cantidad": p.stock, "Apartado": p.apartado, "Libre": p.libre,
           })) },
         ...(conLamina && filasRollos.length ? hojasLamina("Lámina - ") : []),
@@ -313,6 +317,7 @@ export function ReporteInventarioPorTipo() {
                     <tr>
                       <th>Código</th>
                       {esRollos && <th className="reportes-num">Espesor (mm)</th>}
+                      {(esRollos || productosConRal) && <th>RAL</th>}
                       <th>Descripción</th>
                       {!esRollos && <th>Tipo</th>}
                       <th>Empresa</th>
@@ -335,6 +340,7 @@ export function ReporteInventarioPorTipo() {
                               </button>
                             </td>
                             <td className="reportes-num"><strong>{textoEspesor(g.calibre)}</strong></td>
+                            <td>{g.ral || "—"}</td>
                             <td>{g.descripcion || (g.color ? nombreColor(g.color) : "—")}</td>
                             <td>{nombreEmpresa(g.empresa)}</td>
                             {columnasBodega.map((b) => (
@@ -354,7 +360,7 @@ export function ReporteInventarioPorTipo() {
                           </tr>
                           {abierto && (
                             <tr className="reportes-detalle-importacion">
-                              <td colSpan={columnasBodega.length + 9}>
+                              <td colSpan={columnasBodega.length + 10}>
                                 <table className="reportes-tabla reportes-tabla-interna">
                                   <thead>
                                     <tr>
@@ -385,6 +391,7 @@ export function ReporteInventarioPorTipo() {
                     }) : filasProductos.map((g) => (
                       <tr key={`${g.codigo}|${g.empresa}`}>
                         <td className="reportes-codigo">{g.codigo}</td>
+                        {productosConRal && <td>{g.ral || "—"}</td>}
                         <td>{g.descripcion}</td>
                         <td>{g.familia}</td>
                         <td>{nombreEmpresa(g.empresa)}</td>

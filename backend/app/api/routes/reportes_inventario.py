@@ -28,6 +28,14 @@ router = APIRouter(
 
 # Material de Admin Inventario que todavía no se ha repartido a una sede.
 SIN_BODEGA = "Admin Inventario (por repartir)"
+# El código de la lámina es tipo + inicial del color + RAL + espesor
+# (LR30020,27 = RAL 3002 de 0,27; ver clasificacion.construir_codigo).
+CODIGO_CON_RAL = re.compile(r"^[A-Z]{2}(\w+?)\d,\d+$")
+
+
+def ral_de_codigo(codigo: str | None) -> str:
+    encontrado = CODIGO_CON_RAL.match((codigo or "").strip().upper())
+    return encontrado.group(1) if encontrado else ""
 
 # "17ABGLR30020,24-01" → "17ABG": la referencia empieza con el número de la
 # importación y la empresa (los rollos cargados antes de usar el Lote).
@@ -75,6 +83,7 @@ def existencias_productos(db: Session = Depends(get_db)) -> list[dict]:
             continue
         filas.append({
             "codigo": p.codigo, "descripcion": p.descripcion, "familia": (p.familia or "").strip() or "SIN FAMILIA",
+            "ral": (p.ral or "").strip().upper().removeprefix("RAL").strip() or ral_de_codigo(p.codigo_rollo_origen),
             "empresa": p.empresa or "", "bodega": bodegas.get(p.bodega_id, SIN_BODEGA) if p.bodega_id else SIN_BODEGA,
             "stock": round(stock, 2), "apartado": round(reservado, 2), "libre": round(stock - reservado, 2),
         })
@@ -139,6 +148,7 @@ def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
             "importacion": importacion_de(r.lote, r.identificador_rollo),
             "referencia": r.identificador_rollo, "codigo": r.codigo_interno, "descripcion": r.descripcion,
             "empresa": r.empresa or "", "color": r.color_material or "", "calibre": float(r.calibre or 0),
+            "ral": ral_de_codigo(r.codigo_interno),
             "kilos": r.peso_neto, "metros_llegada": round(float(r.metros_proveedor or 0) or (disponibles + consumidos), 2),
             # Lo que pesa HOY según los metros que le quedan (None si su calibre
             # no está en la tabla de equivalencias).
@@ -160,6 +170,7 @@ def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
             "importacion": importacion_de(r.lote, r.identificador_rollo),
             "referencia": r.identificador_rollo, "codigo": r.codigo_interno, "descripcion": r.descripcion,
             "empresa": r.empresa or "", "color": r.color_material or "", "calibre": float(r.calibre or 0),
+            "ral": ral_de_codigo(r.codigo_interno),
             "kilos": r.peso_neto, "metros_llegada": round(float(r.metros or 0), 2), "metros_disponibles": round(float(r.metros or 0), 2),
             "kilos_actuales": r.peso_neto,
             "bodega": "En camino", "estado": "en_camino", "fecha_ingreso": cargamento.fecha_creacion,
