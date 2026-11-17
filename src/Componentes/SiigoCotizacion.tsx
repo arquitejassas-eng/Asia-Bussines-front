@@ -172,7 +172,8 @@ export function CamposSiigoLinea({
   puedeIncluirse: boolean;
   /** 1,19: el valor escrito siempre trae el IVA (ver factorIva). */
   factor: number;
-  item: { siigoProducto: string; siigoCantidad: string; siigoUnidad?: string; siigoAviso?: string; valorLinea: string; siigoIncluido?: boolean };
+  item: { siigoProducto: string; siigoCantidad: string; siigoUnidad?: string; siigoAviso?: string; valorLinea: string; siigoIncluido?: boolean;
+    siigoKilos?: number | null };
   productos: ProductoSiigo[] | "buscando" | "error" | undefined;
   buscarProducto: (indice: number, texto: string) => void;
   cerrarBusquedaProducto: (indice: number) => void;
@@ -182,6 +183,11 @@ export function CamposSiigoLinea({
   const sinIva = valor / factor;
   const porUnidad = numeroDe(item.siigoCantidad) > 0 ? sinIva / numeroDe(item.siigoCantidad) : 0;
   const incluida = puedeIncluirse && Boolean(item.siigoIncluido);
+  // Kilos guardados (o escritos) que no son los de la cantidad y la medida de
+  // la línea: ej. una cotización guardada antes con los kilos de una sola teja.
+  const kilosCalculados = unidad === "kg" && item.siigoKilos ? item.siigoKilos : 0;
+  const kilosDistintos = kilosCalculados > 0
+    && Math.abs(numeroDe(item.siigoCantidad) - kilosCalculados) > Math.max(0.5, kilosCalculados * 0.01);
   const casilla = puedeIncluirse && (
     <label className="siigo-linea-incluida">
       <input type="checkbox" checked={incluida} onChange={(e) => actualizar("siigoIncluido", e.target.checked)} />
@@ -223,6 +229,14 @@ export function CamposSiigoLinea({
         <input id={`siigo-cantidad-${indice}`} inputMode="decimal" value={item.siigoCantidad}
           onChange={(e) => { actualizar("siigoCantidad", e.target.value); actualizar("siigoCantidadManual", true); }} />
         {item.siigoAviso && <p className="siigo-estado siigo-mal">{item.siigoAviso}</p>}
+        {kilosDistintos && (
+          <p className="siigo-estado siigo-mal">
+            Por la cantidad y la medida de la línea son <strong>{cantidad(kilosCalculados)} kg</strong>.{" "}
+            <button type="button" onClick={() => { actualizar("siigoCantidad", String(kilosCalculados)); actualizar("siigoCantidadManual", false); }}>
+              Usar {cantidad(kilosCalculados)} kg
+            </button>
+          </p>
+        )}
       </div>
       <div className="siigo-linea-campo">
         <label htmlFor={`siigo-valor-${indice}`}>Valor de la venta con IVA incluido *</label>
