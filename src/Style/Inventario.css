@@ -2036,3 +2036,13 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
 .conversion-linea legend { padding: 0 0.3rem; font-weight: 700; font-size: 0.88rem; }
 .conversion-linea label { display: grid; gap: 0.25rem; font-size: 0.8rem; font-weight: 600; }
 .conversion-linea small { grid-column: 1 / -1; color: var(--at-muted, #7C6A56); }
+
+/* Apartados con "Filtrar por código": lo apartado que falta por producir. */
+.apartados-falta-producir {
+  margin: 0 0 0.75rem; padding: 0.75rem 1rem; border: 1px solid var(--at-border, #E1D5C0);
+  border-radius: var(--at-r-sm, 8px); background: var(--at-surface, #FFFDF8); font-size: 0.9rem; overflow-x: auto;
+}
+.apartados-falta-tabla { border-collapse: collapse; min-width: 100%; }
+.apartados-falta-tabla th, .apartados-falta-tabla td { padding: 0.3rem 0.75rem 0.3rem 0; text-align: left; vertical-align: top; }
+.apartados-falta-tabla th { font-size: 0.75rem; text-transform: uppercase; color: var(--at-muted, #7C6A56); }
+.apartados-falta-tabla .num { text-align: right; white-space: nowrap; }

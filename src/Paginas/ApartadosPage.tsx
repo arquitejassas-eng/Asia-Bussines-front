@@ -35,6 +35,8 @@ const LINEAS_VISIBLES = 3;
 
 // "LR30020,27 LA50170,25" → ["LR30020,27", "LA50170,25"]: varios códigos
 // separados por espacio (el código ya trae coma, por eso no se separa con coma).
+const formatoMetros = (metros: number) => metros.toLocaleString("es-CO", { maximumFractionDigits: 2 });
+
 function codigosDelFiltro(texto: string): string[] {
   return texto.trim().toUpperCase().split(/\s+/).filter(Boolean);
 }
@@ -405,6 +407,28 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       && (!filtroEmpresa || ap.empresa === filtroEmpresa)
       && (!soloPendientesSalida || ESTADOS_CANCELABLES.includes(ap.estado)));
   }, [a.apartados, filtroTexto, codigosBuscados, filtroBodega, filtroEmpresa, soloPendientesSalida, pestana]);
+
+  // Con "Filtrar por código" (un código, un espesor como 0,43 o un RAL como
+  // 3002): los metros que las cotizaciones abiertas todavía no han producido,
+  // por código y bodega.
+  const faltaPorProducir = useMemo(() => {
+    if (codigosBuscados.length === 0 || pestana !== "cotizaciones") return [];
+    const grupos = new Map<string, { codigo: string; bodega: string; metros: number; rollos: number; cotizaciones: string[] }>();
+    for (const ap of apartadosFiltrados) {
+      if (!["apartado", "enviado_a_produccion", "en_produccion"].includes(ap.estado)) continue;
+      for (const it of ap.items) {
+        if (it.modalidad !== "por_rollo" || !lineaUsaCodigo(it, codigosBuscados) || (it.metrosPendientes ?? 0) <= 0.005) continue;
+        const codigo = (it.codigoInterno || "").toUpperCase();
+        const clave = `${codigo}|${ap.bodegaNombre}`;
+        const g = grupos.get(clave) || { codigo, bodega: ap.bodegaNombre, metros: 0, rollos: 0, cotizaciones: [] };
+        g.metros += it.metrosPendientes ?? 0;
+        if (it.rolloId) g.rollos += 1;
+        if (!g.cotizaciones.includes(ap.numeroCotizacion)) g.cotizaciones.push(ap.numeroCotizacion);
+        grupos.set(clave, g);
+      }
+    }
+    return [...grupos.values()].sort((x, y) => x.codigo.localeCompare(y.codigo) || x.bodega.localeCompare(y.bodega));
+  }, [apartadosFiltrados, codigosBuscados, pestana]);
 
   // Paginación en el navegador: con cientos de cotizaciones la tabla era eterna.
   const [paginaApartados, setPaginaApartados] = useState(1);
@@ -1597,6 +1621,33 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     : `Mostrando ${apartadosFiltrados.length} cotizaciones sin entregar`
                       + `${a.filtroEstado ? ` en estado "${ETIQUETAS_ESTADO[a.filtroEstado] || a.filtroEstado}"` : ""}.`}
                 </p>
+              )}
+              {!a.cargandoApartados && codigosBuscados.length > 0 && pestana === "cotizaciones" && (
+                <div className="apartados-falta-producir" role="status">
+                  {faltaPorProducir.length === 0 ? (
+                    <p style={{ margin: 0 }}>Nada de <strong>{filtroCodigo.trim().toUpperCase()}</strong> por producir: todo lo apartado ya se produjo.</p>
+                  ) : (
+                    <>
+                      <p style={{ margin: "0 0 0.4rem" }}>
+                        <strong>Falta por producir de {filtroCodigo.trim().toUpperCase()}:</strong>{" "}
+                        {formatoMetros(faltaPorProducir.reduce((suma, g) => suma + g.metros, 0))} m en total
+                      </p>
+                      <table className="apartados-falta-tabla">
+                        <thead><tr><th>Código</th><th>Bodega</th><th className="num">Metros</th><th>Cotizaciones</th></tr></thead>
+                        <tbody>
+                          {faltaPorProducir.map((g) => (
+                            <tr key={`${g.codigo}|${g.bodega}`}>
+                              <td><strong>{g.codigo}</strong></td>
+                              <td>{g.bodega}</td>
+                              <td className="num">{formatoMetros(g.metros)} m{g.rollos ? ` (${g.rollos} rollo${g.rollos === 1 ? "" : "s"} completo${g.rollos === 1 ? "" : "s"})` : ""}</td>
+                              <td>{g.cotizaciones.join(", ")}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  )}
+                </div>
               )}
 
               {a.cargandoApartados ? (
