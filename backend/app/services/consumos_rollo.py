@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import coincide_bodega
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.rollo import HistorialConsumoRollo, Rollo
-from app.models.usuario import Usuario
+from app.models.usuario import RolUsuario, Usuario
 from app.services.apartados import bloquear_rollos_codigo, exigir_rollo_libre, validar_reserva_rollos
 from app.services.envios import envio_pendiente_del_rollo
 
@@ -25,16 +25,18 @@ def _metros_limpios(valor: float) -> float:
     return 0.0 if valor < TOLERANCIA_METROS else valor
 
 
-def _rollo_bloqueado_con_su_codigo(db: Session, rollo_id: int, usuario: Usuario) -> tuple[Rollo, list[Rollo]]:
+def _rollo_bloqueado_con_su_codigo(
+    db: Session, rollo_id: int, usuario: Usuario, *, cualquier_bodega: bool = False
+) -> tuple[Rollo, list[Rollo]]:
     """Devuelve el rollo y TODOS los rollos de su código, ya bloqueados en
     orden por id: la reserva de los apartados es por código, así que para
     validarla sin carreras hay que bloquear el código completo, no solo el
-    rollo (ver apartados.bloquear_rollos_codigo)."""
-    previo = (
-        db.query(Rollo)
-        .filter(Rollo.id == rollo_id, coincide_bodega(Rollo.bodega_id, usuario.bodega_id))
-        .first()
-    )
+    rollo (ver apartados.bloquear_rollos_codigo). `cualquier_bodega`: el rollo
+    puede estar en cualquier sede, no solo en la del usuario."""
+    consulta = db.query(Rollo).filter(Rollo.id == rollo_id)
+    if not cualquier_bodega:
+        consulta = consulta.filter(coincide_bodega(Rollo.bodega_id, usuario.bodega_id))
+    previo = consulta.first()
     if previo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rollo no encontrado.")
     rollos_codigo = bloquear_rollos_codigo(db, bodega_id=previo.bodega_id, codigo_interno=previo.codigo_interno)
@@ -92,8 +94,11 @@ def registrar_salida_externa_rollo(
     """Saca el rollo COMPLETO hacia otra empresa (intercambio externo, no una
     transferencia entre nuestras bodegas). Reutiliza el mismo mecanismo que
     el consumo: mueve todos los metros disponibles a consumidos y deja que
-    `recalcular_estado()` derive AGOTADO -- nunca se toca `estado` a mano."""
-    rollo, rollos_codigo = _rollo_bloqueado_con_su_codigo(db, rollo_id, usuario)
+    `recalcular_estado()` derive AGOTADO -- nunca se toca `estado` a mano.
+    Admin Inventario la registra para rollos de cualquier sede."""
+    rollo, rollos_codigo = _rollo_bloqueado_con_su_codigo(
+        db, rollo_id, usuario, cualquier_bodega=usuario.rol == RolUsuario.ADMIN_INVENTARIO,
+    )
     empresa = empresa.strip()
     if not empresa:
         raise HTTPException(status_code=400, detail="El nombre de la empresa es obligatorio.")
@@ -112,7 +117,7 @@ def registrar_salida_externa_rollo(
         fecha=ahora, tipo=TipoMovimiento.SALIDA, motivo="intercambio_externo", producto_codigo=rollo.codigo_interno,
         producto_descripcion=f"{rollo.descripcion} (rollo {rollo.identificador_rollo})",
         rollo_id=rollo.id, identificador_rollo=rollo.identificador_rollo,
-        bodega_origen_id=usuario.bodega_id, bodega_destino_id=None, cantidad=cantidad, usuario=usuario.correo,
+        bodega_origen_id=rollo.bodega_id, bodega_destino_id=None, cantidad=cantidad, usuario=usuario.correo,
         empresa_externa=empresa, observaciones=observaciones or f"Intercambio con {empresa}.",
     ))
     return rollo

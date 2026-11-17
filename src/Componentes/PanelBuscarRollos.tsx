@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { rolloDesdeApi } from "./Mapeo";
 import ModalHistorialRollo from "./ModalHistorialRollo";
+import ModalSalidaExternaRollo from "./ModalSalidaExternaRollo";
 import { useHistorialRollo } from "../Hooks/useHistorialRollo";
 import { ESTADOS_ROLLO } from "./Rollos";
 import { EMPRESAS, FILTRO_SIN_EMPRESA, nombreEmpresa } from "../Utils/empresas";
@@ -24,7 +25,7 @@ function normalizar(texto: unknown) {
  * sirve para las dos cosas (ver backend /admin-inventario/rollos). */
 export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHistorial = false }: {
   bodegas: Bodega[]; empresa: string; setEmpresa: (valor: string) => void;
-  // Admin Inventario: "Ver historial" de cada rollo (misma ventana que Rollos almacenados).
+  // Admin Inventario: "Ver historial" y "Salida externa" de cada rollo (mismas ventanas que Rollos almacenados).
   conHistorial?: boolean;
 }) {
   const [estado, setEstado] = useState("");
@@ -34,6 +35,37 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
   const [busqueda, setBusqueda] = useState("");
   const [bodega, setBodega] = useState("");
   const [pagina, setPagina] = useState(1);
+  const [recargar, setRecargar] = useState(0);
+  // Salida externa: el rollo completo sale a otra empresa y no vuelve.
+  const [rolloSalida, setRolloSalida] = useState<Rollo | null>(null);
+  const [empresaSalida, setEmpresaSalida] = useState("");
+  const [observacionesSalida, setObservacionesSalida] = useState("");
+  const [errorSalida, setErrorSalida] = useState("");
+  const [guardandoSalida, setGuardandoSalida] = useState(false);
+  const [aviso, setAviso] = useState("");
+
+  function abrirSalida(r: Rollo) {
+    setRolloSalida(r); setEmpresaSalida(""); setObservacionesSalida(""); setErrorSalida(""); setAviso("");
+  }
+
+  async function registrarSalida(evento: { preventDefault: () => void }) {
+    evento.preventDefault();
+    if (!rolloSalida) return;
+    if (!empresaSalida.trim()) { setErrorSalida("El nombre de la empresa es obligatorio."); return; }
+    setGuardandoSalida(true); setErrorSalida("");
+    try {
+      await api.post(`/rollos/${rolloSalida.id}/salida-externa`, {
+        empresa: empresaSalida.trim(), observaciones: observacionesSalida,
+      });
+      setAviso(`Salida externa registrada: rollo ${rolloSalida.identificadorRollo} a ${empresaSalida.trim()}.`);
+      setRolloSalida(null);
+      setRecargar((n) => n + 1);
+    } catch (err) {
+      setErrorSalida(err instanceof ErrorApi ? err.message : "No se pudo registrar la salida. Intenta de nuevo.");
+    } finally {
+      setGuardandoSalida(false);
+    }
+  }
 
   useEffect(() => {
     let vigente = true;
@@ -43,7 +75,7 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
       .catch((err) => { if (vigente) setError(err instanceof ErrorApi ? err.message : "No se pudieron cargar los rollos."); })
       .finally(() => { if (vigente) setCargando(false); });
     return () => { vigente = false; };
-  }, [estado]);
+  }, [estado, recargar]);
 
   useEffect(() => { setPagina(1); }, [busqueda, bodega, empresa, estado]);
 
@@ -98,6 +130,7 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
       </div>
 
       {error && <p className="inventario-error">{error}</p>}
+      {aviso && <p className="inventario-exito" role="status" onClick={() => setAviso("")}>{aviso}</p>}
       {cargando ? (
         <p className="inventario-cargando">Cargando rollos...</p>
       ) : !hayFiltro ? null : (
@@ -139,6 +172,11 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
                               Ver historial
                             </button>
                           )}
+                          {conHistorial && r.estado !== "agotado" && (
+                            <button type="button" className="rollos-boton-secundario buscar-rollos-historial" onClick={() => abrirSalida(r)}>
+                              Salida externa
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -155,6 +193,19 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
             </div>
           )}
         </>
+      )}
+      {rolloSalida && (
+        <ModalSalidaExternaRollo
+          rolloParaSalidaExterna={rolloSalida}
+          empresaSalidaExterna={empresaSalida}
+          setEmpresaSalidaExterna={setEmpresaSalida}
+          observacionesSalidaExterna={observacionesSalida}
+          setObservacionesSalidaExterna={setObservacionesSalida}
+          errorSalidaExterna={errorSalida}
+          guardandoSalidaExterna={guardandoSalida}
+          cerrarSalidaExterna={() => setRolloSalida(null)}
+          registrarSalidaExterna={registrarSalida}
+        />
       )}
       {h.rolloParaHistorial && (
         <ModalHistorialRollo

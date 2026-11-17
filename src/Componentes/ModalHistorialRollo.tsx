@@ -96,7 +96,7 @@ function ModalHistorialRollo({
                     <tr key={m.id} className={esStock ? "rollos-historial-stock" : undefined}>
                       <td>{formatearFechaColombia(m.fecha)}</td>
                       <td>{m.tipo}</td>
-                      <td>{esStock ? "stock que quedó" : m.motivo || "—"}</td>
+                      <td>{esStock ? "stock que quedó" : m.motivo === "intercambio_externo" ? "salida externa" : m.motivo || "—"}</td>
                       <td>{m.empresaExterna || "—"}</td>
                       <td>{esStock ? `${m.cantidad} und` : `${m.cantidad} m`}</td>
                       <td>{m.cotizacion || "—"}</td>
