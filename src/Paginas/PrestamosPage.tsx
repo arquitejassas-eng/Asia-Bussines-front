@@ -64,8 +64,11 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const [vista, setVista] = useState<"pendientes" | "saldados">("pendientes");
   const incluirSaldados = vista === "saldados";
   // Empresas externas que devolvieron un rollo con kilos de menos: nos deben esa diferencia.
-  const [externosDeben, setExternosDeben] = useState<FilaCuadre[]>([]);
-  const alCargarCuadre = useCallback((filas: FilaCuadre[]) => setExternosDeben(filas.filter((f) => f.estado === "por_facturar" || f.estado === "por_pagar")), []);
+  const [cuadre, setCuadre] = useState<FilaCuadre[]>([]);
+  const alCargarCuadre = useCallback((filas: FilaCuadre[]) => setCuadre(filas), []);
+  // Filtro por empresa externa (a quién se le prestó): vacío = todas.
+  const [externa, setExterna] = useState("");
+  const externosDeben = cuadre.filter((f) => (f.estado === "por_facturar" || f.estado === "por_pagar") && (!externa || f.prestador === externa));
   const [reporte, setReporte] = useState<Reporte>({ resumen: [], prestamos: [], sacado_sin_existencia: [] });
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -245,14 +248,20 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     });
   }
 
-  const prestamosVisibles = vista === "saldados" ? reporte.prestamos.filter((p) => p.saldado) : reporte.prestamos;
-  const sinSaldar = reporte.prestamos.filter((p) => !p.saldado);
+  const empresasExternas = [...new Set([
+    ...cuadre.map((f) => f.prestador),
+    ...reporte.prestamos.filter((p) => p.empresa_presta === EXTERNA || p.empresa_recibe === EXTERNA).map((p) => p.prestador),
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const prestamosVisibles = (vista === "saldados" ? reporte.prestamos.filter((p) => p.saldado) : reporte.prestamos)
+    .filter((p) => !externa || p.prestador === externa);
+  const resumenVisible = externa ? [] : reporte.resumen;
+  const sinSaldar = prestamosVisibles.filter((p) => !p.saldado);
   const todosElegidos = sinSaldar.length > 0 && sinSaldar.every((p) => seleccion.has(p.id));
 
   // Lo que se ve en pantalla (con los mismos filtros), una hoja por sección.
   function exportar() {
     exportarHojasAExcel([
-      { nombre: "Lo que se deben", filas: reporte.resumen.map((d) => ({
+      { nombre: "Lo que se deben", filas: resumenVisible.map((d) => ({
         "Quién debe": nombre(d.debe), "A quién": nombre(d.presta), "Material": d.codigo,
         "Tipo": d.tipo === "lamina" ? "lámina" : "producto", "Descripción": d.descripcion,
         "Rollos (kilos al llegar)": d.rollos.map((r) => `${r.referencia} (${kilosTexto(r.kilos)})`).join(", "),
@@ -444,6 +453,11 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               <option value="">Las dos empresas</option>
               {Object.entries(EMPRESAS).map(([sigla, n]) => <option key={sigla} value={sigla}>{n}</option>)}
             </select>
+            <select className={`apartados-select ${externa ? "apartados-select-activo" : ""}`} aria-label="Empresa externa"
+              value={externa} onChange={(e) => setExterna(e.target.value)}>
+              <option value="">Todas las empresas externas</option>
+              {empresasExternas.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
             <select className={`apartados-select ${bodegaId ? "apartados-select-activo" : ""}`} aria-label="Bodega"
               value={bodegaId} onChange={(e) => setBodegaId(e.target.value)}>
               <option value="">Todas las bodegas</option>
@@ -462,8 +476,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               {/* ================== LO QUE SE DEBEN ================== */}
               {vista === "pendientes" && <>
               <h2 className="inventario-form-subtitulo">Lo que se deben (sin saldar)</h2>
-              {reporte.resumen.length === 0 && externosDeben.length === 0 ? (
-                <p className="inventario-vacio">No se debe nada{desde || hasta || bodegaId ? " con estos filtros" : ""}.</p>
+              {resumenVisible.length === 0 && externosDeben.length === 0 ? (
+                <p className="inventario-vacio">No se debe nada{desde || hasta || bodegaId || externa ? " con estos filtros" : ""}.</p>
               ) : (
                 <div className="inventario-tabla-contenedor">
                   <table className="inventario-tabla">
@@ -471,7 +485,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       <tr><th>Quién debe</th><th>A quién</th><th>Material</th><th>Descripción / rollo</th><th>Cantidad</th></tr>
                     </thead>
                     <tbody>
-                      {reporte.resumen.map((d) => (
+                      {resumenVisible.map((d) => (
                         <tr key={`${d.tipo}|${d.codigo}|${d.debe}`}>
                           <td><strong>{nombre(d.debe)}</strong></td>
                           <td>{nombre(d.presta)}</td>
@@ -583,7 +597,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </div>
               )}
 
-              <CuadreRollosPrestados nombreBodega={nombreBodega} recargar={recargarCuadre} vista={vista} alCargar={alCargarCuadre} />
+              <CuadreRollosPrestados nombreBodega={nombreBodega} recargar={recargarCuadre} vista={vista} alCargar={alCargarCuadre} externa={externa} />
 
               {/* ================== SACADO SIN EXISTENCIA ================== */}
               {vista === "pendientes" && <>

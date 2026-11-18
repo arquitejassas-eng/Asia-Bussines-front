@@ -30,9 +30,11 @@ const kg = (v: number | null) => (v == null ? "—" : `${v.toLocaleString("es-CO
 /** Cada rollo prestado a una empresa externa: kilos que se fueron contra los
  * que volvieron (el mismo rollo u otro). Lo que devolvieron de menos se
  * factura: aquí se anota el número de la factura. */
-export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, alCargar }: {
+export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, alCargar, externa = "" }: {
   nombreBodega: (id: number | null) => string; recargar: number; vista: "pendientes" | "saldados";
   alCargar?: (filas: FilaCuadre[]) => void;
+  /** Solo los de esta empresa externa (vacío = todas). */
+  externa?: string;
 }) {
   const [filas, setFilas] = useState<FilaCuadre[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -68,11 +70,11 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
     }
   }
 
-  const porFacturar = filas.filter((f) => f.estado === "por_facturar");
+  const porFacturar = filas.filter((f) => f.estado === "por_facturar" && (!externa || f.prestador === externa));
   const totalPorFacturar = porFacturar.reduce((suma, f) => suma + (f.diferencia || 0), 0);
-  const porPagar = filas.filter((f) => f.estado === "por_pagar");
+  const porPagar = filas.filter((f) => f.estado === "por_pagar" && (!externa || f.prestador === externa));
   const totalPorPagar = porPagar.reduce((suma, f) => suma - (f.diferencia || 0), 0);
-  const deLaVista = filas.filter((f) => CUADRE_PENDIENTE.has(f.estado) === (vista === "pendientes"));
+  const deLaVista = filas.filter((f) => CUADRE_PENDIENTE.has(f.estado) === (vista === "pendientes") && (!externa || f.prestador === externa));
   const visibles = soloPorFacturar && vista === "pendientes" ? [...porFacturar, ...porPagar] : deLaVista;
 
   function exportar() {
