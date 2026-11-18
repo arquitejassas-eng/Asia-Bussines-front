@@ -46,6 +46,10 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
       setError("La cantidad que entró no puede ser negativa.");
       return;
     }
+    if (esPorcelanato && !(Number(formulario.metrosPorUnidad) > 0)) {
+      setError("Escribe los m² por caja del porcelanato (ej. 1.44): sin eso no se puede vender por m² ni pasar a Siigo.");
+      return;
+    }
     const familia = confirmarFamilia(formulario.familia, opcionesFamilia);
     if (familia === null) return;
     setGuardando(true);
@@ -126,6 +130,16 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
             {opcionesFamilia.map((f) => <option key={f} value={f} />)}
           </datalist>
         </div>
+        {esPorcelanato && (
+          <div>
+            {/* Justo al lado de Familia: sin m² por caja el porcelanato no sale en su tarjeta ni se vende por m². */}
+            <label>m² por caja *</label>
+            <input type="number" min="0" step="any" placeholder="Ej. 1.44" value={formulario.metrosPorUnidad}
+              onChange={(e) => cambiar("metrosPorUnidad", e.target.value)}
+              style={formulario.metrosPorUnidad ? undefined : { borderColor: "var(--color-error, #c0392b)" }} />
+            <small className="inventario-carga-ayuda">Lo que dice la caja (ej. 1.44). Obligatorio.</small>
+          </div>
+        )}
         <div>
           <label>Espesor</label>
           <input placeholder="Ej. 0,33" value={formulario.calibre} onChange={(e) => cambiar("calibre", e.target.value)} />
@@ -157,13 +171,6 @@ function PanelNuevoProducto({ bodegas, familias, alCrear }: {
           <input type="number" min="0" step="any" placeholder="Sin alerta" value={formulario.stockMinimo}
             onChange={(e) => cambiar("stockMinimo", e.target.value)} />
         </div>
-        {esPorcelanato && (
-          <div>
-            <label>m² por caja (opcional)</label>
-            <input type="number" min="0" step="any" placeholder="Ej. 1.44" value={formulario.metrosPorUnidad}
-              onChange={(e) => cambiar("metrosPorUnidad", e.target.value)} />
-          </div>
-        )}
       </div>
       {error && <p className="inventario-error">{error}</p>}
       {listo && <p className="inventario-carga-ayuda"><strong>{listo}</strong></p>}

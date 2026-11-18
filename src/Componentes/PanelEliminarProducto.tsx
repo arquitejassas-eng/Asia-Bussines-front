@@ -9,7 +9,7 @@ import ModalConfirmacion from "./ModalConfirmacion";
 // pierde stock ni se rompe una cotización. Editar usa el mismo PUT que la
 // bodega (si cambia el stock, el ajuste queda en el historial de esa bodega).
 type ProductoDeBodega = { id: number; codigo: string; descripcion: string; empresa: string; stock: number; datos: Record<string, unknown> };
-type Edicion = { codigo: string; empresa: string; descripcion: string; familia: string; calibre: string; referencia: string; stockMinimo: string; stock: string };
+type Edicion = { codigo: string; empresa: string; descripcion: string; familia: string; calibre: string; referencia: string; stockMinimo: string; stock: string; m2PorCaja: string };
 
 const esTeja = (familia: string) => familia.trim().toUpperCase() === "TEJA";
 
@@ -44,6 +44,7 @@ function PanelEliminarProducto({ bodegas, alEliminar, familias = [] }: {
       codigo: String(d.codigo ?? ""), empresa: String(d.empresa ?? ""), descripcion: String(d.descripcion ?? ""),
       familia: String(d.familia ?? ""), calibre: String(d.calibre ?? ""), referencia: String(d.referencia ?? ""),
       stockMinimo: d.stock_minimo == null ? "" : String(d.stock_minimo), stock: String(d.stock ?? 0),
+      m2PorCaja: d.metros_por_unidad == null ? "" : String(d.metros_por_unidad),
     });
   }
 
@@ -51,6 +52,11 @@ function PanelEliminarProducto({ bodegas, alEliminar, familias = [] }: {
     if (!editando || !edicion) return;
     if (!edicion.codigo.trim() || !edicion.descripcion.trim()) {
       setError("Código y descripción son obligatorios.");
+      return;
+    }
+    const porcelanato = edicion.familia.trim().toUpperCase() === "PORCELANATO";
+    if (porcelanato && !(Number(edicion.m2PorCaja.replace(",", ".")) > 0)) {
+      setError("Escribe los m² por caja del porcelanato (ej. 1,44): sin eso no se puede vender por m² ni pasar a Siigo.");
       return;
     }
     setGuardando(true);
@@ -64,6 +70,7 @@ function PanelEliminarProducto({ bodegas, alEliminar, familias = [] }: {
         familia: edicion.familia.trim(), calibre: edicion.calibre.trim(), referencia: edicion.referencia.trim(),
         stock_minimo: edicion.stockMinimo.trim() === "" ? null : numero(edicion.stockMinimo),
         stock: numero(edicion.stock),
+        ...(porcelanato ? { metros_por_unidad: numero(edicion.m2PorCaja) } : {}),
         // Lo que se vio al abrir: si alguien movió el stock mientras tanto, no se pisa.
         stock_anterior: d.stock, entrada_anterior: d.entrada,
       });
@@ -177,6 +184,13 @@ function PanelEliminarProducto({ bodegas, alEliminar, familias = [] }: {
           <input type="number" min="0" step="any" placeholder="Sin alerta" value={edicion.stockMinimo}
             onChange={(e) => setEdicion({ ...edicion, stockMinimo: e.target.value })} />
         </div>
+        {edicion.familia.trim().toUpperCase() === "PORCELANATO" && (
+          <div>
+            <label>m² por caja *</label>
+            <input type="number" min="0" step="any" placeholder="Ej. 1.44" value={edicion.m2PorCaja}
+              onChange={(e) => setEdicion({ ...edicion, m2PorCaja: e.target.value })} />
+          </div>
+        )}
       </div>
       {error && <p className="inventario-error" role="alert">{error}</p>}
       <div className="inventario-form-botones">
