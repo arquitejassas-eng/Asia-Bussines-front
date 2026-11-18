@@ -104,6 +104,9 @@ class RolloCrear(BaseModel):
     # Rollo prestado: queda en Préstamos entre empresas a nombre de quien lo prestó.
     prestado: bool = False
     prestador: str = Field(default="", max_length=150)
+    # Empresa dueña ("AR"/"ABG"): la pantalla la pide siempre. Vacía = se
+    # deduce de la referencia (ver Rollo._completar_empresa).
+    empresa: str = Field(default="", max_length=10)
 
 
 class ConsumoRolloCrear(BaseModel):

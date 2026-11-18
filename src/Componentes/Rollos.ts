@@ -215,6 +215,8 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
     metrosConsumidos: "", proveedor: "", lote: "", observaciones: "",
     // "" = no ha respondido, "no" o "si"; si es prestado, quién lo prestó.
     prestado: "", prestador: "",
+    // Empresa dueña del rollo: obligatoria, se escoge a mano.
+    empresa: "",
   };
 
   const [mostrarFormularioRollo, setMostrarFormularioRollo] = useState(false);
@@ -326,6 +328,10 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
       setErrorFormularioRollo("Ese código no está en la tabla de equivalencias. Agrégalo antes de guardar el rollo.");
       return;
     }
+    if (!f.empresa) {
+      setErrorFormularioRollo("Escoge de qué empresa es el rollo.");
+      return;
+    }
     if (!f.prestado) {
       setErrorFormularioRollo("Indica si el rollo es prestado o no.");
       return;
@@ -353,6 +359,7 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
         observaciones: f.observaciones.trim(),
         prestado: f.prestado === "si",
         prestador: f.prestado === "si" ? f.prestador.trim() : "",
+        empresa: f.empresa,
       });
       await cargarRollos();
       setMostrarFormularioRollo(false);

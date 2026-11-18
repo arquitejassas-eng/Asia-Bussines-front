@@ -195,6 +195,19 @@ function ModalIngresoRollo({
             </div>
           </div>
 
+          <div className="rollos-form-seccion">
+            <h4>Empresa *</h4>
+            <div className="rollo-prestado-opciones" role="radiogroup" aria-label="Empresa del rollo">
+              {Object.entries(EMPRESAS).map(([sigla, nombre]) => (
+                <label key={sigla} className={formularioRollo.empresa === sigla ? "rollo-prestado-activo" : ""}>
+                  <input type="radio" name="rollo-empresa" value={sigla} checked={formularioRollo.empresa === sigla}
+                    onChange={() => actualizarCampoRollo("empresa", sigla)} />
+                  {nombre} ({sigla})
+                </label>
+              ))}
+            </div>
+          </div>
+
           {/* Prestado: queda en Préstamos entre empresas a nombre de quien lo prestó. */}
           <div className="rollos-form-seccion">
             <h4>¿Es prestado? *</h4>

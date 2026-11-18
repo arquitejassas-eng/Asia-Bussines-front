@@ -313,7 +313,7 @@ def crear_rollo(
         metros_proveedor=metros_proveedor, metros_calculados=metros_proveedor,
         metros_disponibles=datos.metros_disponibles, metros_consumidos=datos.metros_consumidos,
         fecha_ingreso=datetime.now(timezone.utc), proveedor=datos.proveedor, lote=datos.lote,
-        observaciones=datos.observaciones,
+        observaciones=datos.observaciones, empresa=datos.empresa.strip().upper(),
     )
     rollo.recalcular_estado()
     db.add(rollo)
