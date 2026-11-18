@@ -17,7 +17,7 @@ type Prestamo = {
   id: number; fecha: string; empresa_presta: string; empresa_recibe: string; prestador: string; bodega_id: number | null;
   numero_cotizacion: string; tipo: string; codigo: string; descripcion: string; cantidad: number; unidad: string;
   referencia_rollo: string; kilos_rollo: number | null; origen: string; usuario: string; saldado: boolean; saldado_por: string;
-  fecha_saldado: string | null;
+  fecha_saldado: string | null; estado_cotizacion?: string;
 };
 type Deuda = {
   tipo: string; codigo: string; descripcion: string; unidad: string; presta: string; debe: string; cantidad: number;
@@ -131,8 +131,10 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         const anotados = await api.post<Prestamo[]>("/prestamos/desde-cotizacion", {
           numero_cotizacion: prestarCotizacion.trim(), tercero: prestarTercero.trim(),
         }) || [];
+        const porRecoger = anotados.some((p) => p.estado_cotizacion === "por_recoger");
         setAviso(`Listo: la cotización ${prestarCotizacion.trim()} quedó como préstamo a ${prestarTercero.trim()}: `
-          + anotados.map((p) => `${p.cantidad} ${p.codigo}`).join(", ") + ".");
+          + anotados.map((p) => p.unidad === "m" ? `${p.cantidad} m de ${p.codigo}` : `${p.cantidad} ${p.codigo}`).join(", ") + "."
+          + (porRecoger ? " Queda «por recoger»: cuando vengan por él, dale Salida a la cotización." : ""));
         setMostrarPrestar(false);
         setPrestarCotizacion(""); setPrestarTercero("");
         await cargar();
@@ -166,6 +168,18 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       setErrorPrestar(err instanceof ErrorApi ? err.message : "No se pudo registrar el préstamo.");
     } finally {
       setPrestando(false);
+    }
+  }
+
+  async function cerrarCancelado(p: Prestamo) {
+    if (!window.confirm(`La cotización ${p.numero_cotizacion} se canceló y el material nunca salió. ¿Cerrar este préstamo? (no mueve inventario)`)) return;
+    setError("");
+    try {
+      await api.post(`/prestamos/${p.id}/devolver`, { cantidad: p.cantidad });
+      setAviso(`Listo: se cerró el préstamo de la cotización ${p.numero_cotizacion}.`);
+      await cargar();
+    } catch (err) {
+      setError(err instanceof ErrorApi ? err.message : "No se pudo cerrar el préstamo.");
     }
   }
 
@@ -333,7 +347,10 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             ))}
                           </ul>
                           {!vistaCotizacion.salio && (
-                            <p className="inventario-error">Dale Salida a la cotización primero; luego la anotas aquí.</p>
+                            <p className="inventario-carga-ayuda">
+                              Todavía no ha salido: puedes anotarlo ya. Queda <strong>por recoger</strong> y el material sigue apartado
+                              para esta cotización; cuando vengan por él, le das <strong>Salida</strong> a la cotización como siempre.
+                            </p>
                           )}
                         </>
                       )}
@@ -503,7 +520,16 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             {p.saldado
                               ? `${p.origen === "devuelto_por_tercero" ? "Devuelto" : "Saldado"}${p.fecha_saldado ? ` el ${formatearFechaColombia(p.fecha_saldado)}` : ""}`
                               : "Sin saldar"}
-                            {!p.saldado && p.origen === "prestamo_a_tercero" && (
+                            {!p.saldado && p.estado_cotizacion === "por_recoger" && (
+                              <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block", color: "#8a5a00" }}>
+                                Por recoger: falta darle Salida a la cotización {p.numero_cotizacion}
+                              </span>
+                            )}
+                            {!p.saldado && p.origen === "prestamo_a_tercero" && p.estado_cotizacion === "cancelada" && (
+                              <button type="button" className="apartados-limpiar" style={{ display: "block", marginTop: "0.35rem" }}
+                                onClick={() => cerrarCancelado(p)}>Cerrar (cotización cancelada)</button>
+                            )}
+                            {!p.saldado && p.origen === "prestamo_a_tercero" && !p.estado_cotizacion && (
                               <button type="button" className="apartados-limpiar" style={{ display: "block", marginTop: "0.35rem" }}
                                 onClick={() => devolver(p)}>Devolver</button>
                             )}

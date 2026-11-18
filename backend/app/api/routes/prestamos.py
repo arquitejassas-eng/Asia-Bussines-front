@@ -42,6 +42,10 @@ def reporte_prestamos(
     pesos = dict(db.query(Rollo.identificador_rollo, Rollo.peso_neto).filter(Rollo.identificador_rollo.in_(referencias)).all()) if referencias else {}
     for p in prestamos:
         p.kilos_rollo = kilos_rollo(pesos.get(p.referencia_rollo)) if p.referencia_rollo else None
+    estados = srv.estado_de_cotizacion_prestada(
+        db, {p.apartado_id for p in prestamos if p.apartado_id is not None and not p.saldado and p.origen == srv.PRESTADO_A_TERCERO})
+    for p in prestamos:
+        p.estado_cotizacion = estados.get(p.apartado_id, "") if not p.saldado and p.origen == srv.PRESTADO_A_TERCERO else ""
     sacado = db.query(Movimiento).filter(Movimiento.tipo == TipoMovimiento.ENTRADA, Movimiento.motivo == MOTIVO_SACADO_SIN_EXISTENCIA)
     if bodega_id is not None:
         sacado = sacado.filter(Movimiento.bodega_destino_id == bodega_id)
@@ -94,11 +98,14 @@ def vista_prestamo_desde_cotizacion(numero: str, db: Session = Depends(get_db), 
 @router.post("/desde-cotizacion", response_model=list[PrestamoResponse])
 def prestar_desde_cotizacion(datos: PrestarDesdeCotizacionRequest, db: Session = Depends(get_db),
                              usuario: Usuario = Depends(usuario_actual)):
-    """Lo que ya salió con una cotización hecha para el préstamo queda como préstamo a la empresa externa."""
+    """Lo de una cotización hecha para el préstamo queda como préstamo a la empresa externa (aunque no haya salido)."""
     prestamos = srv.prestar_desde_cotizacion(db, numero=datos.numero_cotizacion, tercero=datos.tercero, usuario=usuario)
     db.commit()
     for prestamo in prestamos:
         db.refresh(prestamo)
+    estados = srv.estado_de_cotizacion_prestada(db, {p.apartado_id for p in prestamos if p.apartado_id is not None})
+    for prestamo in prestamos:
+        prestamo.estado_cotizacion = estados.get(prestamo.apartado_id, "")
     return prestamos
 
 

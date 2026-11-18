@@ -245,17 +245,14 @@ def vista_prestamo_desde_cotizacion(db: Session, numero: str) -> dict:
 
 
 def prestar_desde_cotizacion(db: Session, *, numero: str, tercero: str, usuario: Usuario) -> list[PrestamoEmpresa]:
-    """Hicieron una cotización para el préstamo y ya se le dio salida: lo que
-    salió (productos de stock) queda como préstamo a la empresa externa,
-    enlazado a esa cotización. El stock NO se descuenta otra vez: ya salió."""
+    """Hicieron una cotización para el préstamo: sus productos de stock y
+    rollos completos quedan como préstamo a la empresa externa, enlazados a esa
+    cotización. Nada se descuenta aquí: sale con la Salida de la cotización."""
     nombre = _nombre_tercero(tercero)
     buscado, por_id, lineas = lineas_para_prestar(db, numero)
-    if any(not _linea_salio(l) for l in lineas):
-        raise HTTPException(
-            status_code=400,
-            detail=f"La cotización {buscado} todavía no ha salido de la bodega: dale Salida primero y luego anótala aquí "
-                   "(o cancélala y presta el producto directo aquí).",
-        )
+    # Se puede anotar desde que se crea la cotización (vienen por él otro día):
+    # el material sigue apartado para ella y sale con su Salida, como siempre.
+    # Mientras no salga, el préstamo queda "por recoger" y no se puede devolver.
     ahora = datetime.now(timezone.utc)
     prestamos = []
     for linea in lineas:
@@ -300,12 +297,43 @@ def _nombre_tercero(tercero: str) -> str:
     return nombre
 
 
+def estado_de_cotizacion_prestada(db: Session, apartado_ids: set[int]) -> dict[int, str]:
+    """Para los préstamos anotados con una cotización: "por_recoger" si su
+    material todavía no ha salido, "cancelada" si la cotización se canceló sin
+    salir. Las que ya salieron no aparecen."""
+    from app.models.apartado import ApartadoItem, EstadoApartado
+
+    if not apartado_ids:
+        return {}
+    estados: dict[int, str] = {}
+    for apartado in db.query(Apartado).filter(Apartado.id.in_(apartado_ids)).all():
+        lineas = [l for l in db.query(ApartadoItem).filter(ApartadoItem.apartado_id == apartado.id).all()
+                  if l.rollo_id is not None or l.producto_id is not None]
+        if lineas and all(_linea_salio(l) for l in lineas):
+            continue
+        estados[apartado.id] = "cancelada" if apartado.estado == EstadoApartado.CANCELADO else "por_recoger"
+    return estados
+
+
 def devolver_de_tercero(db: Session, prestamo_id: int, cantidad: float, usuario: Usuario) -> PrestamoEmpresa:
     """La empresa externa devolvió todo o parte: vuelve al stock de la bodega
     de donde salió. Lo devuelto queda saldado; lo que falta sigue pendiente."""
     prestamo = db.query(PrestamoEmpresa).filter(PrestamoEmpresa.id == prestamo_id).with_for_update().first()
     if prestamo is None or prestamo.origen != PRESTADO_A_TERCERO or prestamo.saldado:
         raise HTTPException(status_code=404, detail="Ese préstamo ya no está pendiente. Recarga la lista.")
+    if prestamo.apartado_id is not None:
+        estado = estado_de_cotizacion_prestada(db, {prestamo.apartado_id}).get(prestamo.apartado_id)
+        if estado == "por_recoger":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Todavía no lo han recogido: la cotización {prestamo.numero_cotizacion} no ha salido. "
+                       "Cuando vengan por él, dale Salida a la cotización; después podrás marcar la devolución.",
+            )
+        if estado == "cancelada":
+            # Nunca salió (se canceló la cotización): se cierra sin tocar el inventario.
+            prestamo.origen = DEVUELTO_POR_TERCERO
+            prestamo.saldado, prestamo.saldado_por, prestamo.fecha_saldado = True, usuario.correo, datetime.now(timezone.utc)
+            return prestamo
     cantidad = round(float(cantidad or 0), 2)
     if cantidad <= 0 or cantidad > prestamo.cantidad + 0.005:
         raise HTTPException(status_code=400, detail=f"Escribe cuánto devolvieron: más de 0 y máximo {prestamo.cantidad:g}.")

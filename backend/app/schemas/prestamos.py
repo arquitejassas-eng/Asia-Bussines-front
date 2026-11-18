@@ -23,6 +23,9 @@ class PrestamoResponse(ModeloConFechasUtc):
     referencia_rollo: str
     # Kilos con que llegó el rollo (de su etiqueta), si el préstamo es de un rollo.
     kilos_rollo: int | None = None
+    # Préstamo anotado con una cotización que todavía no ha salido ("por_recoger")
+    # o que se canceló sin salir ("cancelada"); vacío si ya salió.
+    estado_cotizacion: str = ""
     origen: str
     usuario: str
     saldado: bool
