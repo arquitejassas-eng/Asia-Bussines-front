@@ -466,6 +466,19 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       // situación está y dónde buscarla en el sistema.
       const EMPRESA_EXCEL: Record<string, string> = { AR: "ARQUITEJAS", ABG: "ASIA", [AMBAS_EMPRESAS]: "LAS DOS" };
       const empresaExcel = (sigla: string) => EMPRESA_EXCEL[sigla] || sigla;
+      // Nombre del material como en la hoja SALIDA: LR30020,33 → "LAMINA PREPINTADA ROJO 3002 0,33",
+      // CA50170,27 → "CABALLETE AZUL 5017 0,27", MD0,68 → "LAMINA METALDECK 0,68".
+      const COLOR_LETRA: Record<string, string> = { A: "AZUL", R: "ROJO", B: "BLANCO", N: "NEGRO", P: "PLATEADO", T: "TERRACOTA TEXTURIZADO", V: "VERDE" };
+      const productoDeCodigo = (codigo: string | null) => {
+        const texto = (codigo || "").trim().toUpperCase();
+        const metaldeck = /^MD(\d,\d+)$/.exec(texto);
+        if (metaldeck) return `LAMINA METALDECK ${metaldeck[1]}`;
+        const m = /^([LC])([A-Z])(\d{4})\d,(\d+)$/.exec(texto);
+        if (!m || !COLOR_LETRA[m[2]]) return "";
+        const tipo = m[1] === "L" ? (m[2] === "P" ? "LAMINA PREPINTADA PLATEADA" : "LAMINA PREPINTADA") : "CABALLETE";
+        const color = m[1] === "L" && m[2] === "P" ? "" : `${COLOR_LETRA[m[2]]} `;
+        return `${tipo} ${color}${m[3]} 0,${m[4]}`.replace(/\s+/g, " ");
+      };
       const calibreDe = (codigo: string | null) => { const m = /,(\d+)$/.exec(codigo || ""); return m ? `0,${m[1]}` : ""; };
       const salida = lista.flatMap((fila) => (fila.ap.items.length ? fila.ap.items : [null]).map((it) => {
         const { ap } = fila;
@@ -479,7 +492,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           "FECHA": fecha(ap.fechaCreacion),
           "CODIGO": codigo,
           "REFERENCIA": it?.rolloReferencia || "",
-          "PRODUCTO": it ? (deRollo ? "" : it.productoDescripcion) : "",
+          "PRODUCTO": it ? (deRollo ? productoDeCodigo(codigo) || it.descripcion : it.productoDescripcion || productoDeCodigo(codigo)) : "",
           "CALIBRE": deRollo ? calibreDe(codigo) : "",
           "INFORMACION SIIGO": it ? `${descripcionLinea(it)} - BODEGA ${(ap.bodegaNombre || "").toUpperCase()}` : "",
           "SALE": it ? (deRollo ? metros ?? "" : it.cantidad) : "",
