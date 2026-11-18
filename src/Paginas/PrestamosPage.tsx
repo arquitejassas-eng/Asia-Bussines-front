@@ -65,7 +65,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const incluirSaldados = vista === "saldados";
   // Empresas externas que devolvieron un rollo con kilos de menos: nos deben esa diferencia.
   const [externosDeben, setExternosDeben] = useState<FilaCuadre[]>([]);
-  const alCargarCuadre = useCallback((filas: FilaCuadre[]) => setExternosDeben(filas.filter((f) => f.estado === "por_facturar")), []);
+  const alCargarCuadre = useCallback((filas: FilaCuadre[]) => setExternosDeben(filas.filter((f) => f.estado === "por_facturar" || f.estado === "por_pagar")), []);
   const [reporte, setReporte] = useState<Reporte>({ resumen: [], prestamos: [], sacado_sin_existencia: [] });
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -489,14 +489,17 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       ))}
                       {externosDeben.map((f) => (
                         <tr key={`ext-${f.id}`}>
-                          <td><strong>{f.prestador}</strong>{f.numero_cotizacion && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Cot. {f.numero_cotizacion}</span>}</td>
-                          <td>{nombre(f.empresa_presta)}</td>
+                          <td>
+                            <strong>{f.estado === "por_pagar" ? nombre(f.empresa_presta) : f.prestador}</strong>
+                            {f.numero_cotizacion && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Cot. {f.numero_cotizacion}</span>}
+                          </td>
+                          <td>{f.estado === "por_pagar" ? f.prestador : nombre(f.empresa_presta)}</td>
                           <td>{f.codigo} <span className="rollos-texto-ayuda" style={{ margin: 0 }}>(lámina)</span></td>
                           <td>
                             Rollo prestado {f.referencia_rollo} · {(f.kilos_prestados ?? 0).toLocaleString("es-CO")} kg
                             <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Pagaron con: {f.devuelto_con}</span>
                           </td>
-                          <td><strong style={{ color: "#b3261e" }}>{(f.diferencia ?? 0).toLocaleString("es-CO")} kg por facturar</strong></td>
+                          <td><strong style={{ color: "#b3261e" }}>{Math.abs(f.diferencia ?? 0).toLocaleString("es-CO")} kg {f.estado === "por_pagar" ? "por pagar" : "por facturar"}</strong></td>
                         </tr>
                       ))}
                     </tbody>

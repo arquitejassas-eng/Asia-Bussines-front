@@ -456,7 +456,7 @@ def devolver_con_otro_rollo(
 
 
 def anotar_factura(db: Session, prestamo_id: int, factura: str) -> PrestamoEmpresa:
-    """Se le facturó a la empresa externa la diferencia de kilos (vacío = quitarla)."""
+    """Factura (o soporte de pago) de la diferencia de kilos, cobrada o pagada (vacío = quitarla)."""
     prestamo = db.get(PrestamoEmpresa, prestamo_id)
     if prestamo is None or prestamo.empresa_recibe != PRESTADOR_EXTERNO or prestamo.tipo != LAMINA:
         raise HTTPException(status_code=404, detail="Préstamo no encontrado. Recarga la lista.")
@@ -468,7 +468,8 @@ def anotar_factura(db: Session, prestamo_id: int, factura: str) -> PrestamoEmpre
 def cuadre_rollos_terceros(db: Session) -> list[dict]:
     """Cada rollo prestado a una empresa externa: kilos que se fueron, con qué
     lo devolvieron y cuántos kilos volvieron. Diferencia > 0 = devolvieron
-    menos: se le factura. < 0 = devolvieron de más."""
+    menos: se le factura ("por_facturar"). < 0 = devolvieron de más: les
+    debemos esos kilos ("por_pagar") hasta anotar con qué se les pagó."""
     prestamos = (
         db.query(PrestamoEmpresa)
         .filter(PrestamoEmpresa.empresa_recibe == PRESTADOR_EXTERNO, PrestamoEmpresa.tipo == LAMINA,
@@ -493,7 +494,8 @@ def cuadre_rollos_terceros(db: Session) -> list[dict]:
         elif abs(diferencia) < 1:
             estado = "cuadrado"
         elif diferencia < 0:
-            estado = "de_mas"
+            # Devolvieron más kilos de los prestados: les debemos la diferencia.
+            estado = "pagado" if p.factura else "por_pagar"
         else:
             estado = "facturado" if p.factura else "por_facturar"
         filas.append({

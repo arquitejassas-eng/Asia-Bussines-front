@@ -17,13 +17,14 @@ const ESTADO: Record<string, { texto: string; color: string }> = {
   cerrado: { texto: "Cerrado", color: "#666" },
   sin_kilos: { texto: "Devuelto (sin kilos para comparar)", color: "#666" },
   cuadrado: { texto: "Cuadrado", color: "#1b7a3a" },
-  de_mas: { texto: "Devolvieron de más", color: "#1b5fa8" },
+  por_pagar: { texto: "Les debemos (por pagar)", color: "#b3261e" },
+  pagado: { texto: "Pagado", color: "#1b7a3a" },
   por_facturar: { texto: "Por facturar", color: "#b3261e" },
   facturado: { texto: "Facturado", color: "#1b7a3a" },
 };
 // Pendientes: sin devolver, por recoger o devueltos con kilos de menos sin facturar.
 // Lo demás (cuadrado, facturado, de más, cerrado) ya está saldado.
-export const CUADRE_PENDIENTE = new Set(["pendiente", "por_recoger", "por_facturar"]);
+export const CUADRE_PENDIENTE = new Set(["pendiente", "por_recoger", "por_facturar", "por_pagar"]);
 const kg = (v: number | null) => (v == null ? "—" : `${v.toLocaleString("es-CO", { maximumFractionDigits: 1 })} kg`);
 
 /** Cada rollo prestado a una empresa externa: kilos que se fueron contra los
@@ -69,8 +70,10 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
 
   const porFacturar = filas.filter((f) => f.estado === "por_facturar");
   const totalPorFacturar = porFacturar.reduce((suma, f) => suma + (f.diferencia || 0), 0);
+  const porPagar = filas.filter((f) => f.estado === "por_pagar");
+  const totalPorPagar = porPagar.reduce((suma, f) => suma - (f.diferencia || 0), 0);
   const deLaVista = filas.filter((f) => CUADRE_PENDIENTE.has(f.estado) === (vista === "pendientes"));
-  const visibles = soloPorFacturar && vista === "pendientes" ? porFacturar : deLaVista;
+  const visibles = soloPorFacturar && vista === "pendientes" ? [...porFacturar, ...porPagar] : deLaVista;
 
   function exportar() {
     exportarHojasAExcel([{ nombre: "Cuadre rollos prestados", filas: visibles.map((f) => ({
@@ -78,7 +81,7 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
       "Bodega": nombreBodega(f.bodega_id), "Código": f.codigo, "Rollo prestado": f.referencia_rollo, "Metros": f.metros,
       "Kg prestados": f.kilos_prestados ?? "", "Pagaron con": f.devuelto_con, "Kg devueltos": f.kilos_devueltos ?? "",
       "Fecha devolución": f.fecha_devuelto ? formatearFechaColombia(f.fecha_devuelto) : "",
-      "Diferencia kg (+ = por facturar)": f.diferencia ?? "", "Estado": ESTADO[f.estado]?.texto || f.estado, "Factura": f.factura,
+      "Diferencia kg (+ nos deben / - les debemos)": f.diferencia ?? "", "Estado": ESTADO[f.estado]?.texto || f.estado, "Factura": f.factura,
     })) }], `Cuadre rollos prestados ${vista}.xlsx`);
   }
 
@@ -88,16 +91,18 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
         <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Cuadre de rollos prestados a empresas externas</h2>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           {vista === "pendientes" && <label className="apartados-check">
-            <input type="checkbox" checked={soloPorFacturar} onChange={(e) => setSoloPorFacturar(e.target.checked)} /> Solo por facturar
+            <input type="checkbox" checked={soloPorFacturar} onChange={(e) => setSoloPorFacturar(e.target.checked)} /> Solo lo que hay que facturar o pagar
           </label>}
           {visibles.length > 0 && <button type="button" className="apartados-limpiar" onClick={exportar}>Exportar a Excel</button>}
         </div>
       </div>
       <p className="inventario-carga-ayuda">
-        Kilos del rollo que se prestó contra los del rollo que devolvieron. Si devolvieron menos, la diferencia se le
-        factura a esa empresa: escribe el número de la factura cuando la hagas.
-        {vista === "saldados" && " Aquí están los que ya quedaron cuadrados o facturados."}
+        Kilos del rollo que se prestó contra los del rollo que devolvieron. Si devolvieron <strong>menos</strong>, esa
+        empresa nos debe la diferencia y se le factura. Si devolvieron <strong>más</strong>, nosotros les debemos la
+        diferencia. En los dos casos escribe el número de la factura cuando se haga.
+        {vista === "saldados" && " Aquí están los que ya quedaron cuadrados, facturados o pagados."}
         {vista === "pendientes" && porFacturar.length > 0 && <> <strong style={{ color: "#b3261e" }}>Por facturar: {kg(Math.round(totalPorFacturar * 10) / 10)} en {porFacturar.length} rollo{porFacturar.length === 1 ? "" : "s"}.</strong></>}
+        {vista === "pendientes" && porPagar.length > 0 && <> <strong style={{ color: "#b3261e" }}>Les debemos: {kg(Math.round(totalPorPagar * 10) / 10)} en {porPagar.length} rollo{porPagar.length === 1 ? "" : "s"}.</strong></>}
       </p>
       {error && <p className="inventario-error">{error}</p>}
       {cargando ? <p className="inventario-cargando">Cargando...</p> : visibles.length === 0 ? (
@@ -112,7 +117,7 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
             <tbody>
               {visibles.map((f) => {
                 const estado = ESTADO[f.estado] || { texto: f.estado, color: "#666" };
-                const conFactura = f.estado === "por_facturar" || f.estado === "facturado";
+                const conFactura = ["por_facturar", "facturado", "por_pagar", "pagado"].includes(f.estado);
                 return (
                   <tr key={f.id}>
                     <td>{formatearFechaColombia(f.fecha)}</td>
@@ -127,7 +132,7 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
                     <td>
                       {f.diferencia == null ? "—" : (
                         <strong style={{ color: f.diferencia >= 1 ? "#b3261e" : f.diferencia <= -1 ? "#1b5fa8" : undefined }}>
-                          {f.diferencia > 0 ? "Faltan " : f.diferencia < 0 ? "Sobran " : ""}{kg(Math.abs(f.diferencia))}
+                          {f.diferencia >= 1 ? `Nos deben ${kg(f.diferencia)}` : f.diferencia <= -1 ? `Les debemos ${kg(-f.diferencia)}` : kg(0)}
                         </strong>
                       )}
                     </td>

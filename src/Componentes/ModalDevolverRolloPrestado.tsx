@@ -34,7 +34,8 @@ export default function ModalDevolverRolloPrestado({ prestamo, alCerrar, alGuard
         codigo_interno: codigo.trim(), referencia: referencia.trim(), kilos: kilosVuelven, metros: numero(metros),
       });
       alGuardar(`Listo: entró el rollo ${referencia.trim().toUpperCase()} (${kilosVuelven.toLocaleString("es-CO")} kg)`
-        + (diferencia != null && diferencia >= 1 ? `. Faltan ${diferencia.toLocaleString("es-CO")} kg por facturarle a ${prestamo.prestador}: míralo en «Cuadre de rollos prestados».` : "."));
+        + (diferencia != null && diferencia >= 1 ? `. ${prestamo.prestador} nos debe ${diferencia.toLocaleString("es-CO")} kg (por facturar): míralo en «Cuadre de rollos prestados».`
+          : diferencia != null && diferencia <= -1 ? `. Le debemos ${Math.abs(diferencia).toLocaleString("es-CO")} kg a ${prestamo.prestador}: míralo en «Cuadre de rollos prestados».` : "."));
     } catch (e) {
       setError(e instanceof ErrorApi || e instanceof Error ? e.message : "No se pudo registrar la devolución.");
       setGuardando(false);
@@ -71,8 +72,8 @@ export default function ModalDevolverRolloPrestado({ prestamo, alCerrar, alGuard
             {diferencia != null && (
               <p className="rollos-texto-ayuda" role="status">
                 {Math.abs(diferencia) < 1 ? "Kilos completos: queda cuadrado."
-                  : diferencia > 0 ? <><strong>Devuelven {diferencia.toLocaleString("es-CO")} kg menos</strong>: quedan por facturar.</>
-                  : <><strong>Devuelven {Math.abs(diferencia).toLocaleString("es-CO")} kg de más.</strong></>}
+                  : diferencia > 0 ? <><strong>Devuelven {diferencia.toLocaleString("es-CO")} kg menos</strong>: nos deben {diferencia.toLocaleString("es-CO")} kg (por facturar).</>
+                  : <><strong>Devuelven {Math.abs(diferencia).toLocaleString("es-CO")} kg de más</strong>: les debemos {Math.abs(diferencia).toLocaleString("es-CO")} kg.</>}
               </p>
             )}
             <p className="rollos-texto-ayuda">El rollo entra a la bodega donde estaba el prestado, a nombre de la empresa que prestó.</p>
