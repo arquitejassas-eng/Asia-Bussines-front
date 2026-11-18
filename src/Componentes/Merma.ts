@@ -134,7 +134,7 @@ export function useControladorMerma(almacen: AlmacenGlobal) {
 
   function exportar() {
     exportarArregloAExcel(grupos.flatMap((g) => g.rollos.map((r) => ({
-      "Código": r.codigoInterno, "Referencia": r.identificadorRollo, "Color": r.colorMaterial, "Calibre": r.calibre,
+      "Código": r.codigoInterno, "Referencia": r.identificadorRollo, "Color": r.colorMaterial, "Calibre": r.calibre, "Ancho (cm)": r.anchoMaterial || "",
       "Bodega": nombreBodega(r.bodegaId), "Empresa": nombreEmpresa(r.empresa),
       "Kilos": kilosDelRollo(r.pesoNeto) ?? "", "Metros proveedor": r.metrosProveedor ?? "",
       "Metros consumidos": r.metrosConsumidos, "Merma (m)": r.mermaMetros || 0, "Metros de más": r.sobranteMetros || 0,

@@ -15,7 +15,7 @@ type FilaProducto = {
 };
 type FilaRollo = {
   importacion: string; referencia: string; codigo: string; descripcion: string; empresa: string; color: string;
-  calibre: number; ral?: string; kilos: number | null; kilos_actuales: number | null; metros_llegada: number; metros_disponibles: number; bodega: string;
+  calibre: number; ral?: string; ancho?: number | null; kilos: number | null; kilos_actuales: number | null; metros_llegada: number; metros_disponibles: number; bodega: string;
   estado: string; fecha_ingreso: string | null; proveedor: string;
   // Vendido completo en una cotización activa ("4118 (CLIENTE)") o yendo en un traslado.
   apartado_completo?: string; en_traslado_a?: string;
@@ -193,7 +193,9 @@ export function ReporteInventarioPorTipo() {
     const hojasLamina = (prefijo: string) => [
         { nombre: `${prefijo}Resumen por código`, filas: filasRollos.map((g) => ({
           "Empresa": nombreEmpresa(g.empresa), "Código": g.codigo, "Espesor (mm)": espesorDe(g),
-          "Color": g.color ? nombreColor(g.color) : "", "RAL": g.ral, ...(conDescripcion ? { "Descripción": g.descripcion } : {}),
+          "Color": g.color ? nombreColor(g.color) : "", "RAL": g.ral,
+          "Ancho (cm)": [...new Set(g.lista.map((r) => r.ancho).filter((x): x is number => x != null))].sort((x, y) => x - y).join(" / "),
+          ...(conDescripcion ? { "Descripción": g.descripcion } : {}),
           ...Object.fromEntries(bodegasLamina.flatMap((b) => [
             [`${b} (metros)`, g.porBodega[b] ? Math.round(g.porBodega[b].metros * 100) / 100 : 0],
             [`${b} (kg)`, g.porBodega[b] ? Math.round(g.porBodega[b].kilos) : 0],
@@ -205,6 +207,7 @@ export function ReporteInventarioPorTipo() {
         { nombre: `${prefijo}Detalle por rollo`, filas: [...rollosFiltrados].sort(ordenRollos).map((r) => ({
           "Empresa": nombreEmpresa(r.empresa), "Bodega": r.bodega, "Código": r.codigo, "Espesor (mm)": espesorDe(r),
           "Color": colorDe(r) ? nombreColor(colorDe(r)) : "", "RAL": r.ral || "", "Referencia": r.referencia,
+          "Ancho (cm)": r.ancho ?? "",
           ...(conDescripcion ? { "Descripción": r.descripcion } : {}),
           "Metros disponibles": r.metros_disponibles, "Kilos hoy": r.kilos_actuales ?? "", "Kilos al llegar": r.kilos ?? "",
           "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado, "Apartado": apartadoDelRollo(r) || "Libre",
@@ -461,6 +464,7 @@ export function ReporteImportaciones() {
       })) },
       { nombre: "Rollos", filas: lista.flatMap((g) => rollosDe(g).map((r) => ({
         "Importación": nombreImportacion(g.clave), "Referencia": r.referencia, "Código": r.codigo, "Espesor (mm)": espesorDe(r),
+        "Ancho (cm)": r.ancho ?? "",
         "Descripción": r.descripcion,
         "Empresa": nombreEmpresa(r.empresa), "Kilos al llegar": r.kilos ?? "", "Kilos hoy": r.estado === EN_CAMINO ? "" : r.kilos_actuales ?? "",
         "Metros que llegaron": r.metros_llegada,

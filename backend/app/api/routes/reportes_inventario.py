@@ -149,6 +149,7 @@ def rollos_con_importacion(db: Session = Depends(get_db)) -> list[dict]:
             "referencia": r.identificador_rollo, "codigo": r.codigo_interno, "descripcion": r.descripcion,
             "empresa": r.empresa or "", "color": r.color_material or "", "calibre": float(r.calibre or 0),
             "ral": ral_de_codigo(r.codigo_interno),
+            "ancho": float(r.ancho_material) if r.ancho_material else None,
             "kilos": r.peso_neto, "metros_llegada": round(float(r.metros_proveedor or 0) or (disponibles + consumidos), 2),
             # Lo que pesa HOY según los metros que le quedan (None si su calibre
             # no está en la tabla de equivalencias).
