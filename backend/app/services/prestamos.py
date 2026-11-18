@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models.apartado import Apartado
@@ -193,15 +194,43 @@ def lineas_para_prestar(db: Session, numero: str):
     if db.query(PrestamoEmpresa).filter(PrestamoEmpresa.apartado_id.in_(ids),
                                         PrestamoEmpresa.origen.in_((PRESTADO_A_TERCERO, DEVUELTO_POR_TERCERO))).first():
         raise HTTPException(status_code=400, detail=f"La cotización {buscado} ya está anotada como préstamo.")
+    # Productos de stock y rollos completos (la línea vende ese rollo entero).
     lineas = (
         db.query(ApartadoItem)
-        .filter(ApartadoItem.apartado_id.in_(ids), ApartadoItem.modalidad == ModalidadApartado.POR_STOCK,
-                ApartadoItem.producto_id.isnot(None))
+        .filter(ApartadoItem.apartado_id.in_(ids),
+                or_(and_(ApartadoItem.modalidad == ModalidadApartado.POR_STOCK, ApartadoItem.producto_id.isnot(None)),
+                    ApartadoItem.rollo_id.isnot(None)))
         .order_by(ApartadoItem.id).all()
     )
     if not lineas:
-        raise HTTPException(status_code=400, detail=f"La cotización {buscado} no tiene productos de stock para prestar.")
+        raise HTTPException(status_code=400, detail=f"La cotización {buscado} no tiene productos de stock ni rollos completos para prestar.")
     return buscado, {a.id: a for a in apartados}, lineas
+
+
+def _es_rollo(linea) -> bool:
+    return linea.rollo_id is not None
+
+
+def _linea_salio(linea) -> bool:
+    """Producto de stock: ya se descontó. Rollo completo: ya se consumió entero."""
+    if _es_rollo(linea):
+        return (linea.metros_requeridos or 0) > 0.005 and (linea.metros_consumidos or 0) >= (linea.metros_requeridos or 0) - 0.005
+    return bool(linea.stock_descontado)
+
+
+def _datos_linea(linea) -> dict:
+    if _es_rollo(linea):
+        rollo = linea.rollo
+        return {
+            "codigo": (rollo.codigo_interno if rollo else "") or linea.codigo_interno or "",
+            "descripcion": f"Rollo {rollo.identificador_rollo}" if rollo else (linea.descripcion or ""),
+            "cantidad": round(float(linea.metros_requeridos or 0), 2), "unidad": "m",
+        }
+    return {
+        "codigo": linea.producto.codigo if linea.producto else (linea.codigo_interno or ""),
+        "descripcion": (linea.producto.descripcion if linea.producto else "") or linea.descripcion or "",
+        "cantidad": round(float(linea.cantidad), 2), "unidad": "und",
+    }
 
 
 def vista_prestamo_desde_cotizacion(db: Session, numero: str) -> dict:
@@ -210,13 +239,8 @@ def vista_prestamo_desde_cotizacion(db: Session, numero: str) -> dict:
     return {
         "numero_cotizacion": buscado,
         "cliente": next(iter(por_id.values())).cliente or "",
-        "salio": all(l.stock_descontado for l in lineas),
-        "lineas": [{
-            "codigo": l.producto.codigo if l.producto else (l.codigo_interno or ""),
-            "descripcion": (l.producto.descripcion if l.producto else "") or l.descripcion or "",
-            "cantidad": round(float(l.cantidad), 2), "bodega": por_id[l.apartado_id].bodega_nombre,
-            "salio": bool(l.stock_descontado),
-        } for l in lineas],
+        "salio": all(_linea_salio(l) for l in lineas),
+        "lineas": [{**_datos_linea(l), "bodega": por_id[l.apartado_id].bodega_nombre, "salio": _linea_salio(l)} for l in lineas],
     }
 
 
@@ -226,7 +250,7 @@ def prestar_desde_cotizacion(db: Session, *, numero: str, tercero: str, usuario:
     enlazado a esa cotización. El stock NO se descuenta otra vez: ya salió."""
     nombre = _nombre_tercero(tercero)
     buscado, por_id, lineas = lineas_para_prestar(db, numero)
-    if any(not l.stock_descontado for l in lineas):
+    if any(not _linea_salio(l) for l in lineas):
         raise HTTPException(
             status_code=400,
             detail=f"La cotización {buscado} todavía no ha salido de la bodega: dale Salida primero y luego anótala aquí "
@@ -236,6 +260,22 @@ def prestar_desde_cotizacion(db: Session, *, numero: str, tercero: str, usuario:
     prestamos = []
     for linea in lineas:
         producto, apartado = linea.producto, por_id[linea.apartado_id]
+        if _es_rollo(linea):
+            # El rollo salió completo con la cotización: queda prestado; al devolverlo
+            # vuelve a ese mismo rollo en su bodega (ver _devolver_al_rollo).
+            rollo, datos = linea.rollo, _datos_linea(linea)
+            prestamo = PrestamoEmpresa(
+                fecha=ahora, empresa_presta=((rollo.empresa if rollo else "") or linea.empresa_de_linea or "").strip().upper(),
+                empresa_recibe=PRESTADOR_EXTERNO, prestador=nombre[:150],
+                bodega_id=rollo.bodega_id if rollo and rollo.bodega_id is not None else apartado.bodega_id,
+                apartado_id=apartado.id, numero_cotizacion=apartado.numero_cotizacion, tipo=LAMINA,
+                codigo=datos["codigo"], descripcion=((rollo.descripcion if rollo else "") or linea.descripcion or "")[:255],
+                cantidad=datos["cantidad"], unidad="m", referencia_rollo=((rollo.identificador_rollo if rollo else "") or "")[:60],
+                origen=PRESTADO_A_TERCERO, usuario=usuario.correo,
+            )
+            db.add(prestamo)
+            prestamos.append(prestamo)
+            continue
         prestamo = PrestamoEmpresa(
             fecha=ahora, empresa_presta=((producto.empresa if producto else "") or linea.empresa_de_linea or "").strip().upper(),
             empresa_recibe=PRESTADOR_EXTERNO, prestador=nombre[:150],

@@ -11,7 +11,7 @@ import type { AlmacenGlobal, Sesion } from "../types/dominio";
 
 type VistaCotizacion = {
   numero_cotizacion: string; cliente: string; salio: boolean;
-  lineas: { codigo: string; descripcion: string; cantidad: number; bodega: string; salio: boolean }[];
+  lineas: { codigo: string; descripcion: string; cantidad: number; unidad?: string; bodega: string; salio: boolean }[];
 };
 type Prestamo = {
   id: number; fecha: string; empresa_presta: string; empresa_recibe: string; prestador: string; bodega_id: number | null;
@@ -327,7 +327,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
                             {vistaCotizacion.lineas.map((l, i) => (
                               <li key={i}>
-                                <strong>{l.cantidad} × {l.codigo}</strong> {l.descripcion} · {l.bodega}
+                                <strong>{l.unidad === "m" ? `${l.cantidad} m de ${l.codigo}` : `${l.cantidad} × ${l.codigo}`}</strong> {l.descripcion} · {l.bodega}
                                 {!l.salio && <span style={{ color: "#b3261e" }}> (todavía no ha salido)</span>}
                               </li>
                             ))}
