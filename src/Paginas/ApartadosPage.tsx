@@ -22,6 +22,7 @@ import "../Style/Inventario.css";
 import { AvisoSiigoCotizacion, CampoSiigoCliente, CamposSiigoLinea, ImpuestosSiigo, ResumenSiigo } from "../Componentes/SiigoCotizacion";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 import { api } from "../Componentes/Api";
+import { apartadoDesdeApi } from "../Componentes/Mapeo";
 import { exportarHojasAExcel } from "../Utils/exportarExcel";
 import { abrirVentanaImpresion, imprimirCotizacion } from "../Utils/imprimirCotizacion";
 
@@ -409,53 +410,83 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       && (!soloPendientesSalida || ESTADOS_CANCELABLES.includes(ap.estado)));
   }, [a.apartados, filtroTexto, codigosBuscados, filtroBodega, filtroEmpresa, soloPendientesSalida, pestana]);
 
-  // Excel con las tres listas (por producir, por dar salida, entregadas), una
-  // fila por línea de cada cotización. Usa los filtros de búsqueda, código,
-  // bodega y empresa, pero no la pestaña: siempre salen las tres.
+  // Excel de TODAS las cotizaciones: las que faltan por producir, las
+  // pendientes por dar salida y las entregadas. Cada fila dice en qué pestaña
+  // de Apartados se busca. Usa los filtros de búsqueda, código, bodega y
+  // empresa, pero no la pestaña ni el estado: siempre salen las tres.
   const [descargando, setDescargando] = useState(false);
   async function descargarExcel() {
-    const texto = filtroTexto.trim().toLowerCase();
-    const pasaFiltros = (ap: (typeof a.apartados)[number]) =>
-      (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
-      && (codigosBuscados.length === 0 || ap.items.some((it) => lineaUsaCodigo(it, codigosBuscados)))
-      && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
-      && (!filtroEmpresa || ap.empresa === filtroEmpresa);
-    const fecha = (valor: string | null) => (valor ? formatearFechaColombia(valor, false) : "");
-    const filasDe = (pestanaHoja: Pestana) => [...a.apartados]
-      .sort((x, y) => {
-        const kx = claveDeNumero(x.numeroCotizacion), ky = claveDeNumero(y.numeroCotizacion);
-        return kx.orden - ky.orden || ky.numero - kx.numero || kx.texto.localeCompare(ky.texto) || x.id - y.id;
-      })
-      .filter((ap) => vaEnPestana(ap, pestanaHoja) && pasaFiltros(ap))
-      .flatMap((ap) => (ap.items.length ? ap.items : [null]).map((it) => {
+    setDescargando(true);
+    try {
+      // Con el filtro de Estado la lista en pantalla no trae todo: se piden todas.
+      let todas = a.apartados;
+      if (a.filtroEstado) {
+        const datos = await api.get<Record<string, unknown>[]>("/apartados");
+        todas = (datos || []).map(apartadoDesdeApi)
+          .filter((ap) => sesion.rol !== "administrativo" || ap.bodegaId === sesion.bodegaId);
+      }
+      const texto = filtroTexto.trim().toLowerCase();
+      const pasaFiltros = (ap: (typeof a.apartados)[number]) =>
+        (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
+        && (codigosBuscados.length === 0 || ap.items.some((it) => lineaUsaCodigo(it, codigosBuscados)))
+        && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
+        && (!filtroEmpresa || ap.empresa === filtroEmpresa);
+      const fecha = (valor: string | null) => (valor ? formatearFechaColombia(valor, false) : "");
+      // En qué pestaña está y cómo se llama esa situación, en ese orden.
+      const GRUPOS: [Pestana, string, string][] = [
+        ["cotizaciones", "1. Falta por producir", "Apartados → Cotizaciones"],
+        ["pendientes_salida", "2. Pendiente por dar salida", "Apartados → Pendientes por dar salida"],
+        ["entregadas", "3. Entregada", "Apartados → Entregadas"],
+      ];
+      const lista = GRUPOS.flatMap(([pestanaGrupo, situacion, donde]) => todas
+        .filter((ap) => vaEnPestana(ap, pestanaGrupo) && pasaFiltros(ap))
+        .sort((x, y) => {
+          const kx = claveDeNumero(x.numeroCotizacion), ky = claveDeNumero(y.numeroCotizacion);
+          return kx.orden - ky.orden || ky.numero - kx.numero || kx.texto.localeCompare(ky.texto) || x.id - y.id;
+        })
+        .map((ap) => ({ ap, situacion, donde })));
+      if (lista.length === 0) { window.alert("No hay cotizaciones con esos filtros."); return; }
+      const cabecera = ({ ap, situacion, donde }: (typeof lista)[number]) => ({
+        "Situación": situacion, "Dónde buscarla": donde,
+        "Cotización": ap.numeroCotizacion, "Cliente": ap.ordenInterna ? "Orden interna" : ap.cliente,
+        "Bodega": ap.bodegaNombre, "Empresa": EMPRESAS[ap.empresa] || ap.empresa,
+        "Estado en el sistema": porDarSalida(ap) && ap.estado !== "entregado" ? "Por dar salida" : (ETIQUETAS_ESTADO[ap.estado] || ap.estado),
+        "Creada": fecha(ap.fechaCreacion), "Creada por": ap.creadoPor, "Entregada": fecha(ap.fechaEntregado),
+      });
+      const descripcionLinea = (it: (typeof a.apartados)[number]["items"][number]) =>
+        it.descripcion || it.productoDescripcion || it.codigoInterno || it.productoCodigo || "";
+      const resumen = lista.map((fila) => ({
+        ...cabecera(fila),
+        "Líneas": fila.ap.items.length,
+        "Qué lleva": fila.ap.items.map(descripcionLinea).filter(Boolean).join(" | "),
+        "Siigo": fila.ap.siigoNumero,
+      }));
+      const detalle = lista.flatMap((fila) => (fila.ap.items.length ? fila.ap.items : [null]).map((it) => {
         const deRollo = it?.modalidad === "por_rollo";
         const metros = it && deRollo ? (it.metrosRequeridos ?? metrosDeLinea(it.cantidad, it.medida ?? 0, it.tipoProducto).metros) : null;
         return {
-          "Cotización": ap.numeroCotizacion, "Cliente": ap.ordenInterna ? "Orden interna" : ap.cliente,
-          "Empresa": EMPRESAS[ap.empresa] || ap.empresa, "Bodega": ap.bodegaNombre,
-          "Estado": porDarSalida(ap) && ap.estado !== "entregado" ? "Por dar salida" : (ETIQUETAS_ESTADO[ap.estado] || ap.estado),
-          "Creada": fecha(ap.fechaCreacion), "Creada por": ap.creadoPor,
-          ...(pestanaHoja === "entregadas" ? { "Entregada": fecha(ap.fechaEntregado) } : {}),
+          ...cabecera(fila),
           "Código": it ? (deRollo ? it.codigoInterno || "" : it.productoCodigo) : "",
-          "Descripción": it ? it.descripcion || it.productoDescripcion : "",
+          "Descripción": it ? descripcionLinea(it) : "",
           "Cantidad": it ? it.cantidad : "",
           "Medida (m)": it && deRollo ? it.medida ?? "" : "",
           "Metros": metros ?? "",
-          ...(pestanaHoja === "entregadas" ? {} : { "Metros pendientes": it && deRollo ? it.metrosPendientes ?? "" : "" }),
+          "Metros pendientes": it && deRollo && fila.ap.estado !== "entregado" ? it.metrosPendientes ?? "" : "",
           "Rollo": it?.rolloReferencia || "",
-          "Siigo": ap.siigoNumero,
+          "Siigo": fila.ap.siigoNumero,
         };
       }));
-    const hojas = [
-      { nombre: "Por producir", filas: filasDe("cotizaciones") },
-      { nombre: "Por dar salida", filas: filasDe("pendientes_salida") },
-      { nombre: "Entregadas", filas: filasDe("entregadas") },
-    ];
-    if (hojas.every((h) => h.filas.length === 0)) { window.alert("No hay cotizaciones con esos filtros."); return; }
-    setDescargando(true);
-    try {
+      const cuenta = (s: string) => lista.filter((f) => f.situacion === s).length;
+      const totales = GRUPOS.map(([, situacion, donde]) => ({ "Situación": situacion, "Dónde buscarla": donde, "Cotizaciones": cuenta(situacion) }));
+      totales.push({ "Situación": "TOTAL", "Dónde buscarla": "", "Cotizaciones": lista.length });
       const hoy = new Date().toLocaleDateString("es-CO").replace(/\//g, "-");
-      await exportarHojasAExcel(hojas, `Cotizaciones ${hoy}.xlsx`);
+      await exportarHojasAExcel([
+        { nombre: "Cotizaciones", filas: resumen },
+        { nombre: "Detalle por línea", filas: detalle },
+        { nombre: "Totales", filas: totales },
+      ], `Cotizaciones ${hoy}.xlsx`);
+    } catch {
+      window.alert("No se pudo descargar el Excel. Intenta de nuevo.");
     } finally {
       setDescargando(false);
     }
@@ -1662,7 +1693,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   <button type="button" className="apartados-limpiar" onClick={limpiarFiltros}>Limpiar filtros</button>
                 )}
                 <button type="button" className="apartados-limpiar" onClick={() => void descargarExcel()} disabled={descargando || a.cargandoApartados}
-                  title="Excel con tres hojas: por producir, por dar salida y entregadas (con los filtros de arriba)">
+                  title="Todas las cotizaciones (falta por producir, pendientes por dar salida y entregadas), diciendo en qué pestaña está cada una">
                   {descargando ? "Descargando..." : "Descargar Excel"}
                 </button>
               </div>
