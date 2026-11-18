@@ -22,6 +22,7 @@ import "../Style/Inventario.css";
 import { AvisoSiigoCotizacion, CampoSiigoCliente, CamposSiigoLinea, ImpuestosSiigo, ResumenSiigo } from "../Componentes/SiigoCotizacion";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
 import { api } from "../Componentes/Api";
+import { exportarHojasAExcel } from "../Utils/exportarExcel";
 import { abrirVentanaImpresion, imprimirCotizacion } from "../Utils/imprimirCotizacion";
 
 // Mismos estados que backend/app/services/apartados.py::ESTADOS_CANCELABLES:
@@ -407,6 +408,58 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       && (!filtroEmpresa || ap.empresa === filtroEmpresa)
       && (!soloPendientesSalida || ESTADOS_CANCELABLES.includes(ap.estado)));
   }, [a.apartados, filtroTexto, codigosBuscados, filtroBodega, filtroEmpresa, soloPendientesSalida, pestana]);
+
+  // Excel con las tres listas (por producir, por dar salida, entregadas), una
+  // fila por línea de cada cotización. Usa los filtros de búsqueda, código,
+  // bodega y empresa, pero no la pestaña: siempre salen las tres.
+  const [descargando, setDescargando] = useState(false);
+  async function descargarExcel() {
+    const texto = filtroTexto.trim().toLowerCase();
+    const pasaFiltros = (ap: (typeof a.apartados)[number]) =>
+      (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
+      && (codigosBuscados.length === 0 || ap.items.some((it) => lineaUsaCodigo(it, codigosBuscados)))
+      && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
+      && (!filtroEmpresa || ap.empresa === filtroEmpresa);
+    const fecha = (valor: string | null) => (valor ? formatearFechaColombia(valor, false) : "");
+    const filasDe = (pestanaHoja: Pestana) => [...a.apartados]
+      .sort((x, y) => {
+        const kx = claveDeNumero(x.numeroCotizacion), ky = claveDeNumero(y.numeroCotizacion);
+        return kx.orden - ky.orden || ky.numero - kx.numero || kx.texto.localeCompare(ky.texto) || x.id - y.id;
+      })
+      .filter((ap) => vaEnPestana(ap, pestanaHoja) && pasaFiltros(ap))
+      .flatMap((ap) => (ap.items.length ? ap.items : [null]).map((it) => {
+        const deRollo = it?.modalidad === "por_rollo";
+        const metros = it && deRollo ? (it.metrosRequeridos ?? metrosDeLinea(it.cantidad, it.medida ?? 0, it.tipoProducto).metros) : null;
+        return {
+          "Cotización": ap.numeroCotizacion, "Cliente": ap.ordenInterna ? "Orden interna" : ap.cliente,
+          "Empresa": EMPRESAS[ap.empresa] || ap.empresa, "Bodega": ap.bodegaNombre,
+          "Estado": porDarSalida(ap) && ap.estado !== "entregado" ? "Por dar salida" : (ETIQUETAS_ESTADO[ap.estado] || ap.estado),
+          "Creada": fecha(ap.fechaCreacion), "Creada por": ap.creadoPor,
+          ...(pestanaHoja === "entregadas" ? { "Entregada": fecha(ap.fechaEntregado) } : {}),
+          "Código": it ? (deRollo ? it.codigoInterno || "" : it.productoCodigo) : "",
+          "Descripción": it ? it.descripcion || it.productoDescripcion : "",
+          "Cantidad": it ? it.cantidad : "",
+          "Medida (m)": it && deRollo ? it.medida ?? "" : "",
+          "Metros": metros ?? "",
+          ...(pestanaHoja === "entregadas" ? {} : { "Metros pendientes": it && deRollo ? it.metrosPendientes ?? "" : "" }),
+          "Rollo": it?.rolloReferencia || "",
+          "Siigo": ap.siigoNumero,
+        };
+      }));
+    const hojas = [
+      { nombre: "Por producir", filas: filasDe("cotizaciones") },
+      { nombre: "Por dar salida", filas: filasDe("pendientes_salida") },
+      { nombre: "Entregadas", filas: filasDe("entregadas") },
+    ];
+    if (hojas.every((h) => h.filas.length === 0)) { window.alert("No hay cotizaciones con esos filtros."); return; }
+    setDescargando(true);
+    try {
+      const hoy = new Date().toLocaleDateString("es-CO").replace(/\//g, "-");
+      await exportarHojasAExcel(hojas, `Cotizaciones ${hoy}.xlsx`);
+    } finally {
+      setDescargando(false);
+    }
+  }
 
   // Con "Filtrar por código" (un código, un espesor como 0,43 o un RAL como
   // 3002): los metros que las cotizaciones abiertas todavía no han producido,
@@ -1608,6 +1661,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 {hayFiltros && (
                   <button type="button" className="apartados-limpiar" onClick={limpiarFiltros}>Limpiar filtros</button>
                 )}
+                <button type="button" className="apartados-limpiar" onClick={() => void descargarExcel()} disabled={descargando || a.cargandoApartados}
+                  title="Excel con tres hojas: por producir, por dar salida y entregadas (con los filtros de arriba)">
+                  {descargando ? "Descargando..." : "Descargar Excel"}
+                </button>
               </div>
               {!a.cargandoApartados && (
                 <p className="inventario-carga-ayuda" style={{ margin: "0 0 0.5rem" }}>
