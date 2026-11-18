@@ -5,14 +5,12 @@ type RolloPrestado = { id: number; codigo: string; referencia_rollo: string; can
 
 const numero = (texto: string) => Number(texto.replace(",", "."));
 
-/** Devolver un rollo prestado a una empresa externa: o vuelve el mismo rollo
- * (con los metros que traiga), o lo pagan con OTRO rollo (entra a la bodega
- * con sus kilos y queda el cuadre de kilos para facturar la diferencia). */
+/** Devolver un rollo prestado a una empresa externa: siempre lo pagan con
+ * OTRO rollo (nunca vuelve el mismo). Ese rollo entra a la bodega con sus
+ * kilos y queda el cuadre de kilos para facturar la diferencia. */
 export default function ModalDevolverRolloPrestado({ prestamo, alCerrar, alGuardar }: {
   prestamo: RolloPrestado; alCerrar: () => void; alGuardar: (mensaje: string) => void;
 }) {
-  const [como, setComo] = useState<"mismo" | "otro">("otro");
-  const [metrosMismo, setMetrosMismo] = useState(String(prestamo.cantidad));
   const [codigo, setCodigo] = useState(prestamo.codigo);
   const [referencia, setReferencia] = useState("");
   const [kilos, setKilos] = useState("");
@@ -28,14 +26,6 @@ export default function ModalDevolverRolloPrestado({ prestamo, alCerrar, alGuard
     evento.preventDefault();
     setError("");
     try {
-      if (como === "mismo") {
-        const cantidad = numero(metrosMismo);
-        if (!(cantidad > 0) || cantidad > prestamo.cantidad) { setError(`Escribe los metros: más de 0 y máximo ${prestamo.cantidad}.`); return; }
-        setGuardando(true);
-        await api.post(`/prestamos/${prestamo.id}/devolver`, { cantidad });
-        alGuardar(`Listo: el rollo ${prestamo.referencia_rollo} volvió con ${cantidad} m.`);
-        return;
-      }
       if (!codigo.trim() || !referencia.trim()) { setError("Escribe el código y la referencia del rollo que devolvieron."); return; }
       if (!(kilosVuelven > 0)) { setError("Escribe los kilos del rollo que devolvieron (los de la etiqueta)."); return; }
       if (!(numero(metros) > 0)) { setError("Escribe los metros del rollo que devolvieron."); return; }
@@ -56,26 +46,11 @@ export default function ModalDevolverRolloPrestado({ prestamo, alCerrar, alGuard
       <form className="rollos-modal" role="dialog" aria-modal="true" aria-labelledby="devolver-rollo-titulo"
         onClick={(e) => e.stopPropagation()} onSubmit={guardar} noValidate
         style={{ maxHeight: "calc(100vh - 2rem)", overflowY: "auto" }}>
-        <h3 id="devolver-rollo-titulo">Devolución del rollo {prestamo.referencia_rollo}</h3>
+        <h3 id="devolver-rollo-titulo">¿Con qué rollo pagaron el {prestamo.referencia_rollo}?</h3>
         <p className="rollos-texto-ayuda">
           Se le prestó a <strong>{prestamo.prestador}</strong>: {prestamo.cantidad} m de {prestamo.codigo}
           {kilosPrestados != null ? <> · <strong>{kilosPrestados.toLocaleString("es-CO")} kg</strong></> : " (sin kilos en la etiqueta)"}.
         </p>
-        <div className="rollo-prestado-opciones" role="radiogroup" aria-label="¿Qué devolvieron?">
-          {([["otro", "Devolvieron otro rollo"], ["mismo", "Volvió el mismo rollo"]] as const).map(([valor, texto]) => (
-            <label key={valor} className={como === valor ? "rollo-prestado-activo" : ""}>
-              <input type="radio" name="como-devolvieron" value={valor} checked={como === valor} onChange={() => { setComo(valor); setError(""); }} />
-              {texto}
-            </label>
-          ))}
-        </div>
-        {como === "mismo" ? (
-          <label>
-            Metros con que volvió
-            <input type="number" min="0" step="0.01" value={metrosMismo} onChange={(e) => setMetrosMismo(e.target.value)} />
-          </label>
-        ) : (
-          <>
             <label>
               Código del rollo que devolvieron *
               <input value={codigo} maxLength={60} placeholder="Ej. LR30020,25" onChange={(e) => setCodigo(e.target.value)} />
@@ -101,8 +76,6 @@ export default function ModalDevolverRolloPrestado({ prestamo, alCerrar, alGuard
               </p>
             )}
             <p className="rollos-texto-ayuda">El rollo entra a la bodega donde estaba el prestado, a nombre de la empresa que prestó.</p>
-          </>
-        )}
         {error && <p className="rollos-error" role="alert">{error}</p>}
         <div className="rollos-modal-acciones">
           <button type="button" className="rollos-boton-secundario" onClick={alCerrar}>Cancelar</button>
