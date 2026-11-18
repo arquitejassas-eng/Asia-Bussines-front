@@ -26,6 +26,10 @@ class PrestamoResponse(ModeloConFechasUtc):
     # Préstamo anotado con una cotización que todavía no ha salido ("por_recoger")
     # o que se canceló sin salir ("cancelada"); vacío si ya salió.
     estado_cotizacion: str = ""
+    # Rollo prestado a una empresa externa: con qué lo pagaron y la factura de la diferencia.
+    devuelto_con: str = ""
+    kilos_devueltos: float | None = None
+    factura: str = ""
     origen: str
     usuario: str
     saldado: bool

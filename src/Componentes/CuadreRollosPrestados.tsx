@@ -76,7 +76,7 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
     exportarHojasAExcel([{ nombre: "Cuadre rollos prestados", filas: visibles.map((f) => ({
       "Fecha préstamo": formatearFechaColombia(f.fecha), "Empresa": f.prestador, "Cotización": f.numero_cotizacion,
       "Bodega": nombreBodega(f.bodega_id), "Código": f.codigo, "Rollo prestado": f.referencia_rollo, "Metros": f.metros,
-      "Kg prestados": f.kilos_prestados ?? "", "Devolvieron": f.devuelto_con, "Kg devueltos": f.kilos_devueltos ?? "",
+      "Kg prestados": f.kilos_prestados ?? "", "Pagaron con": f.devuelto_con, "Kg devueltos": f.kilos_devueltos ?? "",
       "Fecha devolución": f.fecha_devuelto ? formatearFechaColombia(f.fecha_devuelto) : "",
       "Diferencia kg (+ = por facturar)": f.diferencia ?? "", "Estado": ESTADO[f.estado]?.texto || f.estado, "Factura": f.factura,
     })) }], `Cuadre rollos prestados ${vista}.xlsx`);
@@ -107,7 +107,7 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
         <div className="inventario-tabla-contenedor">
           <table className="inventario-tabla">
             <thead>
-              <tr><th>Fecha</th><th>Empresa</th><th>Rollo prestado</th><th>Kg prestados</th><th>Devolvieron</th><th>Kg devueltos</th><th>Diferencia</th><th>Estado / factura</th></tr>
+              <tr><th>Fecha</th><th>Empresa</th><th>Rollo prestado</th><th>Kg prestados</th><th>Pagaron con</th><th>Kg devueltos</th><th>Diferencia</th><th>Estado / factura</th></tr>
             </thead>
             <tbody>
               {visibles.map((f) => {

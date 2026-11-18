@@ -20,6 +20,7 @@ type Prestamo = {
   numero_cotizacion: string; tipo: string; codigo: string; descripcion: string; cantidad: number; unidad: string;
   referencia_rollo: string; kilos_rollo: number | null; origen: string; usuario: string; saldado: boolean; saldado_por: string;
   fecha_saldado: string | null; estado_cotizacion?: string;
+  devuelto_con?: string; kilos_devueltos?: number | null; factura?: string;
 };
 type Deuda = {
   tipo: string; codigo: string; descripcion: string; unidad: string; presta: string; debe: string; cantidad: number;
@@ -263,7 +264,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         "Material": p.codigo, "Descripción": p.descripcion, "Rollo": p.referencia_rollo,
         "Kilos del rollo al llegar": p.kilos_rollo ?? "", "Cantidad": p.cantidad,
         "Unidad": p.unidad === "m" ? "m" : "und", "Dónde se anotó": ORIGEN[p.origen] || p.origen, "Usuario": p.usuario,
-        "Estado": p.saldado ? "Saldado" : "Sin saldar", "Saldado el": p.fecha_saldado ? formatearFechaColombia(p.fecha_saldado) : "",
+        "Estado": p.saldado ? "Saldado" : "Sin saldar", "Pagaron con": p.devuelto_con || "", "Factura": p.factura || "", "Saldado el": p.fecha_saldado ? formatearFechaColombia(p.fecha_saldado) : "",
       })) },
       { nombre: "Sacado sin existencia", filas: reporte.sacado_sin_existencia.map((s) => ({
         "Fecha": formatearFechaColombia(s.fecha), "Bodega": nombreBodega(s.bodega_id), "Producto": s.producto_codigo,
@@ -488,12 +489,12 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       ))}
                       {externosDeben.map((f) => (
                         <tr key={`ext-${f.id}`}>
-                          <td><strong>{f.prestador}</strong></td>
+                          <td><strong>{f.prestador}</strong>{f.numero_cotizacion && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Cot. {f.numero_cotizacion}</span>}</td>
                           <td>{nombre(f.empresa_presta)}</td>
                           <td>{f.codigo} <span className="rollos-texto-ayuda" style={{ margin: 0 }}>(lámina)</span></td>
                           <td>
                             Rollo prestado {f.referencia_rollo} · {(f.kilos_prestados ?? 0).toLocaleString("es-CO")} kg
-                            <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Devolvieron: {f.devuelto_con}</span>
+                            <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Pagaron con: {f.devuelto_con}</span>
                           </td>
                           <td><strong style={{ color: "#b3261e" }}>{(f.diferencia ?? 0).toLocaleString("es-CO")} kg por facturar</strong></td>
                         </tr>
@@ -537,7 +538,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           <td>{formatearFechaColombia(p.fecha)}</td>
                           <td>{quienPresta(p)}</td>
                           <td>{quienRecibe(p)}</td>
-                          <td>{p.numero_cotizacion || "—"}</td>
+                          <td>{p.numero_cotizacion ? <strong>Cot. {p.numero_cotizacion}</strong> : "—"}</td>
                           <td>{nombreBodega(p.bodega_id)}</td>
                           <td>
                             <strong>{p.codigo}</strong> {p.descripcion}
@@ -553,6 +554,11 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                             {p.saldado
                               ? `${p.origen === "devuelto_por_tercero" ? "Devuelto" : "Saldado"}${p.fecha_saldado ? ` el ${formatearFechaColombia(p.fecha_saldado)}` : ""}`
                               : "Sin saldar"}
+                            {p.devuelto_con && (
+                              <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>
+                                Pagaron con: {p.devuelto_con}{p.factura ? ` · Factura ${p.factura}` : ""}
+                              </span>
+                            )}
                             {!p.saldado && p.estado_cotizacion === "por_recoger" && (
                               <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block", color: "#8a5a00" }}>
                                 Por recoger: falta darle Salida a la cotización {p.numero_cotizacion}
