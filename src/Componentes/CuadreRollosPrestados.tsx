@@ -3,7 +3,7 @@ import { api, ErrorApi } from "./Api";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { exportarHojasAExcel } from "../Utils/exportarExcel";
 
-type Fila = {
+export type FilaCuadre = {
   id: number; fecha: string; prestador: string; numero_cotizacion: string; bodega_id: number | null; empresa_presta: string;
   codigo: string; referencia_rollo: string; metros: number; kilos_prestados: number | null; devuelto_con: string;
   kilos_devueltos: number | null; fecha_devuelto: string | null; diferencia: number | null; estado: string;
@@ -21,13 +21,19 @@ const ESTADO: Record<string, { texto: string; color: string }> = {
   por_facturar: { texto: "Por facturar", color: "#b3261e" },
   facturado: { texto: "Facturado", color: "#1b7a3a" },
 };
+// Pendientes: sin devolver, por recoger o devueltos con kilos de menos sin facturar.
+// Lo demás (cuadrado, facturado, de más, cerrado) ya está saldado.
+export const CUADRE_PENDIENTE = new Set(["pendiente", "por_recoger", "por_facturar"]);
 const kg = (v: number | null) => (v == null ? "—" : `${v.toLocaleString("es-CO", { maximumFractionDigits: 1 })} kg`);
 
 /** Cada rollo prestado a una empresa externa: kilos que se fueron contra los
  * que volvieron (el mismo rollo u otro). Lo que devolvieron de menos se
  * factura: aquí se anota el número de la factura. */
-export default function CuadreRollosPrestados({ nombreBodega, recargar }: { nombreBodega: (id: number | null) => string; recargar: number }) {
-  const [filas, setFilas] = useState<Fila[]>([]);
+export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, alCargar }: {
+  nombreBodega: (id: number | null) => string; recargar: number; vista: "pendientes" | "saldados";
+  alCargar?: (filas: FilaCuadre[]) => void;
+}) {
+  const [filas, setFilas] = useState<FilaCuadre[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [soloPorFacturar, setSoloPorFacturar] = useState(false);
@@ -37,16 +43,18 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar }: { nomb
     setCargando(true);
     setError("");
     try {
-      setFilas((await api.get<Fila[]>("/prestamos/cuadre-terceros")) || []);
+      const datos = (await api.get<FilaCuadre[]>("/prestamos/cuadre-terceros")) || [];
+      setFilas(datos);
+      alCargar?.(datos);
     } catch (err) {
       setError(err instanceof ErrorApi ? err.message : "No se pudo cargar el cuadre de rollos prestados.");
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [alCargar]);
   useEffect(() => { cargar(); }, [cargar, recargar]);
 
-  async function guardarFactura(fila: Fila) {
+  async function guardarFactura(fila: FilaCuadre) {
     const factura = (facturas[fila.id] ?? fila.factura).trim();
     if (!factura && !window.confirm("¿Quitar el número de factura?")) return;
     setError("");
@@ -61,7 +69,8 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar }: { nomb
 
   const porFacturar = filas.filter((f) => f.estado === "por_facturar");
   const totalPorFacturar = porFacturar.reduce((suma, f) => suma + (f.diferencia || 0), 0);
-  const visibles = soloPorFacturar ? porFacturar : filas;
+  const deLaVista = filas.filter((f) => CUADRE_PENDIENTE.has(f.estado) === (vista === "pendientes"));
+  const visibles = soloPorFacturar && vista === "pendientes" ? porFacturar : deLaVista;
 
   function exportar() {
     exportarHojasAExcel([{ nombre: "Cuadre rollos prestados", filas: visibles.map((f) => ({
@@ -70,7 +79,7 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar }: { nomb
       "Kg prestados": f.kilos_prestados ?? "", "Devolvieron": f.devuelto_con, "Kg devueltos": f.kilos_devueltos ?? "",
       "Fecha devolución": f.fecha_devuelto ? formatearFechaColombia(f.fecha_devuelto) : "",
       "Diferencia kg (+ = por facturar)": f.diferencia ?? "", "Estado": ESTADO[f.estado]?.texto || f.estado, "Factura": f.factura,
-    })) }], "Cuadre rollos prestados.xlsx");
+    })) }], `Cuadre rollos prestados ${vista}.xlsx`);
   }
 
   return (
@@ -78,20 +87,22 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar }: { nomb
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginTop: "1.5rem" }}>
         <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Cuadre de rollos prestados a empresas externas</h2>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-          <label className="apartados-check">
+          {vista === "pendientes" && <label className="apartados-check">
             <input type="checkbox" checked={soloPorFacturar} onChange={(e) => setSoloPorFacturar(e.target.checked)} /> Solo por facturar
-          </label>
+          </label>}
           {visibles.length > 0 && <button type="button" className="apartados-limpiar" onClick={exportar}>Exportar a Excel</button>}
         </div>
       </div>
       <p className="inventario-carga-ayuda">
         Kilos del rollo que se prestó contra los del rollo que devolvieron. Si devolvieron menos, la diferencia se le
         factura a esa empresa: escribe el número de la factura cuando la hagas.
-        {porFacturar.length > 0 && <> <strong style={{ color: "#b3261e" }}>Por facturar: {kg(Math.round(totalPorFacturar * 10) / 10)} en {porFacturar.length} rollo{porFacturar.length === 1 ? "" : "s"}.</strong></>}
+        {vista === "saldados" && " Aquí están los que ya quedaron cuadrados o facturados."}
+        {vista === "pendientes" && porFacturar.length > 0 && <> <strong style={{ color: "#b3261e" }}>Por facturar: {kg(Math.round(totalPorFacturar * 10) / 10)} en {porFacturar.length} rollo{porFacturar.length === 1 ? "" : "s"}.</strong></>}
       </p>
       {error && <p className="inventario-error">{error}</p>}
       {cargando ? <p className="inventario-cargando">Cargando...</p> : visibles.length === 0 ? (
-        <p className="inventario-vacio">{soloPorFacturar ? "No hay nada por facturar." : "No hay rollos prestados a empresas externas."}</p>
+        <p className="inventario-vacio">{vista === "saldados" ? "Ningún rollo prestado ha quedado saldado todavía."
+          : soloPorFacturar ? "No hay nada por facturar." : "No hay rollos prestados pendientes con empresas externas."}</p>
       ) : (
         <div className="inventario-tabla-contenedor">
           <table className="inventario-tabla">

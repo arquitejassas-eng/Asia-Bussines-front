@@ -5,7 +5,7 @@ import { EMPRESAS } from "../Utils/empresas";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { exportarHojasAExcel } from "../Utils/exportarExcel";
 import ModalDevolverRolloPrestado from "../Componentes/ModalDevolverRolloPrestado";
-import CuadreRollosPrestados from "../Componentes/CuadreRollosPrestados";
+import CuadreRollosPrestados, { type FilaCuadre } from "../Componentes/CuadreRollosPrestados";
 import "../Style/Inventario.css";
 import "../Style/Merma.css";
 import "../Style/Rollos.css";
@@ -59,7 +59,12 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const [bodegaId, setBodegaId] = useState("");
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
-  const [incluirSaldados, setIncluirSaldados] = useState(false);
+  // Dos hojas: lo que está pendiente y lo que ya quedó saldado (devuelto, cuadrado o facturado).
+  const [vista, setVista] = useState<"pendientes" | "saldados">("pendientes");
+  const incluirSaldados = vista === "saldados";
+  // Empresas externas que devolvieron un rollo con kilos de menos: nos deben esa diferencia.
+  const [externosDeben, setExternosDeben] = useState<FilaCuadre[]>([]);
+  const alCargarCuadre = useCallback((filas: FilaCuadre[]) => setExternosDeben(filas.filter((f) => f.estado === "por_facturar")), []);
   const [reporte, setReporte] = useState<Reporte>({ resumen: [], prestamos: [], sacado_sin_existencia: [] });
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -239,6 +244,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     });
   }
 
+  const prestamosVisibles = vista === "saldados" ? reporte.prestamos.filter((p) => p.saldado) : reporte.prestamos;
   const sinSaldar = reporte.prestamos.filter((p) => !p.saldado);
   const todosElegidos = sinSaldar.length > 0 && sinSaldar.every((p) => seleccion.has(p.id));
 
@@ -251,7 +257,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         "Rollos (kilos al llegar)": d.rollos.map((r) => `${r.referencia} (${kilosTexto(r.kilos)})`).join(", "),
         "Cantidad": d.cantidad, "Unidad": d.unidad === "m" ? "m" : "und",
       })) },
-      { nombre: "Detalle", filas: reporte.prestamos.map((p) => ({
+      { nombre: vista === "saldados" ? "Saldados" : "Detalle", filas: prestamosVisibles.map((p) => ({
         "Fecha": formatearFechaColombia(p.fecha), "Presta": quienPresta(p),
         "Recibe": quienRecibe(p), "Cotización": p.numero_cotizacion, "Bodega": nombreBodega(p.bodega_id),
         "Material": p.codigo, "Descripción": p.descripcion, "Rollo": p.referencia_rollo,
@@ -423,6 +429,14 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             </form>
           )}
 
+          <div className="inventario-tipos" role="tablist" aria-label="Qué ver" style={{ margin: "0.75rem 0" }}>
+            {([["pendientes", "Pendientes"], ["saldados", "Saldados"]] as const).map(([valor, texto]) => (
+              <button key={valor} type="button" role="tab" aria-selected={vista === valor}
+                className={`inventario-tipo-boton ${vista === valor ? "inventario-tipo-activo" : ""}`}
+                onClick={() => { setVista(valor); setSeleccion(new Set()); }}>{texto}</button>
+            ))}
+          </div>
+
           <div className="apartados-filtros">
             <select className={`apartados-select ${empresa ? "apartados-select-activo" : ""}`} aria-label="Empresa"
               value={empresa} onChange={(e) => setEmpresa(e.target.value)}>
@@ -436,9 +450,6 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             </select>
             <label className="apartados-check">Desde <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} /></label>
             <label className="apartados-check">Hasta <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} /></label>
-            <label className="apartados-check">
-              <input type="checkbox" checked={incluirSaldados} onChange={(e) => setIncluirSaldados(e.target.checked)} /> Ver también los saldados
-            </label>
             {!cargando && (reporte.resumen.length > 0 || reporte.prestamos.length > 0 || reporte.sacado_sin_existencia.length > 0) && (
               <button type="button" className="apartados-limpiar" onClick={exportar}>Exportar a Excel</button>
             )}
@@ -448,8 +459,9 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           {cargando ? <p className="inventario-cargando">Cargando préstamos...</p> : (
             <>
               {/* ================== LO QUE SE DEBEN ================== */}
+              {vista === "pendientes" && <>
               <h2 className="inventario-form-subtitulo">Lo que se deben (sin saldar)</h2>
-              {reporte.resumen.length === 0 ? (
+              {reporte.resumen.length === 0 && externosDeben.length === 0 ? (
                 <p className="inventario-vacio">No se debe nada{desde || hasta || bodegaId ? " con estos filtros" : ""}.</p>
               ) : (
                 <div className="inventario-tabla-contenedor">
@@ -474,22 +486,35 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           <td><strong>{cantidadTexto(d.cantidad, d.unidad)}</strong></td>
                         </tr>
                       ))}
+                      {externosDeben.map((f) => (
+                        <tr key={`ext-${f.id}`}>
+                          <td><strong>{f.prestador}</strong></td>
+                          <td>{nombre(f.empresa_presta)}</td>
+                          <td>{f.codigo} <span className="rollos-texto-ayuda" style={{ margin: 0 }}>(lámina)</span></td>
+                          <td>
+                            Rollo prestado {f.referencia_rollo} · {(f.kilos_prestados ?? 0).toLocaleString("es-CO")} kg
+                            <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Devolvieron: {f.devuelto_con}</span>
+                          </td>
+                          <td><strong style={{ color: "#b3261e" }}>{(f.diferencia ?? 0).toLocaleString("es-CO")} kg por facturar</strong></td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               )}
+              </>}
 
               {/* ================== DETALLE ================== */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginTop: "1.5rem" }}>
-                <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Detalle de cada préstamo</h2>
-                {sinSaldar.length > 0 && (
+                <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>{vista === "saldados" ? "Préstamos saldados" : "Detalle de cada préstamo"}</h2>
+                {vista === "pendientes" && sinSaldar.length > 0 && (
                   <button type="button" className="inventario-boton" disabled={seleccion.size === 0 || saldando} onClick={saldar}>
                     {saldando ? "Guardando..." : seleccion.size ? `Saldar ${seleccion.size} seleccionado${seleccion.size === 1 ? "" : "s"}` : "Elige cuáles saldar"}
                   </button>
                 )}
               </div>
-              {reporte.prestamos.length === 0 ? (
-                <p className="inventario-vacio">No hay préstamos{incluirSaldados ? "" : " sin saldar"}.</p>
+              {prestamosVisibles.length === 0 ? (
+                <p className="inventario-vacio">{vista === "saldados" ? "No hay préstamos saldados" : "No hay préstamos sin saldar"}{desde || hasta || bodegaId || empresa ? " con estos filtros" : ""}.</p>
               ) : (
                 <div className="inventario-tabla-contenedor">
                   <table className="inventario-tabla">
@@ -504,7 +529,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       </tr>
                     </thead>
                     <tbody>
-                      {reporte.prestamos.map((p) => (
+                      {prestamosVisibles.map((p) => (
                         <tr key={p.id}>
                           <td>
                             {!p.saldado && <input type="checkbox" aria-label={`Elegir préstamo ${p.id}`} checked={seleccion.has(p.id)} onChange={() => alternar(p.id)} />}
@@ -549,9 +574,10 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </div>
               )}
 
-              <CuadreRollosPrestados nombreBodega={nombreBodega} recargar={recargarCuadre} />
+              <CuadreRollosPrestados nombreBodega={nombreBodega} recargar={recargarCuadre} vista={vista} alCargar={alCargarCuadre} />
 
               {/* ================== SACADO SIN EXISTENCIA ================== */}
+              {vista === "pendientes" && <>
               <h2 className="inventario-form-subtitulo" style={{ marginTop: "1.5rem" }}>Sacado sin existencia en el sistema</h2>
               <p className="inventario-carga-ayuda">
                 Lo que Planta sacó de la bodega para una cotización aunque el sistema decía que no había (en 0 o en negativo).
@@ -580,6 +606,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   </table>
                 </div>
               )}
+              </>}
             </>
           )}
           {rolloADevolver && (
