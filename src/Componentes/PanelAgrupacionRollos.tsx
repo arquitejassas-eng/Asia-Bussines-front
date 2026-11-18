@@ -30,6 +30,8 @@ function PanelAgrupacionRollos({
   abrirConsumo,
   abrirHistorial,
   abrirSalidaExterna,
+  // Solo Admin Inventario: corregir referencia / ajustar metros.
+  abrirCorregir = null,
 }) {
   const [gruposExpandidos, setGruposExpandidos] = useState({});
 
@@ -185,6 +187,11 @@ function PanelAgrupacionRollos({
                         >
                           Salida externa
                         </button>
+                        {abrirCorregir && (
+                          <button type="button" className="rollos-boton-secundario" onClick={() => abrirCorregir(rollo)}>
+                            Corregir rollo
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

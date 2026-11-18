@@ -7,11 +7,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import coincide_bodega, get_db, requiere_rol, usuario_actual
 from app.core.config import settings
 from app.models.equivalencias import TablaColorEquivalencia, TablaEspesorEquivalencia, TablaTipoMaterialEquivalencia
-from app.models.movimiento import Movimiento
+from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.rollo import EstadoRollo, Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.inventario import MovimientoResponse
 from app.schemas.rollos import (
+    AjustarMetrosRollo, CorregirReferenciaRollo,
     ActualizarAnchoRollo, ActualizarEmpresaRollo, ActualizarFamiliaRollo, ActualizarObservacionesRollo, ClasificacionSugeridaResponse, ConfirmarCargaRollosRequest,
     ConsumoRolloCrear, PaginaRollos, PrevisualizacionCargaRollosResponse, ResultadoCargaRollosResponse, RolloCrear,
     SalidaExternaRolloCrear,
@@ -435,6 +436,112 @@ def actualizar_empresa(
     rollo = _rollo_de_mi_bodega(db, rollo_id, usuario)
     rollo.empresa = datos.empresa.strip().upper()
     db.commit()
+    db.refresh(rollo)
+    return rollo
+
+
+def _actualizar_linea_en_siigo(db: Session, item, usuario: Usuario) -> None:
+    """Si la cotización del rollo está en Siigo, la cantidad (kilos en Asia,
+    centímetros en Arquitejas) se recalcula y la cotización se actualiza allá.
+    Si Siigo falla, la cotización queda "pendiente de Siigo" con el motivo
+    (como al editarla) y el cambio del rollo se guarda igual."""
+    from app.services import siigo_cotizacion
+
+    if item is None or item.apartado is None or not siigo_cotizacion.es_de_siigo(item.apartado):
+        return
+    sugerida = siigo_cotizacion.cantidad_sugerida(
+        db, item.apartado.empresa, modalidad=getattr(item.modalidad, "value", item.modalidad),
+        codigo_interno=item.codigo_interno, descripcion=item.descripcion or "", cantidad=item.cantidad or 0,
+        medida=item.medida, tipo_producto=item.tipo_producto, producto_id=item.producto_id, rollo_id=item.rollo_id)
+    if sugerida.get("cantidad") is not None:
+        item.siigo_cantidad = sugerida["cantidad"]
+    apartado = item.apartado
+    siigo_id_antes = apartado.siigo_id
+    siigo_cotizacion.sincronizar(db, apartado, usuario)
+    siigo_cotizacion.guardar_o_deshacer_en_siigo(db, db.get(type(apartado), apartado.id), siigo_id_antes)
+
+
+@router.patch("/{rollo_id}/referencia", response_model=RolloResponse,
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def corregir_referencia(
+    rollo_id: int, datos: CorregirReferenciaRollo, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Rollo:
+    """Admin Inventario corrige la referencia de un rollo (de cualquier sede).
+    Las cotizaciones y movimientos van por el id del rollo, así que siguen
+    amarrados; el cambio queda anotado en el historial."""
+    from app.models.apartado import ApartadoItem
+
+    rollo = db.query(Rollo).filter(Rollo.id == rollo_id).with_for_update().first()
+    if rollo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rollo no encontrado.")
+    nueva = " ".join(datos.identificador_rollo.split()).upper()
+    anterior = rollo.identificador_rollo
+    if nueva == anterior:
+        return rollo
+    if db.query(Rollo.id).filter(func.upper(Rollo.identificador_rollo) == nueva, Rollo.id != rollo.id).first():
+        raise HTTPException(status_code=400, detail=f"Ya hay otro rollo con la referencia {nueva}.")
+    rollo.identificador_rollo = nueva
+    # La descripción de las líneas de rollo completo dice "- rollo <referencia>".
+    for item in db.query(ApartadoItem).filter(ApartadoItem.rollo_id == rollo.id):
+        item.descripcion = (item.descripcion or "").replace(f"rollo {anterior}", f"rollo {nueva}")[:255]
+    db.add(Movimiento(
+        fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.ENTRADA, motivo="correccion_referencia",
+        producto_codigo=rollo.codigo_interno, producto_descripcion=f"{rollo.descripcion} (rollo {nueva})",
+        rollo_id=rollo.id, identificador_rollo=nueva, bodega_origen_id=None, bodega_destino_id=rollo.bodega_id,
+        cantidad=0, usuario=usuario.correo, observaciones=f"Referencia corregida: antes {anterior}, ahora {nueva}.",
+    ))
+    db.commit()
+    from app.services.apartados import item_que_aparta_rollo
+    _actualizar_linea_en_siigo(db, item_que_aparta_rollo(db, rollo.id), usuario)
+    db.refresh(rollo)
+    return rollo
+
+
+@router.patch("/{rollo_id}/metros", response_model=RolloResponse,
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
+def ajustar_metros(
+    rollo_id: int, datos: AjustarMetrosRollo, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> Rollo:
+    """Admin Inventario pone los metros reales de un rollo. La diferencia
+    queda como movimiento de ajuste (entrada si sube, salida si baja). Si el
+    rollo nunca se ha usado, también cambian sus metros de llegada; y si está
+    vendido completo sin salida, la línea de la cotización toma los metros nuevos."""
+    from app.services.apartados import descripcion_rollo_completo, item_que_aparta_rollo
+
+    rollo = db.query(Rollo).filter(Rollo.id == rollo_id).with_for_update().first()
+    if rollo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rollo no encontrado.")
+    anteriores = round(float(rollo.metros_disponibles or 0), 2)
+    nuevos = round(float(datos.metros_disponibles), 2)
+    diferencia = round(nuevos - anteriores, 2)
+    if abs(diferencia) < 0.005:
+        raise HTTPException(status_code=400, detail=f"El rollo ya tiene {anteriores:g} m.")
+    rollo.metros_disponibles = nuevos
+    if (rollo.metros_consumidos or 0) <= 0.005:
+        # Nunca se ha usado: los metros con que llegó eran un estimado.
+        rollo.metros_proveedor = nuevos
+        rollo.metros_calculados = nuevos
+    rollo.recalcular_estado()
+    item = item_que_aparta_rollo(db, rollo.id)
+    if item is not None and (item.metros_consumidos or 0) <= 0.005:
+        texto_auto = (item.descripcion or "").startswith("1 ROLLO ")
+        item.medida = nuevos
+        item.metros_requeridos = nuevos
+        if texto_auto:
+            item.descripcion = descripcion_rollo_completo(db, rollo)
+    db.add(Movimiento(
+        fecha=datetime.now(timezone.utc), tipo=TipoMovimiento.ENTRADA if diferencia > 0 else TipoMovimiento.SALIDA,
+        motivo="ajuste_metros", producto_codigo=rollo.codigo_interno,
+        producto_descripcion=f"{rollo.descripcion} (rollo {rollo.identificador_rollo})",
+        rollo_id=rollo.id, identificador_rollo=rollo.identificador_rollo,
+        bodega_origen_id=rollo.bodega_id if diferencia < 0 else None,
+        bodega_destino_id=rollo.bodega_id if diferencia > 0 else None,
+        cantidad=abs(diferencia), usuario=usuario.correo,
+        observaciones=f"Ajuste de metros: antes {anteriores:g} m, ahora {nuevos:g} m. Motivo: {datos.motivo.strip()}",
+    ))
+    db.commit()
+    if item is not None and (item.metros_consumidos or 0) <= 0.005:
+        _actualizar_linea_en_siigo(db, item, usuario)
     db.refresh(rollo)
     return rollo
 

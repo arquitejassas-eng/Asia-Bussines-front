@@ -3,6 +3,7 @@ import { api, ErrorApi } from "./Api";
 import { rolloDesdeApi } from "./Mapeo";
 import ModalHistorialRollo from "./ModalHistorialRollo";
 import ModalSalidaExternaRollo from "./ModalSalidaExternaRollo";
+import ModalCorregirRollo from "./ModalCorregirRollo";
 import { useHistorialRollo } from "../Hooks/useHistorialRollo";
 import { useSalidaExternaRollo } from "../Hooks/useSalidaExternaRollo";
 import { ESTADOS_ROLLO } from "./Rollos";
@@ -42,6 +43,9 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
   const [recargar, setRecargar] = useState(0);
   // Salida externa: el rollo completo sale a otra empresa y no vuelve.
   const s = useSalidaExternaRollo<Rollo>(() => setRecargar((n) => n + 1));
+  // Admin Inventario: corregir referencia / ajustar metros.
+  const [rolloACorregir, setRolloACorregir] = useState<Rollo | null>(null);
+  const [avisoCorreccion, setAvisoCorreccion] = useState("");
 
   useEffect(() => {
     let vigente = true;
@@ -106,6 +110,7 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
       </div>
 
       {error && <p className="inventario-error">{error}</p>}
+      {avisoCorreccion && <p className="inventario-exito" role="status" onClick={() => setAvisoCorreccion("")}>{avisoCorreccion}</p>}
       {s.avisoSalidaExterna && <p className="inventario-exito" role="status" onClick={() => s.setAvisoSalidaExterna("")}>{s.avisoSalidaExterna}</p>}
       {cargando ? (
         <p className="inventario-cargando">Cargando rollos...</p>
@@ -159,6 +164,12 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
                               Salida externa
                             </button>
                           )}
+                          {conHistorial && (
+                            <button type="button" className="rollos-boton-secundario buscar-rollos-historial"
+                              onClick={() => { setAvisoCorreccion(""); setRolloACorregir(r); }}>
+                              Corregir rollo
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -177,6 +188,10 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
         </>
       )}
       {s.rolloParaSalidaExterna && <ModalSalidaExternaRollo {...s} />}
+      {rolloACorregir && (
+        <ModalCorregirRollo rollo={rolloACorregir} alCerrar={() => setRolloACorregir(null)}
+          alGuardar={(mensaje) => { setRolloACorregir(null); setAvisoCorreccion(mensaje); setRecargar((n) => n + 1); }} />
+      )}
       {h.rolloParaHistorial && (
         <ModalHistorialRollo
           rolloParaHistorial={h.rolloParaHistorial}

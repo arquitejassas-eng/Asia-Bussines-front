@@ -10,11 +10,16 @@ import PanelCargaMasivaRollos from "../Componentes/PanelCargaMasivaRollos";
 import ModalIngresoRollo from "../Componentes/ModalIngresoRollo";
 import PanelToggleVistaRollos from "../Componentes/PanelToggleVistaRollos";
 import PanelAgrupacionRollos from "../Componentes/PanelAgrupacionRollos";
+import ModalCorregirRollo from "../Componentes/ModalCorregirRollo";
+import { useState } from "react";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import "../Style/Rollos.css";
 
 function RollosPage({ sesion, onCerrarSesion, almacen }) {
   const r = useControladorRollos(sesion, almacen);
+  const esAdminInventario = sesion?.rol === "admin_inventario";
+  const [rolloACorregir, setRolloACorregir] = useState(null);
+  const [avisoCorreccion, setAvisoCorreccion] = useState("");
 
   const notificaciones = contarNotificaciones(almacen, sesion);
 
@@ -90,7 +95,13 @@ function RollosPage({ sesion, onCerrarSesion, almacen }) {
             abrirConsumo={r.abrirConsumo}
             abrirHistorial={r.abrirHistorial}
             abrirSalidaExterna={r.abrirSalidaExterna}
+            abrirCorregir={esAdminInventario ? (rollo) => { setAvisoCorreccion(""); setRolloACorregir(rollo); } : null}
           />
+          {avisoCorreccion && <p className="sincodigo-listo" role="status" onClick={() => setAvisoCorreccion("")}>{avisoCorreccion}</p>}
+          {rolloACorregir && (
+            <ModalCorregirRollo rollo={rolloACorregir} alCerrar={() => setRolloACorregir(null)}
+              alGuardar={(mensaje) => { setRolloACorregir(null); setAvisoCorreccion(mensaje); void r.cargarRollos(); }} />
+          )}
 
           {/* ================== MODAL: INGRESO MANUAL DE ROLLO ================== */}
           {r.mostrarFormularioRollo && (

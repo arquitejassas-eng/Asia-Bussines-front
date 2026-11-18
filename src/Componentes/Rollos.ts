@@ -503,6 +503,7 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
 
   return {
     ...cargaRollos,
+    cargarRollos,
     rollosFiltrados,
     gruposPorCodigo,
     familiasDisponibles,

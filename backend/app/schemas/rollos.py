@@ -109,6 +109,17 @@ class RolloCrear(BaseModel):
     empresa: str = Field(default="", max_length=10)
 
 
+class CorregirReferenciaRollo(BaseModel):
+    identificador_rollo: str = Field(min_length=1, max_length=60)
+
+
+class AjustarMetrosRollo(BaseModel):
+    """Admin Inventario pone los metros reales (ej. después de medirlo o de
+    un conteo físico); queda como ajuste en el historial del rollo."""
+    metros_disponibles: float = Field(ge=0)
+    motivo: str = Field(min_length=3, max_length=300)
+
+
 class ConsumoRolloCrear(BaseModel):
     cantidad: float
     observaciones: str = ""

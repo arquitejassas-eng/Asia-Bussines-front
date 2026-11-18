@@ -20,6 +20,7 @@ import PanelTrasladosRollos from "../Componentes/PanelTrasladosRollos";
 import PanelProductosSinCodigo from "../Componentes/PanelProductosSinCodigo";
 import PanelRollosPrestados from "../Componentes/PanelRollosPrestados";
 import ModalPedirTraslado from "../Componentes/ModalPedirTraslado";
+import ModalCorregirRollo from "../Componentes/ModalCorregirRollo";
 import { IconoDescargar } from "../Componentes/Iconos";
 import { pasoDelTraslado } from "../Componentes/AvisosTrasladosRollos";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
@@ -82,6 +83,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
   // Rollo que Admin Inventario pide de una bodega para otra (y el aviso de que quedó pedido).
   const [rolloAPedir, setRolloAPedir] = useState<{ id: number; identificadorRollo: string; bodegaId: number | null; metrosDisponibles: number } | null>(null);
   const [avisoPedido, setAvisoPedido] = useState("");
+  const [rolloACorregir, setRolloACorregir] = useState<{ id: number; identificadorRollo: string; metrosDisponibles: number } | null>(null);
 
   function nombreItemEnvio(item: { rolloId: number | null; descripcion: string; cantidad: number | null; productoCodigo: string | null }) {
     if (item.rolloId != null) return `Rollo: ${item.descripcion}`;
@@ -391,6 +393,14 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }} />
               )}
+              {rolloACorregir && (
+                <ModalCorregirRollo rollo={rolloACorregir} alCerrar={() => setRolloACorregir(null)}
+                  alGuardar={(mensaje) => {
+                    setRolloACorregir(null); setAvisoPedido(mensaje);
+                    void c.recargarRollosExpandido(); void c.cargarComparativo(true);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }} />
+              )}
               <PanelTrasladosRollos traslados={trasladosRollos} verCodigo={verCodigoEnResumen} />
 
               {/* ================== RESUMEN: TOTAL POR CÓDIGO EN TODA LA EMPRESA ================== */}
@@ -587,6 +597,12 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                                                     <button type="button" className="rollos-boton-secundario buscar-rollos-historial"
                                                       onClick={() => salida.abrirSalidaExterna(rollo)}>
                                                       Salida externa
+                                                    </button>
+                                                  )}
+                                                  {!c.soloLectura && (
+                                                    <button type="button" className="rollos-boton-secundario buscar-rollos-historial"
+                                                      onClick={() => { setAvisoPedido(""); setRolloACorregir(rollo); }}>
+                                                      Corregir rollo
                                                     </button>
                                                   )}
                                                 </td>
