@@ -24,10 +24,13 @@ function normalizar(texto: unknown) {
  * código, referencia o kilos de la etiqueta, y filtrar por estado y bodega.
  * Va en la misma fila que el filtro de Empresa de la tabla por código, que
  * sirve para las dos cosas (ver backend /admin-inventario/rollos). */
-export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHistorial = false }: {
+export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHistorial = false, pedirTraslado, rollosEnTraslado }: {
   bodegas: Bodega[]; empresa: string; setEmpresa: (valor: string) => void;
   // Admin Inventario: "Ver historial" y "Salida externa" de cada rollo (mismas ventanas que Rollos almacenados).
   conHistorial?: boolean;
+  // Admin Inventario: "Pedir para otra bodega" (mismo modal que la tabla ▼ por código).
+  pedirTraslado?: (rollo: Rollo) => void;
+  rollosEnTraslado?: Set<number>;
 }) {
   const [estado, setEstado] = useState("");
   const [rollos, setRollos] = useState<Rollo[]>([]);
@@ -143,6 +146,12 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
                           {conHistorial && (
                             <button type="button" className="rollos-boton-secundario buscar-rollos-historial" onClick={() => h.abrirHistorial(r)}>
                               Ver historial
+                            </button>
+                          )}
+                          {pedirTraslado && r.estado !== "agotado" && r.metrosDisponibles > 0 && r.bodegaId != null
+                            && !rollosEnTraslado?.has(r.id) && (
+                            <button type="button" className="rollos-boton-secundario buscar-rollos-historial" onClick={() => pedirTraslado(r)}>
+                              Pedir para otra bodega
                             </button>
                           )}
                           {conHistorial && r.estado !== "agotado" && (

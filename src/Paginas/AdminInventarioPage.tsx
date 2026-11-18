@@ -80,7 +80,7 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
   const bodegas = c.comparativo.bodegas;
   const [mostrarAdminUnidades, setMostrarAdminUnidades] = useState(false);
   // Rollo que Admin Inventario pide de una bodega para otra (y el aviso de que quedó pedido).
-  const [rolloAPedir, setRolloAPedir] = useState<(typeof c.rollosDelCodigoExpandido)[number] | null>(null);
+  const [rolloAPedir, setRolloAPedir] = useState<{ id: number; identificadorRollo: string; bodegaId: number | null; metrosDisponibles: number } | null>(null);
   const [avisoPedido, setAvisoPedido] = useState("");
 
   function nombreItemEnvio(item: { rolloId: number | null; descripcion: string; cantidad: number | null; productoCodigo: string | null }) {
@@ -386,7 +386,10 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
               )}
               {rolloAPedir && (
                 <ModalPedirTraslado rollo={rolloAPedir} bodegas={bodegas} alCerrar={() => setRolloAPedir(null)}
-                  alPedir={(mensaje) => { setRolloAPedir(null); setAvisoPedido(mensaje); void almacen?.refrescarTrasladosRollos(); }} />
+                  alPedir={(mensaje) => {
+                    setRolloAPedir(null); setAvisoPedido(mensaje); void almacen?.refrescarTrasladosRollos();
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }} />
               )}
               <PanelTrasladosRollos traslados={trasladosRollos} verCodigo={verCodigoEnResumen} />
 
@@ -402,7 +405,9 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                   </button>
                 )}
               </div>
-              <PanelBuscarRollos bodegas={bodegas} empresa={c.empresaResumen} setEmpresa={c.setEmpresaResumen} conHistorial={!c.soloLectura} />
+              <PanelBuscarRollos bodegas={bodegas} empresa={c.empresaResumen} setEmpresa={c.setEmpresaResumen} conHistorial={!c.soloLectura}
+                rollosEnTraslado={new Set(trasladoDelRollo.keys())}
+                pedirTraslado={c.soloLectura ? undefined : (rollo) => { setAvisoPedido(""); setRolloAPedir(rollo); }} />
               {c.errorComparativo && <p className="inventario-error">{c.errorComparativo}</p>}
               {c.cargandoComparativo ? (
                 <p className="inventario-cargando">Cargando...</p>
