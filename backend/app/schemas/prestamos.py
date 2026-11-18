@@ -96,3 +96,15 @@ class PrestarDesdeCotizacionRequest(BaseModel):
 
 class DevolverDeTerceroRequest(BaseModel):
     cantidad: float = Field(gt=0)
+
+
+class DevolverConOtroRolloRequest(BaseModel):
+    """La empresa externa pagó el rollo prestado con otro rollo."""
+    codigo_interno: str = Field(min_length=1, max_length=60)
+    referencia: str = Field(min_length=1, max_length=60)
+    kilos: float = Field(gt=0)
+    metros: float = Field(gt=0)
+
+
+class FacturaPrestamoRequest(BaseModel):
+    factura: str = Field(default="", max_length=60)

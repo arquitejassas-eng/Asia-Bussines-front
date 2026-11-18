@@ -37,3 +37,9 @@ class PrestamoEmpresa(Base):
     saldado: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     saldado_por: Mapped[str] = mapped_column(String(150), default="")
     fecha_saldado: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Rollo prestado a una empresa externa que lo pagó con OTRO rollo (o el
+    # mismo): con qué y cuántos kilos volvieron; la diferencia se le factura.
+    devuelto_con: Mapped[str] = mapped_column(String(255), default="", server_default="", nullable=False)
+    kilos_devueltos: Mapped[float | None] = mapped_column(Float, nullable=True)
+    factura: Mapped[str] = mapped_column(String(60), default="", server_default="", nullable=False)
+    fecha_factura: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -4,6 +4,8 @@ import { api, ErrorApi } from "../Componentes/Api";
 import { EMPRESAS } from "../Utils/empresas";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { exportarHojasAExcel } from "../Utils/exportarExcel";
+import ModalDevolverRolloPrestado from "../Componentes/ModalDevolverRolloPrestado";
+import CuadreRollosPrestados from "../Componentes/CuadreRollosPrestados";
 import "../Style/Inventario.css";
 import "../Style/Merma.css";
 import "../Style/Rollos.css";
@@ -81,6 +83,9 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const [prestando, setPrestando] = useState(false);
   const [errorPrestar, setErrorPrestar] = useState("");
   const [aviso, setAviso] = useState("");
+  // Rollo prestado a una empresa externa que están devolviendo (el mismo u otro rollo).
+  const [rolloADevolver, setRolloADevolver] = useState<Prestamo | null>(null);
+  const [recargarCuadre, setRecargarCuadre] = useState(0);
 
   useEffect(() => {
     setProductosBodega([]);
@@ -184,6 +189,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   }
 
   async function devolver(p: Prestamo) {
+    if (p.unidad === "m") { setRolloADevolver(p); return; }
     const texto = window.prompt(p.unidad === "m"
       ? `¿Con cuántos metros volvió el rollo ${p.referencia_rollo}? (se prestaron ${p.cantidad} m; si volvió entero, déjalo así)`
       : `¿Cuántos ${p.codigo} devolvió ${p.prestador}? (prestados sin devolver: ${p.cantidad})`, String(p.cantidad));
@@ -215,6 +221,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       const datos = await api.get<Reporte>(`/prestamos?${parametros.toString()}`);
       setReporte(datos ?? { resumen: [], prestamos: [], sacado_sin_existencia: [] });
       setSeleccion(new Set());
+      setRecargarCuadre((n) => n + 1);
     } catch (err) {
       setError(err instanceof ErrorApi ? err.message : "No se pudieron cargar los préstamos.");
     } finally {
@@ -316,8 +323,9 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               </div>
               {prestarQue === "cotizacion" && (
                 <p className="inventario-carga-ayuda">
-                  Si hicieron una cotización para el préstamo y <strong>ya se le dio salida</strong>, escribe su número:
-                  lo que salió queda aquí como préstamo, con el número de la cotización, sin descontar el stock otra vez.
+                  Si hicieron una cotización para el préstamo, escribe su número (puede ser apenas la creaste): lo que lleva
+                  queda aquí como préstamo, con el número de la cotización. El material sale con la <strong>Salida</strong> de
+                  la cotización, como siempre; nada se descuenta dos veces.
                 </p>
               )}
               <div className="inventario-form-grid">
@@ -541,6 +549,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </div>
               )}
 
+              <CuadreRollosPrestados nombreBodega={nombreBodega} recargar={recargarCuadre} />
+
               {/* ================== SACADO SIN EXISTENCIA ================== */}
               <h2 className="inventario-form-subtitulo" style={{ marginTop: "1.5rem" }}>Sacado sin existencia en el sistema</h2>
               <p className="inventario-carga-ayuda">
@@ -571,6 +581,10 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                 </div>
               )}
             </>
+          )}
+          {rolloADevolver && (
+            <ModalDevolverRolloPrestado prestamo={rolloADevolver} alCerrar={() => setRolloADevolver(null)}
+              alGuardar={async (mensaje) => { setRolloADevolver(null); setAviso(mensaje); setError(""); await cargar(); }} />
           )}
         </div>
       </div>

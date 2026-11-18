@@ -321,23 +321,16 @@ def devolver_de_tercero(db: Session, prestamo_id: int, cantidad: float, usuario:
     prestamo = db.query(PrestamoEmpresa).filter(PrestamoEmpresa.id == prestamo_id).with_for_update().first()
     if prestamo is None or prestamo.origen != PRESTADO_A_TERCERO or prestamo.saldado:
         raise HTTPException(status_code=404, detail="Ese préstamo ya no está pendiente. Recarga la lista.")
-    if prestamo.apartado_id is not None:
-        estado = estado_de_cotizacion_prestada(db, {prestamo.apartado_id}).get(prestamo.apartado_id)
-        if estado == "por_recoger":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Todavía no lo han recogido: la cotización {prestamo.numero_cotizacion} no ha salido. "
-                       "Cuando vengan por él, dale Salida a la cotización; después podrás marcar la devolución.",
-            )
-        if estado == "cancelada":
-            # Nunca salió (se canceló la cotización): se cierra sin tocar el inventario.
-            prestamo.origen = DEVUELTO_POR_TERCERO
-            prestamo.saldado, prestamo.saldado_por, prestamo.fecha_saldado = True, usuario.correo, datetime.now(timezone.utc)
-            return prestamo
+    if _cerrar_si_no_salio(db, prestamo, usuario):
+        return prestamo
     cantidad = round(float(cantidad or 0), 2)
     if cantidad <= 0 or cantidad > prestamo.cantidad + 0.005:
         raise HTTPException(status_code=400, detail=f"Escribe cuánto devolvieron: más de 0 y máximo {prestamo.cantidad:g}.")
+    # Kilos que vuelven con el mismo rollo (la parte proporcional de lo prestado).
+    kilos_vuelven = None
     if prestamo.tipo == LAMINA:
+        kilos = kilos_prestados(db, prestamo)
+        kilos_vuelven = round(kilos * cantidad / prestamo.cantidad, 1) if kilos and prestamo.cantidad > 0 else None
         _devolver_al_rollo(db, prestamo, cantidad, usuario)
     else:
         _devolver_al_stock(db, prestamo, cantidad, usuario)
@@ -351,13 +344,167 @@ def devolver_de_tercero(db: Session, prestamo_id: int, cantidad: float, usuario:
             tipo=prestamo.tipo, codigo=prestamo.codigo, descripcion=prestamo.descripcion, cantidad=cantidad,
             unidad=prestamo.unidad, referencia_rollo=prestamo.referencia_rollo, origen=DEVUELTO_POR_TERCERO,
             usuario=prestamo.usuario, saldado=True, saldado_por=usuario.correo, fecha_saldado=ahora,
+            kilos_devueltos=kilos_vuelven, devuelto_con="El mismo rollo" if prestamo.tipo == LAMINA else "",
         )
         db.add(devuelto)
         return devuelto
     prestamo.origen = DEVUELTO_POR_TERCERO
     prestamo.saldado, prestamo.saldado_por, prestamo.fecha_saldado = True, usuario.correo, ahora
+    if prestamo.tipo == LAMINA:
+        prestamo.kilos_devueltos, prestamo.devuelto_con = kilos_vuelven, "El mismo rollo"
     return prestamo
 
+
+def _cerrar_si_no_salio(db: Session, prestamo: PrestamoEmpresa, usuario: Usuario) -> bool:
+    """Préstamo anotado con una cotización: si todavía no ha salido, no se
+    puede devolver; si la cotización se canceló sin salir, se cierra (True)."""
+    if prestamo.apartado_id is None:
+        return False
+    estado = estado_de_cotizacion_prestada(db, {prestamo.apartado_id}).get(prestamo.apartado_id)
+    if estado == "por_recoger":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Todavía no lo han recogido: la cotización {prestamo.numero_cotizacion} no ha salido. "
+                   "Cuando vengan por él, dale Salida a la cotización; después podrás marcar la devolución.",
+        )
+    if estado == "cancelada":
+        # Nunca salió (se canceló la cotización): se cierra sin tocar el inventario.
+        prestamo.origen = DEVUELTO_POR_TERCERO
+        prestamo.saldado, prestamo.saldado_por, prestamo.fecha_saldado = True, usuario.correo, datetime.now(timezone.utc)
+        return True
+    return False
+
+
+def kilos_prestados(db: Session, prestamo: PrestamoEmpresa) -> float | None:
+    """Kilos del rollo prestado según su etiqueta (si se prestó solo una
+    parte de sus metros, la parte proporcional)."""
+    from app.services.apartados import kilos_rollo
+
+    if prestamo.tipo != LAMINA or not prestamo.referencia_rollo:
+        return None
+    rollo = (
+        db.query(Rollo).filter(Rollo.bodega_id == prestamo.bodega_id, Rollo.identificador_rollo == prestamo.referencia_rollo).first()
+        or db.query(Rollo).filter(Rollo.identificador_rollo == prestamo.referencia_rollo).first()
+    )
+    kilos = kilos_rollo(rollo.peso_neto) if rollo else None
+    if not kilos:
+        return None
+    total = rollo.metros_proveedor or (rollo.metros_disponibles + rollo.metros_consumidos)
+    if total > 0.5 and prestamo.cantidad < total - 0.5:
+        return round(kilos * prestamo.cantidad / total, 1)
+    return float(kilos)
+
+
+def devolver_con_otro_rollo(
+    db: Session, prestamo_id: int, *, codigo_interno: str, referencia: str, kilos: float, metros: float, usuario: Usuario,
+) -> PrestamoEmpresa:
+    """La empresa externa pagó el rollo prestado con OTRO rollo: ese rollo
+    entra a la bodega del préstamo (de la empresa que prestó) y el préstamo
+    queda devuelto, con los kilos que llegaron. La diferencia de kilos se ve
+    en el cuadre: si devolvieron menos, se le factura."""
+    prestamo = db.query(PrestamoEmpresa).filter(PrestamoEmpresa.id == prestamo_id).with_for_update().first()
+    if prestamo is None or prestamo.origen != PRESTADO_A_TERCERO or prestamo.saldado:
+        raise HTTPException(status_code=404, detail="Ese préstamo ya no está pendiente. Recarga la lista.")
+    if prestamo.tipo != LAMINA:
+        raise HTTPException(status_code=400, detail="Solo un rollo prestado se puede pagar con otro rollo.")
+    if _cerrar_si_no_salio(db, prestamo, usuario):
+        return prestamo
+    codigo = " ".join((codigo_interno or "").split()).upper()
+    referencia = " ".join((referencia or "").split()).upper()
+    if not codigo or not referencia:
+        raise HTTPException(status_code=400, detail="Escribe el código y la referencia del rollo que devolvieron.")
+    if not (kilos and kilos > 0) or not (metros and metros > 0):
+        raise HTTPException(status_code=400, detail="Escribe los kilos y los metros del rollo que devolvieron.")
+    if db.query(Rollo.id).filter(Rollo.bodega_id == prestamo.bodega_id, Rollo.identificador_rollo == referencia).first():
+        raise HTTPException(status_code=400, detail=f"Ya hay un rollo con la referencia {referencia} en esa bodega.")
+    # Descripción, color, calibre y ancho: del rollo prestado si es el mismo código; si no, de otro rollo de ese código.
+    plantilla = None
+    if (prestamo.codigo or "").upper() == codigo:
+        plantilla = db.query(Rollo).filter(Rollo.identificador_rollo == prestamo.referencia_rollo).first()
+    plantilla = plantilla or db.query(Rollo).filter(Rollo.codigo_interno == codigo).order_by(Rollo.id.desc()).first()
+    if plantilla is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay ningún rollo con el código {codigo} para saber su color y calibre. Revisa el código (ej. LR30020,25).",
+        )
+    metros = round(float(metros), 2)
+    kilos = round(float(kilos), 1)
+    ahora = datetime.now(timezone.utc)
+    rollo = Rollo(
+        bodega_id=prestamo.bodega_id, recepcion_id=None, codigo_interno=codigo, identificador_rollo=referencia,
+        codigo_proveedor=plantilla.codigo_proveedor or "", descripcion=plantilla.descripcion, familia=plantilla.familia,
+        color_material=plantilla.color_material, calibre=plantilla.calibre, ancho_material=plantilla.ancho_material,
+        peso_neto=kilos, metros_proveedor=metros, metros_calculados=metros, metros_disponibles=metros, metros_consumidos=0,
+        fecha_ingreso=ahora, proveedor=(prestamo.prestador or "")[:120], empresa=prestamo.empresa_presta,
+        observaciones=f"Lo devolvió {prestamo.prestador} en pago del rollo prestado {prestamo.referencia_rollo} (préstamo #{prestamo.id}).",
+    )
+    rollo.recalcular_estado()
+    db.add(rollo)
+    db.flush()
+    db.add(Movimiento(
+        fecha=ahora, tipo=TipoMovimiento.ENTRADA, motivo=DEVUELTO_POR_TERCERO, producto_codigo=codigo,
+        producto_descripcion=f"{rollo.descripcion} (rollo {referencia})", rollo_id=rollo.id, identificador_rollo=referencia,
+        bodega_destino_id=prestamo.bodega_id, cantidad=metros, usuario=usuario.correo, empresa_externa=prestamo.prestador,
+        observaciones=f"{prestamo.prestador} devolvió otro rollo ({referencia}, {kilos:g} kg) por el rollo prestado "
+                      f"{prestamo.referencia_rollo} (préstamo #{prestamo.id}).",
+    ))
+    prestamo.origen = DEVUELTO_POR_TERCERO
+    prestamo.saldado, prestamo.saldado_por, prestamo.fecha_saldado = True, usuario.correo, ahora
+    prestamo.kilos_devueltos = kilos
+    prestamo.devuelto_con = f"Rollo {referencia} ({codigo}) · {kilos:g} kg · {metros:g} m"[:255]
+    return prestamo
+
+
+def anotar_factura(db: Session, prestamo_id: int, factura: str) -> PrestamoEmpresa:
+    """Se le facturó a la empresa externa la diferencia de kilos (vacío = quitarla)."""
+    prestamo = db.get(PrestamoEmpresa, prestamo_id)
+    if prestamo is None or prestamo.empresa_recibe != PRESTADOR_EXTERNO or prestamo.tipo != LAMINA:
+        raise HTTPException(status_code=404, detail="Préstamo no encontrado. Recarga la lista.")
+    prestamo.factura = " ".join((factura or "").split())[:60]
+    prestamo.fecha_factura = datetime.now(timezone.utc) if prestamo.factura else None
+    return prestamo
+
+
+def cuadre_rollos_terceros(db: Session) -> list[dict]:
+    """Cada rollo prestado a una empresa externa: kilos que se fueron, con qué
+    lo devolvieron y cuántos kilos volvieron. Diferencia > 0 = devolvieron
+    menos: se le factura. < 0 = devolvieron de más."""
+    prestamos = (
+        db.query(PrestamoEmpresa)
+        .filter(PrestamoEmpresa.empresa_recibe == PRESTADOR_EXTERNO, PrestamoEmpresa.tipo == LAMINA,
+                PrestamoEmpresa.origen.in_((PRESTADO_A_TERCERO, DEVUELTO_POR_TERCERO)))
+        .order_by(PrestamoEmpresa.fecha.desc(), PrestamoEmpresa.id.desc()).all()
+    )
+    por_recoger = estado_de_cotizacion_prestada(
+        db, {p.apartado_id for p in prestamos if p.apartado_id is not None and p.origen == PRESTADO_A_TERCERO})
+    filas = []
+    for p in prestamos:
+        prestados = kilos_prestados(db, p)
+        devuelto = p.origen == DEVUELTO_POR_TERCERO
+        diferencia = None
+        if devuelto and prestados is not None and p.kilos_devueltos is not None:
+            diferencia = round(prestados - p.kilos_devueltos, 1)
+        if not devuelto:
+            estado = por_recoger.get(p.apartado_id, "pendiente") if p.apartado_id is not None else "pendiente"
+        elif not p.devuelto_con:
+            estado = "cerrado"  # cotización cancelada, o devuelto antes de este cuadre
+        elif diferencia is None:
+            estado = "sin_kilos"
+        elif abs(diferencia) < 1:
+            estado = "cuadrado"
+        elif diferencia < 0:
+            estado = "de_mas"
+        else:
+            estado = "facturado" if p.factura else "por_facturar"
+        filas.append({
+            "id": p.id, "fecha": p.fecha, "prestador": p.prestador, "numero_cotizacion": p.numero_cotizacion or "",
+            "bodega_id": p.bodega_id, "empresa_presta": p.empresa_presta, "codigo": p.codigo,
+            "referencia_rollo": p.referencia_rollo, "metros": p.cantidad, "kilos_prestados": prestados,
+            "devuelto_con": p.devuelto_con or "", "kilos_devueltos": p.kilos_devueltos,
+            "fecha_devuelto": p.fecha_saldado if devuelto else None,
+            "diferencia": diferencia, "estado": estado, "factura": p.factura or "", "fecha_factura": p.fecha_factura,
+        })
+    return filas
 
 def _devolver_al_rollo(db: Session, prestamo: PrestamoEmpresa, metros: float, usuario: Usuario) -> None:
     """Vuelve el mismo rollo: recupera los metros que trae, en su bodega."""

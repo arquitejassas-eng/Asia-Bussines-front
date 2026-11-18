@@ -8,7 +8,7 @@ from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.prestamos import (
-    DevolverDeTerceroRequest, PrestamoResponse, PrestarATerceroRequest, PrestarDesdeCotizacionRequest,
+    DevolverConOtroRolloRequest, DevolverDeTerceroRequest, FacturaPrestamoRequest, PrestamoResponse, PrestarATerceroRequest, PrestarDesdeCotizacionRequest,
     ReportePrestamosResponse, SaldarPrestamosRequest,
 )
 from app.services import prestamos as srv
@@ -117,3 +117,28 @@ def devolver_de_tercero(prestamo_id: int, datos: DevolverDeTerceroRequest, db: S
     db.commit()
     db.refresh(prestamo)
     return prestamo
+
+
+@router.post("/{prestamo_id}/devolver-otro-rollo", response_model=PrestamoResponse)
+def devolver_con_otro_rollo(prestamo_id: int, datos: DevolverConOtroRolloRequest, db: Session = Depends(get_db),
+                            usuario: Usuario = Depends(usuario_actual)):
+    """Pagaron el rollo prestado con otro rollo: entra a la bodega y queda el cuadre de kilos."""
+    prestamo = srv.devolver_con_otro_rollo(db, prestamo_id, codigo_interno=datos.codigo_interno, referencia=datos.referencia,
+                                           kilos=datos.kilos, metros=datos.metros, usuario=usuario)
+    db.commit()
+    db.refresh(prestamo)
+    return prestamo
+
+
+@router.get("/cuadre-terceros")
+def cuadre_rollos_terceros(db: Session = Depends(get_db)) -> list[dict]:
+    """Rollos prestados a empresas externas: kilos prestados vs. devueltos y qué falta facturar."""
+    return srv.cuadre_rollos_terceros(db)
+
+
+@router.post("/{prestamo_id}/factura")
+def anotar_factura(prestamo_id: int, datos: FacturaPrestamoRequest, db: Session = Depends(get_db)) -> dict:
+    """Número de la factura con que se cobró la diferencia de kilos."""
+    prestamo = srv.anotar_factura(db, prestamo_id, datos.factura)
+    db.commit()
+    return {"id": prestamo.id, "factura": prestamo.factura}
