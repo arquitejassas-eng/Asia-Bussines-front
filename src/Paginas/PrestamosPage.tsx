@@ -254,7 +254,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   ].filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const prestamosVisibles = (vista === "saldados" ? reporte.prestamos.filter((p) => p.saldado) : reporte.prestamos)
     .filter((p) => !externa || p.prestador === externa);
-  const resumenVisible = externa ? [] : reporte.resumen;
+  const resumenVisible = externa ? reporte.resumen.filter((d) => d.presta === externa || d.debe === externa) : reporte.resumen;
   const sinSaldar = prestamosVisibles.filter((p) => !p.saldado);
   const todosElegidos = sinSaldar.length > 0 && sinSaldar.every((p) => seleccion.has(p.id));
 
