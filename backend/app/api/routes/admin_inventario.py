@@ -20,7 +20,7 @@ from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.services.clasificacion import formatear_calibre
 from app.services import codigo_provisional as srv_codigo
 from app.services import transferencias as srv_transferencias
-from app.services.merma_rollo import asignar_merma_y_sobrante, rollos_con_merma_o_sobrante
+from app.services.merma_rollo import asignar_merma_y_sobrante
 
 # Todo este router es de solo lectura, por eso VENDEDOR también entra: es su
 # única vista del inventario (todas las sedes). Si se agrega aquí un endpoint
@@ -349,8 +349,8 @@ def rollos_por_codigo(
     consulta = (
         db.query(Rollo)
         .filter(
-            Rollo.codigo_interno == codigo_interno, Rollo.bodega_id.isnot(None),
-            or_(Rollo.metros_disponibles > 0, Rollo.id.in_(rollos_con_merma_o_sobrante(db))),
+            # Solo los que tienen metros: los agotados (aunque tengan merma) se ven en el menú Merma.
+            Rollo.codigo_interno == codigo_interno, Rollo.bodega_id.isnot(None), Rollo.metros_disponibles > 0.005,
         )
     )
     if empresa:
