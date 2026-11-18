@@ -15,6 +15,7 @@ import CeldaApartado from "../Componentes/CeldaApartado";
 import PanelResumenProductos from "../Componentes/PanelResumenProductos";
 import PanelAdminUnidadesFamilia from "../Componentes/PanelAdminUnidadesFamilia";
 import PanelNuevoProducto from "../Componentes/PanelNuevoProducto";
+import PanelEntradaProducto from "../Componentes/PanelEntradaProducto";
 import PanelEliminarProducto from "../Componentes/PanelEliminarProducto";
 import PanelTrasladosRollos from "../Componentes/PanelTrasladosRollos";
 import PanelProductosSinCodigo from "../Componentes/PanelProductosSinCodigo";
@@ -674,6 +675,9 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
                       familias={(almacen?.unidadesFamilia || []).map((u) => u.familia)}
                       alCrear={() => c.cargarComparativo()}
                     />
+                  )}
+                  {!c.soloLectura && (
+                    <PanelEntradaProducto bodegas={bodegas} alGuardar={() => c.cargarComparativo(true)} />
                   )}
                   {!c.soloLectura && (
                     <PanelEliminarProducto bodegas={bodegas} alEliminar={() => c.cargarComparativo(true)}

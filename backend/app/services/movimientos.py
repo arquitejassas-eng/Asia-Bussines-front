@@ -140,7 +140,12 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
     else:
         if datos.producto_id is None:
             raise HTTPException(status_code=400, detail="Selecciona un producto.")
-        producto = _producto_existente(db, datos.producto_id, usuario)
+        if usuario.rol == RolUsuario.ADMIN_INVENTARIO and datos.tipo == TipoMovimiento.ENTRADA:
+            # Admin Inventario le da entrada a un producto de cualquier bodega
+            # (mercancía comprada que llegó allá), sin depender de la bodega.
+            producto = db.query(Producto).filter(Producto.id == datos.producto_id).with_for_update().first()
+        else:
+            producto = _producto_existente(db, datos.producto_id, usuario)
         if producto is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Producto no encontrado.")
 
@@ -161,6 +166,7 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
             producto.stock += cantidad
             producto.entrada += cantidad
         origen = None
+        destino = producto.bodega_id
     elif datos.tipo == TipoMovimiento.SALIDA:
         producto.stock -= cantidad
         destino = None
