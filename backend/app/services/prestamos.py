@@ -63,6 +63,13 @@ def registrar_prestamo_de_rollo(db: Session, *, rollo: Rollo, prestador: str, us
         raise HTTPException(status_code=400, detail="Escribe quién prestó el rollo (empresa o persona).")
     sigla = sigla_empresa_desde_nombre(nombre)
     recibe = (rollo.empresa or "").strip().upper()
+    if recibe not in EMPRESAS_CONOCIDAS:
+        # La referencia de un rollo prestado trae las iniciales del dueño (ej. "3B..."),
+        # no las nuestras: hay que decir para cuál de las dos empresas entra.
+        raise HTTPException(
+            status_code=400,
+            detail="Escoge para qué empresa entra el rollo prestado (Arquitejas o Asia Business): esa es la que le queda debiendo a quien lo prestó.",
+        )
     if sigla and sigla == recibe:
         raise HTTPException(
             status_code=400,

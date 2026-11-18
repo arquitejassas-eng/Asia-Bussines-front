@@ -229,7 +229,10 @@ function ModalIngresoRollo({
                 <datalist id="rollo-prestador-opciones">
                   {Object.values(EMPRESAS).map((n) => <option key={n} value={n} />)}
                 </datalist>
-                <p className="rollos-texto-ayuda">Sus metros quedan en Préstamos entre empresas hasta que lo marques como saldado.</p>
+                <p className="rollos-texto-ayuda">
+                  Entra para la empresa que escogiste arriba{formularioRollo.empresa ? ` (${EMPRESAS[formularioRollo.empresa] || formularioRollo.empresa})` : ""}:
+                  ella le queda debiendo sus metros a quien lo prestó, en Préstamos entre empresas, hasta que lo marques como saldado.
+                </p>
               </div>
             )}
           </div>
