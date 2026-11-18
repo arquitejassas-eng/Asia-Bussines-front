@@ -247,3 +247,119 @@
   font-size: 0.7rem;
   white-space: nowrap;
 }
+
+/* ─── Alerta: material por pedir para sustentar cotizaciones (bodega) ─── */
+.barra-pedir {
+  position: relative;
+  flex-shrink: 0;
+  margin: 0.75rem 0 0.6rem;
+}
+
+.barra-pedir-boton {
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #E0796B;
+  background: #8C2A1C;
+  color: #FFFFFF;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  animation: barra-pedir-latido 2.4s ease-in-out infinite;
+}
+
+.barra-pedir-boton-ok {
+  background: var(--at-steel-3, #342C22);
+  border-color: var(--at-steel-border, #423826);
+  animation: none;
+}
+
+@keyframes barra-pedir-latido {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 121, 107, 0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(224, 121, 107, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barra-pedir-boton { animation: none; }
+}
+
+.barra-pedir-panel {
+  position: fixed;
+  left: 262px;
+  bottom: 1rem;
+  width: min(430px, calc(100vw - 280px));
+  max-height: 75vh;
+  overflow-y: auto;
+  z-index: 50;
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+  background: #FFFFFF;
+  color: #2A2118;
+  border: 1px solid #E5D9C6;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.barra-pedir-cabeza {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.barra-pedir-cabeza button {
+  border: none;
+  background: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #6B5D4A;
+}
+
+.barra-pedir-ayuda {
+  font-size: 0.8rem;
+  color: #6B5D4A;
+  margin: 0.4rem 0 0.7rem;
+}
+
+.barra-pedir-cot {
+  border-left: 3px solid #B3261E;
+  background: #FBEDEA;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  font-size: 0.84rem;
+}
+
+.barra-pedir-cot-ok {
+  border-left-color: #B0A18C;
+  background: #F4EFE7;
+}
+
+.barra-pedir-cot ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.barra-pedir-cot li span {
+  display: block;
+  font-size: 0.76rem;
+  color: #6B5D4A;
+}
+
+.barra-pedir-acciones {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .barra-pedir-panel {
+    left: 1rem;
+    right: 1rem;
+    width: auto;
+  }
+}

@@ -6,6 +6,7 @@ import { borrarToken } from "./Utils/auth";
 import RutaProtegida from "./Componentes/RutaProtegida";
 import ErrorDePantalla from "./Componentes/ErrorDePantalla";
 import { ApartadosPorEnviarContexto } from "./Componentes/AvisosApartados";
+import { PedirMaterialContexto } from "./Componentes/AvisosPedirMaterial";
 import { TrasladosRollosContexto } from "./Componentes/AvisosTrasladosRollos";
 import { ProductosSinCodigoContexto } from "./Componentes/AvisosProductosSinCodigo";
 
@@ -117,6 +118,7 @@ export default function App() {
 
   return (
     <ApartadosPorEnviarContexto.Provider value={almacen.apartadosPorEnviarCount}>
+    <PedirMaterialContexto.Provider value={almacen.pedirMaterial}>
     <TrasladosRollosContexto.Provider value={almacen.trasladosRollos.length}>
     <ProductosSinCodigoContexto.Provider value={almacen.productosSinCodigo.length}>
     <ErrorDePantalla key={pathname}>
@@ -194,6 +196,7 @@ export default function App() {
     </ErrorDePantalla>
     </ProductosSinCodigoContexto.Provider>
     </TrasladosRollosContexto.Provider>
+    </PedirMaterialContexto.Provider>
     </ApartadosPorEnviarContexto.Provider>
   );
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { cotizacionPorPedirDesdeApi, type CotizacionPorPedir } from "./AvisosPedirMaterial";
 import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, envioDesdeApi, solicitudDesdeApi } from "./Mapeo";
 import { useUnidadesFamilia } from "../Hooks/useUnidadesFamilia";
@@ -166,6 +167,20 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
 
   const [apartadosPorEnviarCount, setApartadosPorEnviarCount] = useState(0);
 
+  // Cotizaciones de la bodega a las que les falta material que nadie ha mandado:
+  // la encargada tiene que pedirlo (alerta en el menú, desde cualquier pantalla).
+  const [pedirMaterial, setPedirMaterial] = useState<CotizacionPorPedir[]>([]);
+
+  const refrescarPedirMaterial = useCallback(async () => {
+    if (sesion?.rol !== "administrativo") return setPedirMaterial([]);
+    try {
+      const datos = await api.get<Record<string, unknown>[]>("/apartados/esperando-material") || [];
+      setPedirMaterial(datos.map(cotizacionPorPedirDesdeApi));
+    } catch {
+      /* Sin conexión un momento: se conserva lo que había. */
+    }
+  }, [sesion?.rol]);
+
   const refrescarApartadosPorEnviar = useCallback(async () => {
     if (sesion?.rol !== "administrativo") return setApartadosPorEnviarCount(0);
     try {
@@ -186,13 +201,14 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     refrescarTrasladosPendientes();
     refrescarTrasladosRollos();
     refrescarProductosSinCodigo();
+    refrescarPedirMaterial();
     if (sesion?.correo) cargarUnidadesFamilia();
   }, [cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente, refrescarApartadosPorEnviar,
-    refrescarTrasladosPendientes, refrescarTrasladosRollos, refrescarProductosSinCodigo, cargarUnidadesFamilia, sesion?.correo]);
+    refrescarTrasladosPendientes, refrescarTrasladosRollos, refrescarProductosSinCodigo, refrescarPedirMaterial, cargarUnidadesFamilia, sesion?.correo]);
 
   useActualizacionAutomatica(
     () => Promise.all([refrescarSolicitudesPendientes(), refrescarEnviosPendientes(), refrescarProduccionPendiente(), refrescarApartadosPorEnviar(),
-      refrescarTrasladosPendientes(), refrescarTrasladosRollos(), refrescarProductosSinCodigo()]),
+      refrescarTrasladosPendientes(), refrescarTrasladosRollos(), refrescarProductosSinCodigo(), refrescarPedirMaterial()]),
     { activa: Boolean(sesion?.correo) },
   );
 
@@ -203,6 +219,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     productosSinCodigo, refrescarProductosSinCodigo,
     produccionPendienteCount, refrescarProduccionPendiente,
     apartadosPorEnviarCount, refrescarApartadosPorEnviar,
+    pedirMaterial, refrescarPedirMaterial,
     unidadesFamilia, unidadPorFamilia, decimalesPorFamilia, cargarUnidadesFamilia, guardarUnidadFamilia,
     mostrarFormularioBodega, setMostrarFormularioBodega, nombreBodegaNueva, setNombreBodegaNueva,
     guardandoBodega, errorBodega, crearBodega,

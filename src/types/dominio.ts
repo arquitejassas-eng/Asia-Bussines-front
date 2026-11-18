@@ -61,4 +61,5 @@ export type AlmacenGlobal = {
   crearBodega: (evento: { preventDefault: () => void }) => Promise<void>;
   produccionPendienteCount: number; refrescarProduccionPendiente: () => Promise<void>;
   apartadosPorEnviarCount: number; refrescarApartadosPorEnviar: () => Promise<void>;
+  pedirMaterial: import("../Componentes/AvisosPedirMaterial").CotizacionPorPedir[]; refrescarPedirMaterial: () => Promise<void>;
 };

@@ -1,8 +1,9 @@
-import { useContext } from "react";
+import { useContext, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ApartadosPorEnviarContexto } from "./AvisosApartados";
 import { TrasladosRollosContexto } from "./AvisosTrasladosRollos";
 import { ProductosSinCodigoContexto } from "./AvisosProductosSinCodigo";
+import { PedirMaterialContexto } from "./AvisosPedirMaterial";
 import "../Style/Barralateral.css";
 
 type Sesion = { rol?: string; bodegaNombre?: string } | null | undefined;
@@ -33,6 +34,12 @@ export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 
   const apartadosPorEnviar = useContext(ApartadosPorEnviarContexto);
   const trasladosRollos = useContext(TrasladosRollosContexto);
   const productosSinCodigo = useContext(ProductosSinCodigoContexto);
+  const pedirMaterial = useContext(PedirMaterialContexto);
+  const [verPedir, setVerPedir] = useState(false);
+  // Solo la encargada de la bodega: cotizaciones a las que les falta material que nadie ha mandado.
+  const cotizacionesPorPedir = sesion?.rol === "administrativo" ? pedirMaterial.filter((c) => c.porPedir) : [];
+  const yaPedidas = sesion?.rol === "administrativo" ? pedirMaterial.filter((c) => !c.porPedir) : [];
+  const formato = (n: number) => n.toLocaleString("es-CO", { maximumFractionDigits: 2 });
   const modulosVisibles = MODULOS.filter((modulo) => !modulo.roles || modulo.roles.includes(sesion?.rol ?? ""));
 
   return (
@@ -62,6 +69,50 @@ export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 
           </div>
         ))}
       </nav>
+      {(cotizacionesPorPedir.length > 0 || yaPedidas.length > 0) && (
+        <div className="barra-pedir">
+          <button type="button" className={`barra-pedir-boton ${cotizacionesPorPedir.length ? "" : "barra-pedir-boton-ok"}`}
+            onClick={() => setVerPedir((v) => !v)} aria-expanded={verPedir}>
+            {cotizacionesPorPedir.length
+              ? <>⚠ Pide material: <strong>{cotizacionesPorPedir.length}</strong> cotizaci{cotizacionesPorPedir.length === 1 ? "ón" : "ones"}</>
+              : <>⏳ Material pedido: {yaPedidas.length} cotizaci{yaPedidas.length === 1 ? "ón" : "ones"}</>}
+          </button>
+          {verPedir && (
+            <div className="barra-pedir-panel" role="dialog" aria-label="Material por pedir">
+              <div className="barra-pedir-cabeza">
+                <strong>Material para sustentar cotizaciones</strong>
+                <button type="button" onClick={() => setVerPedir(false)} aria-label="Cerrar">✕</button>
+              </div>
+              <p className="barra-pedir-ayuda">
+                A estas cotizaciones les falta material en tu bodega y nadie lo ha mandado. Pídelo en
+                <strong> Bodegas</strong> (Solicitar) a la bodega que lo tiene; escribe el número de la cotización al pedirlo.
+              </p>
+              {[...cotizacionesPorPedir, ...yaPedidas].map((c) => (
+                <div key={c.id} className={`barra-pedir-cot ${c.porPedir ? "" : "barra-pedir-cot-ok"}`}>
+                  <div><strong>{c.numeroCotizacion}</strong> · {c.cliente || "sin cliente"}</div>
+                  <ul>
+                    {c.lineas.map((l) => (
+                      <li key={l.codigo + l.empresa}>
+                        {l.porPedir > 0.005
+                          ? <>Pide <strong>{formato(l.porPedir)}{l.unidad === "m" ? " m" : ""}</strong> de {l.codigo}</>
+                          : <>Ya pediste {formato(l.yaPedido)}{l.unidad === "m" ? " m" : ""} de {l.codigo}: falta que la otra bodega lo despache</>}
+                        <span>
+                          {(() => { const donde = l.detalle.match(/\(([^)]*)\)/)?.[1]; return donde ? `Hay en ${donde.replace(/^hay en /, "")}` : "No hay en otra bodega"; })()}
+                          {l.porPedir > 0.005 && l.yaPedido > 0 ? ` · ya pediste ${formato(l.yaPedido)}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              <div className="barra-pedir-acciones">
+                <Link to="/bodegas" onClick={() => setVerPedir(false)}>Ir a Bodegas a pedirlo</Link>
+                <Link to="/apartados" onClick={() => setVerPedir(false)}>Ver en Apartados</Link>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <button type="button" className="barra-boton-salir" onClick={onCerrarSesion}>Cerrar sesión</button>
     </aside>
   );

@@ -45,6 +45,64 @@ def _con_faltantes(db: Session, apartados: list[Apartado]) -> list[Apartado]:
     return apartados
 
 
+@router.get("/esperando-material")
+def esperando_material(bodega_id: int | None = None, db: Session = Depends(get_db),
+                       usuario: Usuario = Depends(usuario_actual)) -> list[dict]:
+    """Cotizaciones activas de la bodega a las que les falta material que NO
+    viene en camino: la encargada tiene que pedirlo (traslado) para poder
+    cumplirlas. Por cada código: cuánto falta, cuánto ya pidió (traslado
+    pendiente o aceptado, sin despachar) y dónde hay."""
+    from app.models.solicitud import EstadoSolicitud, Solicitud
+
+    consulta = db.query(Apartado).options(selectinload(Apartado.items)).filter(
+        Apartado.estado.in_(srv.ESTADOS_RESERVA_ACTIVA), Apartado.traslado_a == "")
+    if usuario.rol == RolUsuario.ADMIN_INVENTARIO:
+        if bodega_id is not None:
+            consulta = consulta.filter(Apartado.bodega_id == bodega_id)
+    elif usuario.bodega_id is not None:
+        consulta = consulta.filter(Apartado.bodega_id == usuario.bodega_id)
+    else:
+        return []
+    apartados = consulta.order_by(Apartado.fecha_creacion, Apartado.id).all()
+    detalle: dict[int, list[tuple[str, str, float, bool]]] = {}
+    textos = srv.faltantes_de_apartados(db, apartados, detalle)
+    viene: dict[tuple, float] = {}
+    pedido: dict[tuple, float] = {}
+    resultado = []
+    for apartado in apartados:
+        por_codigo: dict[tuple, float] = {}
+        for codigo, empresa, falta, es_rollo in detalle.get(apartado.id, []):
+            por_codigo[(codigo, empresa, es_rollo)] = por_codigo.get((codigo, empresa, es_rollo), 0.0) + falta
+        lineas = []
+        for (codigo, empresa, es_rollo), falta in por_codigo.items():
+            clave = (apartado.bodega_id, codigo, empresa, es_rollo)
+            if clave not in viene:
+                viene[clave] = srv._cuanto_viene_hacia(db, *clave)
+                pedidas = db.query(func.coalesce(func.sum(Solicitud.cantidad), 0)).filter(
+                    Solicitud.estado.in_((EstadoSolicitud.PENDIENTE, EstadoSolicitud.ACEPTADA)),
+                    Solicitud.bodega_solicitante_id == apartado.bodega_id, Solicitud.producto_codigo == codigo,
+                    Solicitud.rollo_id.isnot(None) if es_rollo else Solicitud.rollo_id.is_(None))
+                if empresa and empresa != srv.AMBAS_EMPRESAS:
+                    pedidas = pedidas.filter(Solicitud.empresa == empresa)
+                pedido[clave] = round(float(pedidas.scalar() or 0), 2)
+            sin_camino = round(falta - viene[clave], 2)
+            if sin_camino <= 0.005:
+                continue
+            texto = next((t for t in textos.get(apartado.id, []) if f" de {codigo}" in t), f"faltan {sin_camino:g} de {codigo}")
+            lineas.append({
+                "codigo": codigo, "empresa": empresa, "unidad": "m" if es_rollo else "und", "falta": sin_camino,
+                "ya_pedido": pedido[clave], "por_pedir": round(max(sin_camino - pedido[clave], 0), 2),
+                "detalle": texto.replace("faltan ", "", 1),
+            })
+        if lineas:
+            resultado.append({
+                "id": apartado.id, "numero_cotizacion": apartado.numero_cotizacion, "cliente": apartado.cliente or "",
+                "bodega_id": apartado.bodega_id, "estado": apartado.estado.value, "lineas": lineas,
+                "por_pedir": any(l["por_pedir"] > 0.005 for l in lineas),
+            })
+    return resultado
+
+
 @router.get("/disponibilidad", response_model=DisponibilidadCodigoResponse)
 def consultar_disponibilidad(
     codigo_interno: str = Query(..., min_length=1), bodega_id: int | None = None, empresa: str = "",
