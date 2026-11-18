@@ -496,7 +496,6 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           "CALIBRE": deRollo ? calibreDe(codigo) : "",
           "INFORMACION SIIGO": it ? `${descripcionLinea(it)} - BODEGA ${(ap.bodegaNombre || "").toUpperCase()}` : "",
           "SALE": it ? (deRollo ? metros ?? "" : it.cantidad) : "",
-          "PENDIENTE (m)": it && deRollo && ap.estado !== "entregado" ? it.metrosPendientes ?? "" : "",
           "CLIENTE": ap.ordenInterna ? "ORDEN INTERNA" : ap.cliente,
           "RESPONSABLE VENTA": ap.creadoPor,
           "BODEGA DE SALIDA": (ap.bodegaNombre || "").toUpperCase(),
