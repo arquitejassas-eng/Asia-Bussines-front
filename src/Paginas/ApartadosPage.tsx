@@ -461,19 +461,37 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         "Qué lleva": fila.ap.items.map(descripcionLinea).filter(Boolean).join(" | "),
         "Siigo": fila.ap.siigoNumero,
       }));
-      const detalle = lista.flatMap((fila) => (fila.ap.items.length ? fila.ap.items : [null]).map((it) => {
+      // Hoja "SALIDA": las mismas columnas de la hoja SALIDA del Excel de
+      // inventario (inventario 1000.xlsx), una fila por línea, más en qué
+      // situación está y dónde buscarla en el sistema.
+      const EMPRESA_EXCEL: Record<string, string> = { AR: "ARQUITEJAS", ABG: "ASIA", [AMBAS_EMPRESAS]: "LAS DOS" };
+      const empresaExcel = (sigla: string) => EMPRESA_EXCEL[sigla] || sigla;
+      const calibreDe = (codigo: string | null) => { const m = /,(\d+)$/.exec(codigo || ""); return m ? `0,${m[1]}` : ""; };
+      const salida = lista.flatMap((fila) => (fila.ap.items.length ? fila.ap.items : [null]).map((it) => {
+        const { ap } = fila;
         const deRollo = it?.modalidad === "por_rollo";
+        const codigo = it ? (deRollo ? it.codigoInterno || "" : it.productoCodigo) : "";
         const metros = it && deRollo ? (it.metrosRequeridos ?? metrosDeLinea(it.cantidad, it.medida ?? 0, it.tipoProducto).metros) : null;
         return {
-          ...cabecera(fila),
-          "Código": it ? (deRollo ? it.codigoInterno || "" : it.productoCodigo) : "",
-          "Descripción": it ? descripcionLinea(it) : "",
-          "Cantidad": it ? it.cantidad : "",
-          "Medida (m)": it && deRollo ? it.medida ?? "" : "",
-          "Metros": metros ?? "",
-          "Metros pendientes": it && deRollo && fila.ap.estado !== "entregado" ? it.metrosPendientes ?? "" : "",
-          "Rollo": it?.rolloReferencia || "",
-          "Siigo": fila.ap.siigoNumero,
+          "SITUACIÓN": fila.situacion, "DÓNDE BUSCARLA": fila.donde,
+          "DE QUE EMPRESA SALE EL MATERIAL": empresaExcel((it?.empresaMaterial || ap.empresa) ?? ""),
+          "# DE COT": ap.numeroCotizacion,
+          "FECHA": fecha(ap.fechaCreacion),
+          "CODIGO": codigo,
+          "REFERENCIA": it?.rolloReferencia || "",
+          "PRODUCTO": it ? (deRollo ? "" : it.productoDescripcion) : "",
+          "CALIBRE": deRollo ? calibreDe(codigo) : "",
+          "INFORMACION SIIGO": it ? `${descripcionLinea(it)} - BODEGA ${(ap.bodegaNombre || "").toUpperCase()}` : "",
+          "SALE": it ? (deRollo ? metros ?? "" : it.cantidad) : "",
+          "PENDIENTE (m)": it && deRollo && ap.estado !== "entregado" ? it.metrosPendientes ?? "" : "",
+          "CLIENTE": ap.ordenInterna ? "ORDEN INTERNA" : ap.cliente,
+          "RESPONSABLE VENTA": ap.creadoPor,
+          "BODEGA DE SALIDA": (ap.bodegaNombre || "").toUpperCase(),
+          "OBSERVACION": ap.estado === "entregado" ? "DESPACHADO" : "NO",
+          "ESTADO": porDarSalida(ap) && ap.estado !== "entregado" ? "POR DAR SALIDA" : (ETIQUETAS_ESTADO[ap.estado] || ap.estado).toUpperCase(),
+          "FECHA SALIDA": fecha(ap.fechaEntregado),
+          "salida de la cot": empresaExcel(ap.empresa),
+          "SIIGO": ap.siigoNumero,
         };
       }));
       const cuenta = (s: string) => lista.filter((f) => f.situacion === s).length;
@@ -481,8 +499,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       totales.push({ "Situación": "TOTAL", "Dónde buscarla": "", "Cotizaciones": lista.length });
       const hoy = new Date().toLocaleDateString("es-CO").replace(/\//g, "-");
       await exportarHojasAExcel([
+        { nombre: "SALIDA", filas: salida },
         { nombre: "Cotizaciones", filas: resumen },
-        { nombre: "Detalle por línea", filas: detalle },
         { nombre: "Totales", filas: totales },
       ], `Cotizaciones ${hoy}.xlsx`);
     } catch {
