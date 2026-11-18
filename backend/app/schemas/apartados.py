@@ -258,6 +258,8 @@ class RolloParaApartarResponse(BaseModel):
     metros_disponibles: float
     # Lo que pesa hoy (ver apartados.kilos_actuales_rollo).
     peso_actual_kg: int | None = None
+    # Va en un envío de Admin Inventario hacia esta bodega (todavía no confirmado).
+    en_camino: bool = False
 
 
 class OtraBodegaConMaterial(BaseModel):

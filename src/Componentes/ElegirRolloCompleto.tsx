@@ -96,8 +96,8 @@ export default function ElegirRolloCompleto({ rollos, rolloId, rolloResumen, ocu
         <div className="rollo-completo-opciones">
           {encontrados.map((r) => (
             <button type="button" key={r.id} onClick={() => { setBusqueda(""); alElegir(r); }}>
-              <strong>{r.identificadorRollo}</strong>
-              <small>{resumen(r)}</small>
+              <strong>{r.identificadorRollo}{r.enCamino ? " · en camino" : ""}</strong>
+              <small>{resumen(r)}{r.enCamino ? " · la salida se da cuando la bodega confirme el envío" : ""}</small>
             </button>
           ))}
         </div>

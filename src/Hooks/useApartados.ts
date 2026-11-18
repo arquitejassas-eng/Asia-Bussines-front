@@ -97,6 +97,8 @@ export type RolloParaApartar = {
   colorMaterial: string; empresa: string; pesoNeto: number | null; metrosDisponibles: number;
   /** Lo que pesa hoy: si ya se usó una parte, por sus metros; si está entero, su peso neto. */
   pesoActualKg?: number | null;
+  /** Va en un envío de Admin Inventario hacia esa bodega: se vende antes de que llegue. */
+  enCamino?: boolean;
 };
 type Apartado = {
   id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; salidaPendiente: boolean; ordenInterna: boolean; trasladoA: string;
@@ -507,6 +509,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
         descripcion: String(r.descripcion ?? ""), colorMaterial: String(r.color_material ?? ""), empresa: String(r.empresa ?? ""),
         pesoNeto: r.peso_neto == null ? null : Number(r.peso_neto), metrosDisponibles: Number(r.metros_disponibles ?? 0),
         pesoActualKg: r.peso_actual_kg == null ? null : Number(r.peso_actual_kg),
+        enCamino: Boolean(r.en_camino),
       })) }));
     } catch {
       setRollosParaApartar((actual) => ({ ...actual, [bodegaId]: "error" }));

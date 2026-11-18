@@ -16,6 +16,7 @@ from app.schemas.apartados import (
     ApartadoCrear, ApartadoResponse, DisponibilidadCodigoResponse, DisponibilidadProductoResponse, ReservaCodigoResponse,
     RolloParaApartarResponse, SiguienteNumeroResponse,
 )
+from app.models.envio import Envio, EnvioItem, EstadoEnvio
 from app.models.rollo import Rollo
 from app.core.config import settings
 from app.schemas.apartados import (
@@ -105,6 +106,20 @@ def rollos_para_apartar(
         .order_by(Rollo.codigo_interno, Rollo.identificador_rollo)
         .all()
     )
+    # Y los que Admin Inventario le envió a esta bodega y todavía no confirma:
+    # se pueden vender antes de que lleguen (salen "en camino").
+    en_camino = (
+        db.query(Rollo)
+        .join(EnvioItem, EnvioItem.rollo_id == Rollo.id)
+        .join(Envio, Envio.id == EnvioItem.envio_id)
+        .filter(Envio.bodega_destino_id == bodega, Envio.estado == EstadoEnvio.PENDIENTE_CONFIRMACION,
+                Rollo.metros_disponibles > 0.005)
+        .order_by(Rollo.codigo_interno, Rollo.identificador_rollo)
+        .all()
+    )
+    for rollo in en_camino:
+        rollo.en_camino = True
+    rollos = rollos + [r for r in en_camino if r.id not in {x.id for x in rollos}]
     ocupados = srv.rollos_apartados_completos(db, (r.id for r in rollos))
     libres = [r for r in rollos if r.id not in ocupados]
     espesores = srv.tabla_espesores(db)

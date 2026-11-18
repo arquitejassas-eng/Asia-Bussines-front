@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import exists, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.apartado import Apartado, ApartadoItem, EstadoApartado, ModalidadApartado
@@ -220,12 +220,15 @@ def preparar_rollo_completo(db: Session, linea, bodega_id: int) -> None:
     rollo = db.get(Rollo, linea.rollo_id)
     if rollo is None:
         raise HTTPException(status_code=404, detail="Ese rollo no existe.")
-    if rollo.bodega_id != bodega_id:
+    envio = envio_pendiente_del_rollo(db, rollo.id)
+    # Un rollo que Admin Inventario le envió a esta bodega se puede vender
+    # antes de que llegue: la salida espera a que la bodega confirme el envío.
+    if envio is not None and envio.bodega_destino_id != bodega_id:
+        raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} va en un envío hacia otra bodega.")
+    if envio is None and rollo.bodega_id != bodega_id:
         raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} no está en la bodega de donde sale esa línea.")
     if (rollo.metros_disponibles or 0) <= 0.005:
         raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} ya está agotado.")
-    if envio_pendiente_del_rollo(db, rollo.id) is not None:
-        raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} va en un envío pendiente de confirmar.")
     exigir_rollo_libre(db, rollo, item_id=getattr(linea, "id", None))
     linea.modalidad = ModalidadApartado.POR_ROLLO
     linea.codigo_interno = rollo.codigo_interno
@@ -241,6 +244,20 @@ def _solo_rollos_completos(items) -> bool:
     return bool(de_rollo) and all(it.rollo_id for it in de_rollo)
 
 
+def sin_rollos_en_camino():
+    """Filtro SQL (con `Apartado` ya unido): deja fuera las líneas de rollo
+    completo cuyo rollo todavía no está en la bodega de la cotización -- va
+    en un envío de Admin Inventario hacia ella. Ese rollo trae sus propios
+    metros: no debe quitarle material a lo que ya hay en la bodega."""
+    return or_(ApartadoItem.rollo_id.is_(None),
+               exists().where(Rollo.id == ApartadoItem.rollo_id, Rollo.bodega_id == Apartado.bodega_id))
+
+
+def rollo_en_camino(item: ApartadoItem) -> bool:
+    """La línea es de un rollo completo que todavía no llega a su bodega."""
+    return item.rollo_id is not None and item.rollo is not None and item.rollo.bodega_id != item.apartado.bodega_id
+
+
 def metros_reservados_codigo(db: Session, *, bodega_id: int, codigo_interno: str, empresa: str = "") -> float:
     """Con `empresa`, solo lo apartado de material de esa empresa (la de cada línea)."""
     consulta = (
@@ -250,6 +267,7 @@ def metros_reservados_codigo(db: Session, *, bodega_id: int, codigo_interno: str
             Apartado.bodega_id == bodega_id,
             Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
             ApartadoItem.codigo_interno == codigo_interno,
+            sin_rollos_en_camino(),
         )
     )
     if empresa:
@@ -275,6 +293,7 @@ def metros_reservados_por_bodega(db: Session, *, bodega_id: int) -> list[dict]:
             Apartado.bodega_id == bodega_id,
             Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
             ApartadoItem.modalidad == ModalidadApartado.POR_ROLLO,
+            sin_rollos_en_camino(),
         )
         .group_by(ApartadoItem.codigo_interno)
         .all()
@@ -347,8 +366,10 @@ def _repartir_lamina(items: list[ApartadoItem], fisico: float) -> dict[int, floa
     con lo que dejan los rollos completos, sin importar si es vieja o nueva
     (una cotización que dura dos meses no frena a las que fabrican ya)."""
     pendiente = lambda it: max(float((it.metros_requeridos or 0) - (it.metros_consumidos or 0)), 0.0)
-    completos = [it for it in items if it.rollo_id is not None]
+    # Un rollo completo que viene en camino trae sus metros: no toma de lo físico.
+    completos = [it for it in items if it.rollo_id is not None and not rollo_en_camino(it)]
     cubierto = _repartir_en_orden(completos, pendiente, fisico)
+    cubierto.update({it.id: 0.0 for it in items if it.rollo_id is not None and rollo_en_camino(it)})
     libre = max(float(fisico) - sum(cubierto.values()), 0.0)
     usado: dict[int, float] = {}
     for item in items:
@@ -596,7 +617,7 @@ def validar_reserva_rollos(
     reservado = round(float(
         db.query(func.coalesce(func.sum(ApartadoItem.metros_requeridos - ApartadoItem.metros_consumidos), 0))
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
-        .filter(Apartado.bodega_id == bodega_id, Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), filtro)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA), filtro, sin_rollos_en_camino())
         .scalar() or 0), 2)
     # Con material "en camino" lo reservado puede superar lo físico: lo libre
     # nunca baja de 0 y la reserva propia solo cuenta lo que de verdad está
