@@ -247,7 +247,11 @@ def clasificar_y_verificar_filas(
         metros_calculados = None
         diferencia_porcentaje = None
         if net_weight is not None and info_espesor is not None:
-            metros_calculados = round(net_weight * info_espesor["mt_por_ton"], 2)
+            # La tabla de espesores da metros por TONELADA. El checklist puede
+            # traer el peso en toneladas (4,568) o en kilos (4568): por debajo
+            # de 100 es toneladas, igual que en el resto del programa.
+            toneladas = net_weight if net_weight < 100 else net_weight / 1000
+            metros_calculados = round(toneladas * info_espesor["mt_por_ton"], 2)
 
         if metros_calculados is not None and coil_meters:
             diferencia_porcentaje = round(
