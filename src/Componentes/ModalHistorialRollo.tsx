@@ -1,6 +1,17 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { formatearFechaColombia } from "../Utils/fechas";
 import { formatearCalibre } from "../Utils/calibre";
+import { nombreEmpresa } from "../Utils/empresas";
+
+// Venta del rollo entre Arquitejas y Asia: el movimiento guarda en la
+// observación "ahora es de X (era de Y)". Devuelve "Y le vendió a X" o "".
+function ventaEntreEmpresas(m) {
+  if (m.motivo !== "compra_otra_empresa") return "";
+  const partes = /ahora es de (.+?) \(era de (.+?)\)/.exec(m.observaciones || "");
+  return partes ? `${partes[2]} le vendió a ${partes[1]}` : "Venta entre empresas";
+}
+
+const MOTIVOS = { intercambio_externo: "salida externa", compra_otra_empresa: "venta entre empresas" };
 
 // Modal "Hoja de vida del rollo" de Rollos: muestra los datos del rollo y su
 // historial de movimientos. Extraído de RollosPage.tsx sin cambiar props ni
@@ -14,6 +25,7 @@ function ModalHistorialRollo({
   errorHistorial,
   historialRollo,
 }) {
+  const ventas = historialRollo.filter((m) => ventaEntreEmpresas(m));
   return (
     <div className="rollos-modal-fondo" onClick={cerrarHistorial}>
       <div className="rollos-modal rollos-modal--ancho" onClick={(e) => e.stopPropagation()}>
@@ -23,6 +35,10 @@ function ModalHistorialRollo({
         </h3>
 
         <div className="rollos-filtros-grid" style={{ marginBottom: "1rem" }}>
+          <div>
+            <span className="rollos-texto-ayuda">Empresa (dueña hoy)</span>
+            <p>{rolloParaHistorial.empresa ? nombreEmpresa(rolloParaHistorial.empresa) : "—"}</p>
+          </div>
           <div>
             <span className="rollos-texto-ayuda">Familia</span>
             <p>{rolloParaHistorial.familia || "—"}</p>
@@ -67,6 +83,13 @@ function ModalHistorialRollo({
           )}
         </div>
 
+        {ventas.map((m) => (
+          <p key={m.id} className="sincodigo-listo" style={{ margin: "0 0 0.75rem" }}>
+            <strong>{ventaEntreEmpresas(m)}</strong> este rollo
+            {m.cotizacion ? ` con la cotización ${m.cotizacion}` : ""} el {formatearFechaColombia(m.fecha, false)}.
+          </p>
+        ))}
+
         {cargandoHistorial ? (
           <p className="rollos-texto-ayuda">Cargando historial...</p>
         ) : errorHistorial ? (
@@ -96,8 +119,8 @@ function ModalHistorialRollo({
                     <tr key={m.id} className={esStock ? "rollos-historial-stock" : undefined}>
                       <td>{formatearFechaColombia(m.fecha)}</td>
                       <td>{m.tipo}</td>
-                      <td>{esStock ? "stock que quedó" : m.motivo === "intercambio_externo" ? "salida externa" : m.motivo || "—"}</td>
-                      <td>{m.empresaExterna || "—"}</td>
+                      <td>{esStock ? "stock que quedó" : MOTIVOS[m.motivo] || m.motivo || "—"}</td>
+                      <td>{ventaEntreEmpresas(m) || m.empresaExterna || "—"}</td>
                       <td>{esStock ? `${m.cantidad} und` : `${m.cantidad} m`}</td>
                       <td>{m.cotizacion || "—"}</td>
                       <td>{esStock ? `${m.productoDescripcion} · ${m.observaciones}` : m.observaciones || "—"}</td>
