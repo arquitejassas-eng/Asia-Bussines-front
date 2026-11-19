@@ -1153,7 +1153,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           {a.mostrarFormularioApartado && (
             <form className="inventario-form apartado-form" onSubmit={guardarFormulario} noValidate>
               <h2 className="inventario-form-subtitulo">
-                {a.formulario.trasladoA ? `Nuevo traslado a ${a.formulario.trasladoA || "otra bodega"}` : a.formulario.ordenInterna
+                {a.formulario.trasladoA ? (a.editandoId ? `Editar traslado ${a.formulario.numeroCotizacion}` : `Nuevo traslado a ${a.formulario.trasladoA || "otra bodega"}`) : a.formulario.ordenInterna
                   ? (a.editandoId ? `Editar orden ${a.formulario.numeroCotizacion}` : "Nueva orden de producción interna")
                   : a.editandoId ? `Editar cotización ${a.formulario.numeroCotizacion}` : "Nuevo apartado"}
               </h2>
@@ -1292,7 +1292,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           Préstamo de {EMPRESAS[item.empresa] || item.empresa}
                         </span>
                       )}
-                      {(!a.bodegaFija || a.formulario.trasladoA) && <select
+                      {(a.formulario.trasladoA ? !a.editandoId : !a.bodegaFija) && <select
                         aria-label="Bodega de donde sale este producto"
                         title="Si las líneas salen de varias bodegas, al guardar la cotización queda repartida (mismo número)."
                         className="apartados-select apartados-select-activo"
@@ -1907,6 +1907,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               {/* Ya enviada a producción (cualquiera de sus partes) solo la corrige Admin Inventario. */}
                               {a.puedeEditarApartados && !ap.trasladoA && partesActivas.length > 0 && (esAdminInventario || partesActivas.every((parte) => parte.estado === "apartado")) && (
                                 <button onClick={() => abrirEdicion(partesActivas)}>Editar</button>
+                              )}
+                              {/* Traslado a San Gil: mientras no se haya enviado a producción ni tenga salida. */}
+                              {ap.trasladoA && ap.estado === "apartado"
+                                && (esAdminInventario || (sesion.rol === "administrativo" && ap.bodegaId === sesion.bodegaId)) && (
+                                <button onClick={() => abrirEdicion([ap])}>Editar</button>
                               )}
                               {puedeImprimir && grupo.some((parte) => parte.items.length > 0) && (
                                 <button onClick={() => imprimir(veTodasLasBodegas ? grupo : [ap])}

@@ -568,8 +568,31 @@ def eliminar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: 
     db.commit()
 
 
+def _editar_traslado(db: Session, original: Apartado, datos: ApartadoEditar, usuario: Usuario) -> dict:
+    """Traslado a San Gil: lo corrige la encargada de la bodega de donde sale
+    (o Admin Inventario) mientras no se haya enviado a producción ni tenga
+    salida. Conserva su número TR, su destino y su bodega; sin cliente,
+    precios ni Siigo. Para sacarlo de otra bodega: anularlo y crearlo allá."""
+    if original.estado != EstadoApartado.APARTADO:
+        raise HTTPException(status_code=400, detail="Este traslado ya se envió a producción o ya salió: no se puede editar.")
+    if datos.otras_partes_ids:
+        raise HTTPException(status_code=400, detail="Un traslado se edita solo.")
+    if any(linea.bodega_id and linea.bodega_id != original.bodega_id for linea in datos.items):
+        raise HTTPException(status_code=400, detail="Un traslado sale de una sola bodega: para sacarlo de otra, anúlalo y créalo allá.")
+    datos = datos.model_copy(update={
+        "numero_cotizacion": original.numero_cotizacion, "cliente": original.cliente, "traslado_a": original.traslado_a,
+        "bodega_id": original.bodega_id, "orden_interna": False, "material_en_camino": False,
+        "cliente_identificacion": "", "siigo_vendedor": None, "siigo_centro_costo": None, "otras_partes_ids": [],
+        "items": [i.model_copy(update={"bodega_id": None, "precio": None, "siigo_cantidad": None, "siigo_producto": "", "siigo_incluido": False})
+                  for i in datos.items],
+    })
+    apartado = srv.editar_apartado(db, original.id, datos, usuario)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
+
+
 @router.put("/{apartado_id}", response_model=ApartadoResponse,
-            dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO))])
+            dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
 def editar_apartado(
     apartado_id: int, datos: ApartadoEditar, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> Apartado:
@@ -579,7 +602,9 @@ def editar_apartado(
     # Una cotización no se vuelve orden interna ni al revés.
     original = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
     if original.traslado_a:
-        raise HTTPException(status_code=400, detail="Un traslado no se edita: anúlalo y créalo de nuevo.")
+        return _editar_traslado(db, original, datos, usuario)
+    if usuario.rol == RolUsuario.ADMINISTRATIVO:
+        raise HTTPException(status_code=403, detail="Las cotizaciones las edita el vendedor o Admin Inventario.")
     if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
         _exigir_que_no_este_en_produccion(db, original, datos.otras_partes_ids)
     datos = datos.model_copy(update={"orden_interna": original.orden_interna})
