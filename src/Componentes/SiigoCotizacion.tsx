@@ -64,9 +64,11 @@ export function AvisoSiigoCotizacion({
 
 /** Cédula/NIT, vendedor o centro de costo: van dentro de la cuadrícula de datos de la cotización. */
 export function CampoSiigoCliente({
-  campo, formulario, nombreEmpresa, vendedores, centrosCosto, cliente, consultarCliente, actualizar,
+  campo, formulario, nombreEmpresa, vendedores, centrosCosto, cliente, consultarCliente, actualizar, vendedorFijo = false,
 }: {
   campo: "nit" | "vendedor" | "centro"; formulario: FormularioSiigo; nombreEmpresa: string;
+  /** La cotización ya está creada en Siigo: Siigo no deja cambiarle el vendedor. */
+  vendedorFijo?: boolean;
   vendedores: VendedorSiigo[] | "cargando" | "error" | undefined;
   centrosCosto: CentroCostoSiigo[] | undefined;
   cliente: ClienteSiigo | null; consultarCliente: (nit: string) => void;
@@ -105,10 +107,11 @@ export function CampoSiigoCliente({
       <div>
         <label htmlFor="siigo-vendedor">Vendedor *</label>
         <select id="siigo-vendedor" value={formulario.siigoVendedor} onChange={(e) => actualizar("siigoVendedor", e.target.value)}
-          disabled={!Array.isArray(vendedores)}>
+          disabled={vendedorFijo || !Array.isArray(vendedores)}>
           <option value="">{vendedores === "cargando" ? "Cargando vendedores..." : vendedores === "error" ? "Siigo no respondió" : "Elige el vendedor..."}</option>
           {Array.isArray(vendedores) && vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
         </select>
+        {vendedorFijo && <p className="siigo-estado">La cotización ya está en Siigo: el vendedor no se puede cambiar.</p>}
       </div>
   );
 }

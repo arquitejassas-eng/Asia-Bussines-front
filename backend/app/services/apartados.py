@@ -1433,6 +1433,10 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     apartado.cliente = datos.cliente
     apartado.observaciones = datos.observaciones
     for campo, valor in datos_siigo_cotizacion(datos).items():
+        # Ya creada en Siigo: Siigo no deja cambiarle el vendedor, así que
+        # aquí tampoco (se conserva el que tiene).
+        if campo == "siigo_vendedor" and apartado.siigo_id and apartado.siigo_vendedor:
+            continue
         setattr(apartado, campo, valor)
     for item in list(apartado.items):
         if item.id not in ids_nuevos:

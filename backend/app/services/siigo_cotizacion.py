@@ -304,6 +304,15 @@ def _enviar(db: Session, apartado: Apartado, usuario: Usuario) -> tuple[list[Apa
         raise HTTPException(status_code=400, detail=str(error)) from error
     if not siigo.esta_configurada(empresa):
         raise HTTPException(status_code=400, detail=f"{EMPRESAS_CONOCIDAS[empresa]} todavía no tiene configurado su Siigo.")
+    if siigo_id:
+        # Siigo no deja cambiar el vendedor de una cotización ya creada: se
+        # deja el que tiene allá (si en el programa escogieron otro, se pierde).
+        try:
+            vendedor_siigo = siigo.vendedor_de_cotizacion(empresa, siigo_id)
+        except siigo.ErrorSiigo as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        if vendedor_siigo:
+            apartado.siigo_vendedor = vendedor_siigo
     # Los datos de la cotización (cliente, vendedor, impuestos) son los de esta
     # parte para todas: una parte nueva de otra bodega no los trae.
     for parte in partes:

@@ -331,6 +331,20 @@ def buscar_creada(empresa: str, cuerpo: dict, ya_usadas: set[str], desde: date) 
     return None
 
 
+def vendedor_de_cotizacion(empresa: str, siigo_id: str) -> int | None:
+    """El vendedor que tiene en Siigo una cotización ya creada. Siigo no deja
+    cambiarlo ("The seller cannot be edited"): al actualizar hay que mandar
+    el mismo. Solo lectura."""
+    respuesta = pedir(empresa, "GET", f"/v1/quotations/{siigo_id}")
+    vendedor = respuesta.get("seller") if isinstance(respuesta, dict) else None
+    if isinstance(vendedor, dict):
+        vendedor = vendedor.get("id")
+    try:
+        return int(vendedor) if vendedor not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def actualizar_cotizacion(empresa: str, siigo_id: str, cuerpo: dict) -> dict:
     """Reemplaza en Siigo la cotización (cliente, vendedor, líneas, precios):
     conserva su número."""

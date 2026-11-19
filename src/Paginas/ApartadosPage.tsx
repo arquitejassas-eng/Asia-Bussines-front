@@ -591,6 +591,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const camposCliente = {
     formulario: a.formulario, nombreEmpresa: EMPRESAS[a.formulario.empresa] || a.formulario.empresa,
     vendedores: a.siigo.vendedores, centrosCosto: a.siigo.centrosCosto, cliente: a.siigo.cliente, consultarCliente: a.siigo.consultarCliente, actualizar: a.actualizarCampoSiigo,
+    vendedorFijo: Boolean(apartadoEditado?.siigoId && apartadoEditado?.siigoVendedor),
   };
   const quitaEstaParte = Boolean(a.editandoId) && a.formulario.items.length === 0 && a.parteEditada.otrasPartes.length > 0;
 
