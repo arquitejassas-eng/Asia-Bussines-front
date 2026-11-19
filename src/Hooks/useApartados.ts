@@ -436,7 +436,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
   function agregarItemApartado() {
     setFormulario((actual) => {
       const anterior = actual.items[actual.items.length - 1];
-      // En un traslado no hay lámina por producir: la línea nueva es de stock.
+      // En un traslado la línea nueva empieza como producto de stock (también puede llevar material por rollo).
       return { ...actual, items: [...actual.items, { ...ITEM_VACIO, bodegaId: anterior?.bodegaId || bodegaFija, empresa: anterior?.empresa || "",
         modalidad: actual.trasladoA ? "por_stock" : ITEM_VACIO.modalidad }] };
     });
@@ -660,10 +660,6 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
     }
     if (!formulario.empresa) {
       setErrorFormularioApartado(esTraslado ? "Elige de qué empresa es el material." : "Elige de qué empresa es la cotización: Arquitejas o Asia Business.");
-      return;
-    }
-    if (esTraslado && formulario.items.some((i) => i.modalidad === "por_rollo")) {
-      setErrorFormularioApartado("Un traslado solo lleva productos de stock y rollos completos.");
       return;
     }
     if (formulario.items.some((_, indice) => !bodegaDeItem(indice))) {
