@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy import case, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import get_db, requiere_rol, usuario_actual
@@ -111,7 +111,7 @@ def consultar_disponibilidad(
     """Cuánto material hay de un código de clasificación (color + calibre) antes
     de apartarlo: rollos, metros disponibles, reservados y consumidos. Con
     `empresa` (la de la cotización), solo lo de esa empresa."""
-    bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
+    bodega = srv.bodega_de_consulta(db, usuario, bodega_id, otra_bodega=True)
     empresa = empresa.strip().upper()
     if empresa == srv.AMBAS_EMPRESAS:
         empresa = ""  # "Material de las dos empresas": lo de las dos sumado
@@ -157,7 +157,7 @@ def rollos_para_apartar(
     otra cotización que los tenga apartados completos (un rollo en un envío
     pendiente todavía no está en ninguna bodega).
     La búsqueda (código, referencia, kilos) se hace en la pantalla."""
-    bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
+    bodega = srv.bodega_de_consulta(db, usuario, bodega_id, otra_bodega=True)
     rollos = (
         db.query(Rollo)
         .filter(Rollo.bodega_id == bodega, Rollo.metros_disponibles > 0.005)
@@ -193,7 +193,7 @@ def consultar_disponibilidad_producto(
 ) -> dict:
     """Cuánto stock hay de un `Producto` concreto antes de apartarlo (POR_STOCK):
     stock físico, cantidad ya reservada por apartados activos, y disponible."""
-    bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
+    bodega = srv.bodega_de_consulta(db, usuario, bodega_id, otra_bodega=True)
     producto = db.get(Producto, producto_id)
     if producto is None:
         raise HTTPException(status_code=404, detail="Producto no encontrado.")
@@ -231,7 +231,7 @@ def buscar_productos_para_apartar(
 ) -> list[Producto]:
     """Productos de stock de la bodega elegida para una línea POR_STOCK. Admin
     Inventario no tiene bodega propia, por eso no sirve /inventario/productos."""
-    bodega = srv.bodega_de_consulta(db, usuario, bodega_id)
+    bodega = srv.bodega_de_consulta(db, usuario, bodega_id, otra_bodega=True)
     texto = busqueda.strip()
     termino = f"%{texto}%"
     coincide = Producto.codigo.ilike(termino) | Producto.codigo_importacion.ilike(termino) | Producto.descripcion.ilike(termino)
@@ -400,13 +400,16 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
     if usuario.rol == RolUsuario.VENDEDOR and datos.orden_interna:
         raise HTTPException(status_code=403, detail="Las órdenes de producción interna las crea Admin Inventario.")
     # La encargada de la bodega solo crea traslados a una bodega sin
-    # inventario (San Gil), y solo con material de su propia bodega.
+    # inventario (San Gil). Pueden salir de otra bodega (ej. la de Santander
+    # lo pide con material de Ricaurte): esa bodega lo envía a producción y le
+    # da la salida; quien lo creó lo ve en su lista.
     if usuario.rol == RolUsuario.ADMINISTRATIVO:
         if not datos.traslado_a:
             raise HTTPException(status_code=403, detail="Las cotizaciones las crean el vendedor y Admin Inventario.")
+        bodega = datos.bodega_id or usuario.bodega_id
         datos = datos.model_copy(update={
-            "bodega_id": usuario.bodega_id,
-            "items": [i.model_copy(update={"bodega_id": usuario.bodega_id}) for i in datos.items],
+            "bodega_id": bodega,
+            "items": [i.model_copy(update={"bodega_id": i.bodega_id or bodega}) for i in datos.items],
         })
     if datos.traslado_a:
         if usuario.rol == RolUsuario.VENDEDOR:
@@ -531,7 +534,9 @@ def listar_apartados(
         if usuario.rol == RolUsuario.VENDEDOR: consulta = consulta.filter(Apartado.creado_por == usuario.correo)
         if bodega_id is not None: consulta = consulta.filter(Apartado.bodega_id == bodega_id)
     else:
-        consulta = consulta.filter(Apartado.bodega_id == usuario.bodega_id)
+        # También los traslados que creó para que salgan de otra bodega.
+        consulta = consulta.filter(or_(Apartado.bodega_id == usuario.bodega_id,
+                                       and_(Apartado.traslado_a != "", Apartado.creado_por == usuario.correo)))
     if estado: consulta = consulta.filter(Apartado.estado == estado)
     if estados: consulta = consulta.filter(Apartado.estado.in_(estados))
     if numero_cotizacion: consulta = consulta.filter(Apartado.numero_cotizacion.ilike(f"%{numero_cotizacion}%"))

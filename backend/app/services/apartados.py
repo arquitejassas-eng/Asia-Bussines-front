@@ -824,12 +824,15 @@ def disponibles_productos_bodega(db: Session, productos: list[Producto], *, bode
     return resultado
 
 
-def bodega_de_consulta(db: Session, usuario: Usuario, bodega_id: int | None) -> int:
+def bodega_de_consulta(db: Session, usuario: Usuario, bodega_id: int | None, *, otra_bodega: bool = False) -> int:
     """Bodega sobre la que se consulta o se aparta material. El vendedor crea
     las cotizaciones de todas las bodegas y Admin Inventario las revisa, así
-    que eligen cuál (bodega_id); los demás roles siempre trabajan sobre la
-    suya, aunque manden otra."""
+    que eligen cuál (bodega_id); los demás roles trabajan sobre la suya,
+    aunque manden otra. `otra_bodega`: la encargada de una bodega sí puede
+    elegir otra para un traslado a San Gil (y consultar qué hay allá)."""
     if usuario.rol not in (RolUsuario.ADMIN_INVENTARIO, RolUsuario.VENDEDOR):
+        if usuario.rol == RolUsuario.ADMINISTRATIVO and otra_bodega and bodega_id and db.get(Bodega, bodega_id) is not None:
+            return bodega_id
         return usuario.bodega_id
     if bodega_id is None or db.get(Bodega, bodega_id) is None:
         raise HTTPException(status_code=400, detail="Elige la bodega de donde sale el material.")
@@ -1139,7 +1142,7 @@ def exigir_calibre_de_la_descripcion(codigo_interno: str | None, descripcion: st
 def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apartado:
     if not datos.items:
         raise HTTPException(status_code=400, detail="El apartado debe tener al menos un producto solicitado.")
-    bodega_id = bodega_de_consulta(db, usuario, datos.bodega_id)
+    bodega_id = bodega_de_consulta(db, usuario, datos.bodega_id, otra_bodega=bool(datos.traslado_a))
 
     ya_existe = (
         db.query(Apartado.id)

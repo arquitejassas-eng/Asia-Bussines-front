@@ -846,6 +846,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       const porProducir = ap.items.some((it) => it.modalidad === "por_rollo" && !it.rolloId
         && (it.metrosRequeridos ?? 0) - (it.metrosConsumidos ?? 0) > 0.005);
       const enProduccion = ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion";
+      // La encargada de otra bodega que lo pidió solo lo ve: lo maneja la bodega de donde sale.
+      if (sesion.rol === "administrativo" && ap.bodegaId !== sesion.bodegaId) {
+        return <span className="rollos-texto-ayuda">Lo maneja {ap.bodegaNombre}</span>;
+      }
       const puedeSalir = a.puedeCrearTraslado && (
         (ap.estado === "apartado" && !porProducir) || (enProduccion && ap.salidaPendiente) || ap.estado === "produccion_terminada");
       return (
@@ -1155,9 +1159,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               </h2>
               {a.formulario.trasladoA !== "" && (
                 <p className="inventario-carga-ayuda">
-                  Para mandar productos de stock o rollos completos a una bodega que no lleva inventario en el sistema. Sin cliente,
+                  Para mandar productos de stock, rollos completos o material por producir (tejas, lámina lisa…) a una bodega que no lleva inventario en el sistema. Sin cliente,
                   sin precios y sin Siigo: el material queda apartado y, cuando salga el camión, le das <strong>Salida</strong> en la
-                  lista y se descuenta de {a.bodegaFija ? "tu bodega" : "la bodega de donde sale"}.
+                  lista y se descuenta de la bodega de donde sale.
+                  {a.bodegaFija && " Si sale de otra bodega, esa bodega lo envía a producción y le da la salida; tú lo ves en tu lista."}
                 </p>
               )}
               {a.formulario.ordenInterna && (
@@ -1287,7 +1292,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           Préstamo de {EMPRESAS[item.empresa] || item.empresa}
                         </span>
                       )}
-                      {!a.bodegaFija && <select
+                      {(!a.bodegaFija || a.formulario.trasladoA) && <select
                         aria-label="Bodega de donde sale este producto"
                         title="Si las líneas salen de varias bodegas, al guardar la cotización queda repartida (mismo número)."
                         className="apartados-select apartados-select-activo"
