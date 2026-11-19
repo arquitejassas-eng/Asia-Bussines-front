@@ -941,12 +941,27 @@ def salida_de_traslado(apartado_id: int, db: Session = Depends(get_db), usuario:
     apartado = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
     if not apartado.traslado_a:
         raise HTTPException(status_code=400, detail="Esta no es un traslado: dale la salida como a una cotización.")
+    # Con tejas por producir (material por rollo), el traslado pasa por
+    # Planta: al marcarlo terminado ya se descontó el stock, así que aquí
+    # solo sale el camión (y los rollos completos, si los lleva).
+    if apartado.estado == EstadoApartado.PRODUCCION_TERMINADA:
+        apartado.estado = EstadoApartado.ENTREGADO
+        apartado.fecha_entregado = datetime.now(timezone.utc)
+        db.commit(); db.refresh(apartado)
+        return _con_faltantes(db, [apartado])[0]
     if apartado.estado not in srv.ESTADOS_RESERVA_ACTIVA:
         raise HTTPException(status_code=400, detail="Este traslado ya salió o está anulado.")
+    por_producir = [it for it in apartado.items if it.modalidad == ModalidadApartado.POR_ROLLO and not it.rollo_id
+                    and (it.metros_requeridos or 0) - (it.metros_consumidos or 0) > 0.005]
+    if por_producir and apartado.estado == EstadoApartado.APARTADO:
+        raise HTTPException(status_code=400, detail="Este traslado tiene material por producir: primero envíalo a producción.")
+    if apartado.estado != EstadoApartado.APARTADO and not apartado.salida_pendiente:
+        raise HTTPException(status_code=400, detail="Este traslado está en producción: se le da salida cuando Planta lo termine.")
     rollos = [{"item_id": it.id, "referencia": it.rollo.identificador_rollo, "metros": max(it.rollo.metros_disponibles, 0.01)}
               for it in apartado.items if it.rollo_id and (it.metros_requeridos or 0) - (it.metros_consumidos or 0) > 0.005]
     stock = [it.id for it in apartado.items if it.modalidad == ModalidadApartado.POR_STOCK and not it.stock_descontado]
-    apartado = registrar_salida(db, apartado.id, RegistrarSalidaRequest(rollos=rollos, items_stock=stock), usuario)
+    if rollos or stock:
+        apartado = registrar_salida(db, apartado.id, RegistrarSalidaRequest(rollos=rollos, items_stock=stock), usuario)
     if apartado.estado != EstadoApartado.ENTREGADO:
         apartado.estado = EstadoApartado.ENTREGADO
         apartado.fecha_entregado = datetime.now(timezone.utc)

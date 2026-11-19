@@ -69,8 +69,8 @@ function PanelDatosProductoProduccion({
 
       {tipoProducto === "lamina_lisa" && (
         <p className="produccion-texto-ayuda" style={{ marginBottom: "1rem" }}>
-          Láminas lisas de una orden interna: entran al stock de tu bodega y después se convierten en caballetes o
-          flanches en la bodega que diga la orden (si es otra, se le mandan con un traslado).
+          Láminas lisas. Si son de una orden interna, entran al stock de tu bodega y después se convierten en caballetes o
+          flanches en la bodega que diga la orden. Si son de un traslado (San Gil), se van lisas en el traslado.
         </p>
       )}
 

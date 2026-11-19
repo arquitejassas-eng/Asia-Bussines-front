@@ -80,7 +80,7 @@ function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number
   if (it.modalidad === "por_stock") return `${num(it.cantidad)} und`;
   if (it.tipoProducto === "lamina_lisa") {
     return `${num(it.cantidad)} lámina${it.cantidad === 1 ? "" : "s"} lisa${it.cantidad === 1 ? "" : "s"} de ${num(it.medida)} m = ${num(it.metrosRequeridos)} m`
-      + ` → ${num(it.cantidad * (it.convertirEn === "flanche" ? 5 : 3))} ${it.convertirEn || "caballete"}s`;
+      + (it.convertirEn ? ` → ${num(it.cantidad * (it.convertirEn === "flanche" ? 5 : 3))} ${it.convertirEn}s` : "");
   }
   if (it.tipoProducto && it.medida) return `${num(it.cantidad)} ${it.tipoProducto}${it.cantidad === 1 ? "" : "s"} de ${num(it.medida)} m = ${num(it.metrosRequeridos)} m de lámina`;
   if (it.medida && it.medida !== 1) return `${num(it.cantidad)} × ${num(it.medida)} m = ${num(it.metrosRequeridos)} m`;
@@ -839,26 +839,52 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const tieneProduccionPendiente = (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion")
       && !ap.salidaPendiente
       && (calcularSolicitudesPendientes([ap]).length > 0 || calcularStockParaAlistar([ap]).length > 0);
-    // Traslado a una bodega sin inventario (San Gil): no va a Planta ni a
-    // Siigo; cuando sale el camión se le da Salida y se descuenta todo.
+    // Traslado a una bodega sin inventario (San Gil): no va a Siigo. Si lleva
+    // material por rollo (tejas por producir) pasa por Planta como una
+    // cotización; cuando sale el camión se le da Salida y se descuenta todo.
     if (ap.trasladoA) {
-      return a.puedeCrearTraslado && ap.estado === "apartado" ? (
+      const porProducir = ap.items.some((it) => it.modalidad === "por_rollo" && !it.rolloId
+        && (it.metrosRequeridos ?? 0) - (it.metrosConsumidos ?? 0) > 0.005);
+      const enProduccion = ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion";
+      const puedeSalir = a.puedeCrearTraslado && (
+        (ap.estado === "apartado" && !porProducir) || (enProduccion && ap.salidaPendiente) || ap.estado === "produccion_terminada");
+      return (
         <>
-          <button onClick={() => setConfirmacion({
-            titulo: `¿Ya salió el traslado ${ap.numeroCotizacion} a ${ap.trasladoA}?`,
-            mensaje: `Se descuenta todo del inventario de ${ap.bodegaNombre}: los productos y los rollos completos (enteros). `
-              + `No entra a ninguna otra bodega porque ${ap.trasladoA} no lleva inventario en el sistema. No se puede deshacer.`,
-            textoConfirmar: "Sí, ya salió",
-            ejecutar: () => a.darSalidaTraslado(ap.id),
-          })}>Salida a {ap.trasladoA}</button>
-          <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
-            titulo: `¿Anular el traslado ${ap.numeroCotizacion}?`,
-            mensaje: "El material que tenía apartado queda libre otra vez.",
-            textoConfirmar: "Sí, anular traslado",
-            ejecutar: () => a.cancelarApartado(ap.id),
-          })}>Anular</button>
+          {a.puedeEnviarAProduccion && ap.estado === "apartado" && porProducir && (
+            <button
+              disabled={ap.faltantes.length > 0 && !ap.faltantesEnCamino}
+              title={ap.faltantes.length && !ap.faltantesEnCamino ? "Esperando material: se habilita cuando le des ingreso o cuando ya venga en camino" : undefined}
+              onClick={() => confirmarEnvioAProduccion(ap)}
+            >Enviar a producción</button>
+          )}
+          {a.puedeQuitarDeProduccion && enProduccion && !ap.salidaPendiente && (
+            <button onClick={() => setConfirmacion({
+              titulo: `¿Quitar ${ap.numeroCotizacion} de producción?`,
+              mensaje: "Vuelve a «Apartado» con su material reservado y Planta deja de verlo. Solo se puede si Planta todavía no ha registrado producción.",
+              textoConfirmar: "Sí, quitar de producción",
+              ejecutar: () => a.quitarVariosDeProduccion([ap.id]),
+            })}>Quitar de producción</button>
+          )}
+          {puedeSalir && (
+            <button onClick={() => setConfirmacion({
+              titulo: `¿Ya salió el traslado ${ap.numeroCotizacion} a ${ap.trasladoA}?`,
+              mensaje: `Se descuenta todo del inventario de ${ap.bodegaNombre}: los productos y los rollos completos (enteros); `
+                + `lo producido ya se descontó en Planta. `
+                + `No entra a ninguna otra bodega porque ${ap.trasladoA} no lleva inventario en el sistema. No se puede deshacer.`,
+              textoConfirmar: "Sí, ya salió",
+              ejecutar: () => a.darSalidaTraslado(ap.id),
+            })}>Salida a {ap.trasladoA}</button>
+          )}
+          {a.puedeCrearTraslado && ap.estado === "apartado" && (
+            <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
+              titulo: `¿Anular el traslado ${ap.numeroCotizacion}?`,
+              mensaje: "El material que tenía apartado queda libre otra vez.",
+              textoConfirmar: "Sí, anular traslado",
+              ejecutar: () => a.cancelarApartado(ap.id),
+            })}>Anular</button>
+          )}
         </>
-      ) : null;
+      );
     }
     return (
       <>
@@ -1286,13 +1312,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   <div style={{ gridColumn: "1 / -1", display: item.id || a.formulario.ordenInterna ? "none" : undefined }}>
                     <label>Tipo de material</label>
                     <div className="apartado-tipos" role="group" aria-label="Tipo de material">
-                      {!a.formulario.trasladoA && <button
+                      <button
                         type="button"
                         className={`apartado-tipo-boton ${item.modalidad === "por_rollo" ? "apartado-tipo-activo" : ""}`}
                         onClick={() => a.cambiarModalidadItem(indice, "por_rollo")}
                       >
                         Material por rollo
-                      </button>}
+                      </button>
                       <button
                         type="button"
                         className={`apartado-tipo-boton ${item.modalidad === "por_stock" ? "apartado-tipo-activo" : ""}`}
@@ -1507,11 +1533,17 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         <option value="">Teja / lámina</option>
                         <option value="caballete">Caballete (3 por corte)</option>
                         <option value="flanche">Flanche (5 por corte)</option>
-                        {a.formulario.ordenInterna && <option value="lamina_lisa">Lámina lisa (para convertir)</option>}
+                        {(a.formulario.ordenInterna || a.formulario.trasladoA) && <option value="lamina_lisa">{a.formulario.ordenInterna ? "Lámina lisa (para convertir)" : "Lámina lisa"}</option>}
                       </select>
                     </div>
                   )}
-                  {item.modalidad === "por_rollo" && item.tipoProducto === "lamina_lisa" && (
+                  {item.modalidad === "por_rollo" && item.tipoProducto === "lamina_lisa" && !a.formulario.ordenInterna && Number(item.cantidad) > 0 && Number(item.medida) > 0 && (
+                    <p className="inventario-carga-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                      Se apartan <strong>{metrosDeLinea(Number(item.cantidad), Number(item.medida)).metros} m de lámina</strong>: {item.cantidad} láminas
+                      lisas de {item.medida} m. Van lisas, sin convertir.
+                    </p>
+                  )}
+                  {item.modalidad === "por_rollo" && item.tipoProducto === "lamina_lisa" && a.formulario.ordenInterna && (
                     <>
                       <div>
                         <label>Se convierte en</label>

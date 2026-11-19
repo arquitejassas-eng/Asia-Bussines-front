@@ -185,8 +185,9 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     if (sesion?.rol !== "administrativo") return setApartadosPorEnviarCount(0);
     try {
       const datos = await api.get<Record<string, unknown>[]>("/apartados?estado=apartado") || [];
-      // Un traslado a San Gil no se envía a producción: no cuenta.
-      setApartadosPorEnviarCount(datos.map(apartadoDesdeApi).filter((ap) => ap.faltantes.length === 0 && !ap.trasladoA).length);
+      // Un traslado a San Gil solo se envía a producción si lleva material por rollo (tejas por producir).
+      setApartadosPorEnviarCount(datos.map(apartadoDesdeApi).filter((ap) => ap.faltantes.length === 0
+        && (!ap.trasladoA || ap.items.some((it) => it.modalidad === "por_rollo" && !it.rolloId))).length);
     } catch {
       /* Sin conexión un momento: se conserva lo que había (antes se vaciaba y los avisos desaparecían). */
     }

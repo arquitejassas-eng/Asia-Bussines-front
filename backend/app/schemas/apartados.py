@@ -79,7 +79,8 @@ class ApartadoItemCrear(BaseModel):
             raise ValueError("El tipo de la línea debe ser teja, caballete, flanche o lámina lisa.")
         self.convertir_en = (self.convertir_en or "").strip().lower()
         if self.tipo_producto == LAMINA_LISA:
-            if self.convertir_en not in SECCIONES_POR_TIPO_PRODUCTO:
+            # "" = se manda lisa (traslado); en una orden interna es obligatorio (ver ApartadoCrear).
+            if self.convertir_en not in ("", *SECCIONES_POR_TIPO_PRODUCTO):
                 raise ValueError("Di en qué se convierte la lámina lisa: caballetes o flanches.")
         else:
             self.convertir_en, self.bodega_conversion_id = "", None
@@ -129,17 +130,21 @@ class ApartadoCrear(BaseModel):
         self.empresa = (self.empresa or "").strip().upper()
         if self.empresa not in EMPRESAS_CONOCIDAS:
             raise ValueError("Elige de qué empresa sale el material: Arquitejas o Asia Business.")
+        self.traslado_a = " ".join(self.traslado_a.split())
+        lisas = [i for i in self.items if i.tipo_producto == LAMINA_LISA]
         if self.orden_interna:
             if any(i.modalidad != ModalidadApartado.POR_ROLLO or i.rollo_id for i in self.items):
                 raise ValueError("Una orden de producción interna solo lleva lámina por producir (material por rollo).")
-        elif any(i.tipo_producto == LAMINA_LISA for i in self.items):
-            raise ValueError("La lámina lisa solo se pide en una orden de producción interna.")
-        self.traslado_a = " ".join(self.traslado_a.split())
-        if self.traslado_a:
-            if self.orden_interna:
-                raise ValueError("Un traslado no es una orden de producción interna.")
-            if any(i.modalidad != ModalidadApartado.POR_STOCK and not i.rollo_id for i in self.items):
-                raise ValueError("Un traslado solo lleva productos de stock y rollos completos (no lámina por producir).")
+            if any(i.convertir_en not in SECCIONES_POR_TIPO_PRODUCTO for i in lisas):
+                raise ValueError("Di en qué se convierte la lámina lisa: caballetes o flanches.")
+        elif self.traslado_a:
+            # Traslado (San Gil): la lámina lisa va tal cual, no se convierte aquí.
+            for i in lisas:
+                i.convertir_en, i.bodega_conversion_id = "", None
+        elif lisas:
+            raise ValueError("La lámina lisa solo se pide en una orden de producción interna o en un traslado.")
+        if self.traslado_a and self.orden_interna:
+            raise ValueError("Un traslado no es una orden de producción interna.")
         return self
 
 
