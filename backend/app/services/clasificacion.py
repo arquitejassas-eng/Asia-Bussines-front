@@ -40,7 +40,7 @@ ALIAS_CAMPOS: dict[str, list[str]] = {
     "color_top": ["color top", "top", "color superior", "color"],
     "codigo_proveedor": ["codigo proveedor", "codigo del proveedor", "supplier code"],
     "tipo_material": ["tipo de material", "tipo material", "material", "informacion del material", "descripcion"],
-    "lote": ["lote", "batch"],
+    "lote": ["numero de importacion", "no importacion", "importacion", "lote", "batch"],
     # Dueña del material (no confundir con "empresa proveedora"): igual que
     # en la carga masiva de rollos, es la fuente confiable de la empresa del
     # rollo; si no se mapea, se deduce de la referencia.

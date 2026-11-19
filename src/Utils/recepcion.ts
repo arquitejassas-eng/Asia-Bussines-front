@@ -5,7 +5,7 @@ export const ETIQUETAS_CAMPOS_RECEPCION = {
   net_weight: "Peso neto (kg)",
   coil_meters: "Metros reportados", color_top: "Color TOP",
   codigo_proveedor: "Código del proveedor", tipo_material: "Información del material / Tipo (opcional si solo manejas Lámina)",
-  lote: "Lote",
+  lote: "Número de importación",
   empresa: "Empresa receptora — dueña del material (recomendado; si no, se deduce de la referencia)",
 };
 export const TODOS_LOS_CAMPOS_RECEPCION = Object.keys(ETIQUETAS_CAMPOS_RECEPCION);
