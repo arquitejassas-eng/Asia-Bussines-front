@@ -308,7 +308,14 @@ def bloquear_rollos_codigo(db: Session, *, bodega_id: int | None, codigo_interno
     candado que serializa todo lo que toca la reserva de ese código:
     apartados, consumos, producción, salidas y transferencias.
     `populate_existing` recarga los valores ya bloqueados aunque el rollo se
-    hubiera leído antes en esta misma sesión."""
+    hubiera leído antes en esta misma sesión.
+
+    Antes de recargar se guardan (flush) los cambios pendientes: la sesión no
+    hace autoflush, y `populate_existing` pisaba con lo de la base los metros
+    ya descontados en esta misma operación. Pasó en la salida de la PEND-116
+    (10-nov): dos líneas del mismo código y el primer rollo quedó con todos
+    sus metros aunque su salida sí se anotó."""
+    db.flush()
     return (
         db.query(Rollo)
         .filter(Rollo.bodega_id == bodega_id, Rollo.codigo_interno == codigo_interno)
