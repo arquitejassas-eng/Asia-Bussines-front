@@ -1,10 +1,11 @@
-export const CAMPOS_REQUERIDOS_RECEPCION = ["rollo", "espesor", "net_weight", "coil_meters"];
+export const CAMPOS_REQUERIDOS_RECEPCION = ["rollo", "espesor", "net_weight", "coil_meters", "color_top"];
+// El proveedor ya no se pide (ver backend services/clasificacion.py).
 export const ETIQUETAS_CAMPOS_RECEPCION = {
-  rollo: "Identificador único del rollo", espesor: "Espesor", ancho: "Ancho",
+  rollo: "Referencia del rollo", espesor: "Espesor", ancho: "Ancho",
   net_weight: "Peso neto (kg)",
   coil_meters: "Metros reportados", color_top: "Color TOP",
   codigo_proveedor: "Código del proveedor", tipo_material: "Información del material / Tipo (opcional si solo manejas Lámina)",
-  proveedor: "Proveedor", lote: "Lote",
+  lote: "Lote",
   empresa: "Empresa receptora — dueña del material (recomendado; si no, se deduce de la referencia)",
 };
 export const TODOS_LOS_CAMPOS_RECEPCION = Object.keys(ETIQUETAS_CAMPOS_RECEPCION);

@@ -23,19 +23,23 @@ import pandas as pd
 
 from app.services.empresas import sigla_empresa_desde_nombre
 
-CAMPOS_REQUERIDOS = ["rollo", "espesor", "net_weight", "coil_meters"]
+CAMPOS_REQUERIDOS = ["rollo", "espesor", "net_weight", "coil_meters", "color_top"]
 
+# "rollo" es la REFERENCIA única del rollo físico. No incluye "codigo" a
+# secas: en los checklist esa columna trae el código del material
+# (LR30020,27), igual para todos los rollos, y los marcaba "Repetido".
+# El proveedor ya no se pide en Recepción.
 ALIAS_CAMPOS: dict[str, list[str]] = {
-    "rollo": ["codigo", "codigo de rollo", "numero de rollo", "n rollo", "no rollo", "rollo",
+    "rollo": ["referencia", "referencia del rollo", "referencia rollo", "codigo de rollo",
+              "numero de rollo", "n rollo", "no rollo", "rollo",
               "identificador de rollo", "id rollo", "coil", "coil no"],
     "espesor": ["espesor", "thickness", "calibre"],
     "ancho": ["ancho", "width"],
     "net_weight": ["net weight", "net weight (mt)", "netweight", "peso neto"],
     "coil_meters": ["coil meters", "coil meter", "metros", "metros reportados", "metraje", "mts"],
-    "color_top": ["color top", "top", "color superior"],
+    "color_top": ["color top", "top", "color superior", "color"],
     "codigo_proveedor": ["codigo proveedor", "codigo del proveedor", "supplier code"],
     "tipo_material": ["tipo de material", "tipo material", "material", "informacion del material", "descripcion"],
-    "proveedor": ["proveedor", "empresa proveedora", "supplier"],
     "lote": ["lote", "batch"],
     # Dueña del material (no confundir con "empresa proveedora"): igual que
     # en la carga masiva de rollos, es la fuente confiable de la empresa del
