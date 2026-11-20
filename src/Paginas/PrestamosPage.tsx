@@ -24,7 +24,7 @@ type Prestamo = {
 };
 type Deuda = {
   tipo: string; codigo: string; descripcion: string; unidad: string; presta: string; debe: string; cantidad: number;
-  kilos?: number | null;
+  kilos?: number | null; cotizaciones?: string[];
   rollos: { referencia: string; kilos: number | null }[];
 };
 type ProductoBodega = {
@@ -305,7 +305,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         // Solo lo saldado, con las mismas columnas (para revisar el historial aparte).
         { nombre: "Saldados", filas: todos.filter((p) => p.saldado).map(filaPrestamo) },
         { nombre: "Resumen: lo que se deben", filas: resumenVisible.map((d) => ({
-          "Quién debe": nombre(d.debe), "A quién": nombre(d.presta), "Material": d.codigo,
+          "Quién debe": nombre(d.debe), "A quién": nombre(d.presta), "Cotización": (d.cotizaciones ?? []).join(", "), "Material": d.codigo,
           "Cantidad": d.cantidad, "Unidad": d.unidad === "m" ? "m" : "und", "Kilos (aprox.)": d.unidad === "m" ? (d.kilos ?? "") : "",
           "Rollos": d.rollos.map((r) => r.referencia).join(", "), "Descripción": d.descripcion,
         })) },
@@ -529,7 +529,12 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     <tbody>
                       {resumenVisible.map((d) => (
                         <tr key={`${d.tipo}|${d.codigo}|${d.debe}`}>
-                          <td><strong>{nombre(d.debe)}</strong></td>
+                          <td>
+                            <strong>{nombre(d.debe)}</strong>
+                            {(d.cotizaciones?.length ?? 0) > 0 && (
+                              <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Cot. {d.cotizaciones!.join(", ")}</span>
+                            )}
+                          </td>
                           <td>{nombre(d.presta)}</td>
                           <td>{d.codigo} <span className="rollos-texto-ayuda" style={{ margin: 0 }}>({d.tipo === "lamina" ? "lámina" : "producto"})</span></td>
                           <td>
@@ -627,9 +632,16 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               <button type="button" className="apartados-limpiar" style={{ display: "block", marginTop: "0.35rem" }}
                                 onClick={() => cerrarCancelado(p)}>Cerrar (cotización cancelada)</button>
                             )}
-                            {!p.saldado && p.origen === "prestamo_a_tercero" && !p.estado_cotizacion && (
-                              <button type="button" className="apartados-limpiar" style={{ display: "block", marginTop: "0.35rem" }}
-                                onClick={() => devolver(p)}>Devolver</button>
+                            {/* Botón principal (antes era un enlace que no se veía). Mientras la
+                                cotización no tenga Salida se ve, pero apagado y diciendo por qué. */}
+                            {!p.saldado && p.origen === "prestamo_a_tercero" && (!p.estado_cotizacion || p.estado_cotizacion === "por_recoger") && (
+                              <button type="button" className="inventario-boton"
+                                style={{ display: "block", marginTop: "0.5rem", whiteSpace: "nowrap", padding: "0.45rem 0.9rem" }}
+                                disabled={p.estado_cotizacion === "por_recoger"}
+                                title={p.estado_cotizacion === "por_recoger"
+                                  ? `Primero dale Salida a la cotización ${p.numero_cotizacion} en Apartados`
+                                  : p.unidad === "m" ? "Registrar con qué rollo pagaron" : "Registrar lo que devolvieron"}
+                                onClick={() => devolver(p)}>↩ Devolver</button>
                             )}
                           </td>
                         </tr>

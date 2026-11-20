@@ -64,6 +64,8 @@ class DeudaEmpresaResponse(BaseModel):
     cantidad: float
     # Kilos aproximados de lo que se debe (lámina), según los rollos prestados.
     kilos: float | None = None
+    # Cotizaciones de los préstamos que forman esta deuda.
+    cotizaciones: list[str] = []
     rollos: list[RolloDeudaResponse] = []
 
 

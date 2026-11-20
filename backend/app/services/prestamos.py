@@ -594,6 +594,8 @@ def resumen(prestamos: list[PrestamoEmpresa]) -> list[dict]:
     rollos: dict[tuple, dict[str, int | None]] = {}
     # (material, par) -> [metros con kilos conocidos, esos kilos]: kilos por metro de lo prestado.
     peso: dict[tuple, list[float]] = {}
+    # (material, par) -> cotizaciones de esos préstamos, para saber de dónde viene la deuda.
+    cotizaciones: dict[tuple, list[str]] = {}
     for p in prestamos:
         if p.saldado:
             continue
@@ -604,6 +606,10 @@ def resumen(prestamos: list[PrestamoEmpresa]) -> list[dict]:
         pares[par] = pares.get(par, 0) + p.cantidad
         if p.referencia_rollo:
             rollos.setdefault((clave, par), {})[p.referencia_rollo] = getattr(p, "kilos_rollo", None)
+        if p.numero_cotizacion:
+            lista = cotizaciones.setdefault((clave, par), [])
+            if p.numero_cotizacion not in lista:
+                lista.append(p.numero_cotizacion)
         if getattr(p, "kilos", None):
             acumulado = peso.setdefault((clave, par), [0.0, 0.0])
             acumulado[0] += p.cantidad
@@ -625,6 +631,7 @@ def resumen(prestamos: list[PrestamoEmpresa]) -> list[dict]:
             kilos = round(abs(neto) * kilos_conocidos / metros_con_kilos, 1) if metros_con_kilos > 0.005 else None
             filas.append({"tipo": tipo, "codigo": codigo, "descripcion": descripciones[(tipo, codigo, unidad)],
                           "unidad": unidad, "presta": acreedora, "debe": deudora, "cantidad": abs(neto), "kilos": kilos,
+                          "cotizaciones": cotizaciones.get(((tipo, codigo, unidad), (acreedora, deudora)), []),
                           "rollos": [{"referencia": ref, "kilos": kilos} for ref, kilos in sorted(de_la_fila.items())]})
     return sorted(filas, key=lambda f: (f["debe"], f["tipo"], f["codigo"]))
 
