@@ -807,6 +807,16 @@ def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEd
                 raise
             raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
 
+    # Lo de Siigo de la cotización, ANTES de borrar partes: si todas las líneas
+    # se pasan a otra bodega, la parte nueva sigue siendo la MISMA cotización de
+    # Siigo (antes quedaba sin su id y al guardar se creaba otra en Siigo:
+    # la 4189 editada quedó como 4190).
+    con_siigo = next((p for p in partes if p.siigo_id), None)
+    siigo_de_la_cotizacion = None if con_siigo is None else {
+        "siigo_id": con_siigo.siigo_id, "siigo_numero": con_siigo.siigo_numero, "siigo_total": con_siigo.siigo_total,
+        "fecha_siigo": con_siigo.fecha_siigo, "siigo_pendiente": con_siigo.siigo_pendiente,
+    }
+
     # 1. Las partes que quedan sin líneas se borran (su material queda libre).
     for clave, parte in parte_por_clave.items():
         if clave not in por_parte:
@@ -838,11 +848,16 @@ def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEd
             bodega_id=clave, material_en_camino=datos.material_en_camino, numero_cotizacion=numero(clave),
             empresa=datos.empresa, cliente=datos.cliente,
             observaciones=f"Parte de la cotización {base_nueva} con material de {nombre}.",
-            items=lineas,
+            items=lineas, cliente_identificacion=datos.cliente_identificacion, siigo_iva=datos.siigo_iva,
+            siigo_retefuente=datos.siigo_retefuente, siigo_vendedor=datos.siigo_vendedor,
+            siigo_centro_costo=datos.siigo_centro_costo,
         ), usuario)))
         # Sigue siendo del vendedor que la creó (si no, al moverla Admin
         # Inventario de bodega, el vendedor dejaba de verla).
         nuevas[-1].creado_por = principal.creado_por
+        if siigo_de_la_cotizacion:
+            for campo, valor in siigo_de_la_cotizacion.items():
+                setattr(nuevas[-1], campo, valor)
     db.flush()
     principal_sigue = next((p for c, p in parte_por_clave.items() if p.id == principal.id and c in por_parte), None)
     if principal_sigue is not None:
