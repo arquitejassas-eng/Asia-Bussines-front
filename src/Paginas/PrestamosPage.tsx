@@ -3,9 +3,9 @@ import BarraLateral from "../Componentes/BarraLateral";
 import { api, ErrorApi } from "../Componentes/Api";
 import { EMPRESAS } from "../Utils/empresas";
 import { formatearFechaColombia } from "../Utils/fechas";
-import { exportarHojasAExcel } from "../Utils/exportarExcel";
+import { exportarHojasAExcel, type HojaExcel } from "../Utils/exportarExcel";
 import ModalDevolverRolloPrestado from "../Componentes/ModalDevolverRolloPrestado";
-import CuadreRollosPrestados, { type FilaCuadre } from "../Componentes/CuadreRollosPrestados";
+import CuadreRollosPrestados, { ESTADO as ESTADO_CUADRE, type FilaCuadre } from "../Componentes/CuadreRollosPrestados";
 import "../Style/Inventario.css";
 import "../Style/Merma.css";
 import "../Style/Rollos.css";
@@ -274,37 +274,47 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       parametros.set("incluir_saldados", "true");
       const todo = await api.get<Reporte>(`/prestamos?${parametros.toString()}`);
       const todos = (todo?.prestamos ?? reporte.prestamos).filter((p) => !externa || p.prestador === externa);
-      const filaPrestamo = (p: Prestamo) => ({
-        "Fecha": formatearFechaColombia(p.fecha), "Presta": quienPresta(p),
-        "Recibe": quienRecibe(p), "Cotización": p.numero_cotizacion, "Bodega": nombreBodega(p.bodega_id),
-        "Material": p.codigo, "Descripción": p.descripcion, "Rollo": p.referencia_rollo,
-        "Kilos del rollo al llegar": p.kilos_rollo ?? "", "Cantidad": p.cantidad,
-        "Unidad": p.unidad === "m" ? "m" : "und", "Kilos prestados": p.unidad === "m" ? (p.kilos ?? "") : "",
-        "Dónde se anotó": ORIGEN[p.origen] || p.origen, "Usuario": p.usuario,
-        "Estado": p.saldado ? "Saldado" : "Sin saldar", "Pagaron con": p.devuelto_con || "",
-        "Kilos devueltos": p.kilos_devueltos ?? "", "Factura": p.factura || "",
-        "Saldado el": p.fecha_saldado ? formatearFechaColombia(p.fecha_saldado) : "", "Saldado por": p.saldado_por || "",
-      });
-      exportarHojasAExcel([
-        { nombre: "Lo que se deben", filas: resumenVisible.map((d) => ({
+      // UNA hoja con todo (pendientes y saldados): en cada fila, cuántos kilos
+      // se prestaron, cuántos volvieron, la diferencia y quién le debe a quién.
+      const cuadrePorId = new Map(cuadre.map((f) => [f.id, f]));
+      const kg = (n: number) => `${Math.abs(n).toLocaleString("es-CO", { maximumFractionDigits: 1 })} kg`;
+      const filaPrestamo = (p: Prestamo) => {
+        const c = cuadrePorId.get(p.id);
+        const prestados = c?.kilos_prestados ?? (p.unidad === "m" ? p.kilos ?? null : null);
+        const devueltos = c?.kilos_devueltos ?? p.kilos_devueltos ?? null;
+        const diferencia = prestados != null && devueltos != null ? Math.round((prestados - devueltos) * 10) / 10 : null;
+        const quien = diferencia == null ? (devueltos == null && !p.saldado ? "Sin devolver" : "")
+          : Math.abs(diferencia) < 0.5 ? "Cuadrado"
+          : diferencia > 0 ? `${quienRecibe(p)} le debe ${kg(diferencia)} a ${quienPresta(p)}`
+          : `${quienPresta(p)} le debe ${kg(diferencia)} a ${quienRecibe(p)}`;
+        return {
+          "Estado": p.saldado ? "Saldado" : "Pendiente",
+          "Fecha": formatearFechaColombia(p.fecha), "Presta": quienPresta(p), "Recibe": quienRecibe(p),
+          "Cotización": p.numero_cotizacion, "Bodega": nombreBodega(p.bodega_id), "Material": p.codigo, "Rollo": p.referencia_rollo,
+          "Cantidad": p.cantidad, "Unidad": p.unidad === "m" ? "m" : "und",
+          "Kilos prestados": prestados ?? "",
+          "Pagaron con": p.devuelto_con || c?.devuelto_con || "", "Kilos devueltos": devueltos ?? "",
+          "Diferencia (kg)": diferencia ?? "", "Quién debe": quien,
+          "Cuadre": c ? (ESTADO_CUADRE[c.estado]?.texto || c.estado) : "", "Factura": p.factura || c?.factura || "",
+          "Saldado el": p.fecha_saldado ? formatearFechaColombia(p.fecha_saldado) : "",
+          "Descripción": p.descripcion, "Dónde se anotó": ORIGEN[p.origen] || p.origen, "Usuario": p.usuario,
+        };
+      };
+      const hojas: HojaExcel[] = [
+        { nombre: "Préstamos", filas: [...todos.filter((p) => !p.saldado), ...todos.filter((p) => p.saldado)].map(filaPrestamo) },
+        { nombre: "Resumen: lo que se deben", filas: resumenVisible.map((d) => ({
           "Quién debe": nombre(d.debe), "A quién": nombre(d.presta), "Material": d.codigo,
-          "Tipo": d.tipo === "lamina" ? "lámina" : "producto", "Descripción": d.descripcion,
-          "Rollos (kilos al llegar)": d.rollos.map((r) => `${r.referencia} (${kilosTexto(r.kilos)})`).join(", "),
           "Cantidad": d.cantidad, "Unidad": d.unidad === "m" ? "m" : "und", "Kilos (aprox.)": d.unidad === "m" ? (d.kilos ?? "") : "",
+          "Rollos": d.rollos.map((r) => r.referencia).join(", "), "Descripción": d.descripcion,
         })) },
-        { nombre: "Pendientes", filas: todos.filter((p) => !p.saldado).map(filaPrestamo) },
-        { nombre: "Saldados (historial)", filas: todos.filter((p) => p.saldado).map(filaPrestamo) },
-        { nombre: "Cuadre rollos prestados", filas: cuadre.filter((f) => !externa || f.prestador === externa).map((f) => ({
-          "Fecha": formatearFechaColombia(f.fecha), "Empresa externa": f.prestador, "Cotización": f.numero_cotizacion,
-          "Bodega": nombreBodega(f.bodega_id), "Material": f.codigo, "Rollo": f.referencia_rollo, "Metros": f.metros,
-          "Kilos prestados": f.kilos_prestados ?? "", "Pagaron con": f.devuelto_con, "Kilos devueltos": f.kilos_devueltos ?? "",
-          "Diferencia (kg)": f.diferencia ?? "", "Estado": f.estado, "Factura": f.factura,
-        })) },
-        { nombre: "Sacado sin existencia", filas: reporte.sacado_sin_existencia.map((s) => ({
+      ];
+      if (reporte.sacado_sin_existencia.length > 0) {
+        hojas.push({ nombre: "Sacado sin existencia", filas: reporte.sacado_sin_existencia.map((s) => ({
           "Fecha": formatearFechaColombia(s.fecha), "Bodega": nombreBodega(s.bodega_id), "Producto": s.producto_codigo,
           "Descripción": s.producto_descripcion, "Cantidad": s.cantidad, "Cotización": s.cotizacion, "Quién": s.usuario,
-        })) },
-      ], `Prestamos${desde || hasta ? `_${desde || "inicio"}_a_${hasta || "hoy"}` : ""}.xlsx`);
+        })) });
+      }
+      exportarHojasAExcel(hojas, `Prestamos${desde || hasta ? `_${desde || "inicio"}_a_${hasta || "hoy"}` : ""}.xlsx`);
     } catch (err) {
       setError(err instanceof ErrorApi ? err.message : "No se pudo descargar el Excel.");
     } finally {

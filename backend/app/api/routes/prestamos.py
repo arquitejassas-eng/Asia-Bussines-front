@@ -47,9 +47,14 @@ def reporte_prestamos(
         p.kilos_rollo = kilos_rollo(pesos.get(p.referencia_rollo)) if p.referencia_rollo else None
         # Kilos de lo prestado: metros × (kilos de la etiqueta / metros del rollo). Ej. 418 m de un
         # rollo de 4.314 kg y 1.674 m = 1.077 kg.
+        # Igual que srv.kilos_prestados: el rollo entero (o sin metros conocidos) son los kilos de su etiqueta.
         total = metros_rollo.get(p.referencia_rollo) or 0
-        p.kilos = (round(p.kilos_rollo * p.cantidad / total, 1) if p.unidad == "m" and p.kilos_rollo and total > 0.5
-                   else None)
+        if p.unidad != "m" or not p.kilos_rollo:
+            p.kilos = None
+        elif total > 0.5 and p.cantidad < total - 0.5:
+            p.kilos = round(p.kilos_rollo * p.cantidad / total, 1)
+        else:
+            p.kilos = float(p.kilos_rollo)
     estados = srv.estado_de_cotizacion_prestada(
         db, {p.apartado_id for p in prestamos if p.apartado_id is not None and not p.saldado and p.origen == srv.PRESTADO_A_TERCERO})
     for p in prestamos:

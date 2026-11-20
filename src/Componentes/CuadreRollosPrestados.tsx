@@ -10,7 +10,7 @@ export type FilaCuadre = {
   factura: string; fecha_factura: string | null;
 };
 
-const ESTADO: Record<string, { texto: string; color: string }> = {
+export const ESTADO: Record<string, { texto: string; color: string }> = {
   pendiente: { texto: "Sin devolver", color: "#8a5a00" },
   por_recoger: { texto: "Por recoger (falta la Salida)", color: "#8a5a00" },
   cancelada: { texto: "Cotización cancelada", color: "#666" },
