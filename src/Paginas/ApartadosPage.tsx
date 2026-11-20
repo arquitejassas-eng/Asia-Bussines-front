@@ -404,7 +404,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       return kx.orden - ky.orden || ky.numero - kx.numero || kx.texto.localeCompare(ky.texto) || x.id - y.id;
     }).filter((ap) =>
       vaEnPestana(ap, pestana)
-      && (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
+      && (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto)
+        || (ap.siigoNumero || "").toLowerCase().includes(texto))
       && (codigosBuscados.length === 0 || ap.items.some((it) => lineaUsaCodigo(it, codigosBuscados)))
       && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
       && (!filtroEmpresa || ap.empresa === filtroEmpresa)
@@ -428,7 +429,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       }
       const texto = filtroTexto.trim().toLowerCase();
       const pasaFiltros = (ap: (typeof a.apartados)[number]) =>
-        (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto))
+        (!texto || ap.numeroCotizacion.toLowerCase().includes(texto) || ap.cliente.toLowerCase().includes(texto)
+        || (ap.siigoNumero || "").toLowerCase().includes(texto))
         && (codigosBuscados.length === 0 || ap.items.some((it) => lineaUsaCodigo(it, codigosBuscados)))
         && (!filtroBodega || String(ap.bodegaId) === filtroBodega)
         && (!filtroEmpresa || ap.empresa === filtroEmpresa);
@@ -1293,7 +1295,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           Préstamo de {EMPRESAS[item.empresa] || item.empresa}
                         </span>
                       )}
-                      {(a.formulario.trasladoA ? !a.editandoId : !a.bodegaFija) && <select
+                      {(a.formulario.trasladoA || !a.bodegaFija) && <select
                         aria-label="Bodega de donde sale este producto"
                         title="Si las líneas salen de varias bodegas, al guardar la cotización queda repartida (mismo número)."
                         className="apartados-select apartados-select-activo"

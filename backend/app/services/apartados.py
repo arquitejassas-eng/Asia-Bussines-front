@@ -632,10 +632,18 @@ def validar_reserva_rollos(
     # una cotización produce aunque otra esté esperando material.
     libre = round(max(fisico - reservado, 0), 2)
     if apartado_item_id is not None:
-        # Varias líneas producidas juntas: su reserva propia es la de todas.
-        cobertura = _repartir_lamina(_items_activos_en_orden(db, bodega_id=bodega_id, filtro=filtro), fisico)
-        cubierto = sum(cobertura.get(i, 0) for i in (apartado_item_id, *otros_item_ids))
-        metros_reserva_propia = min(metros_reserva_propia, cubierto)
+        # Producción de una cotización u orden: igual que en _repartir_lamina,
+        # solo los rollos vendidos completos se quedan con su material. Las
+        # demás cotizaciones de cortes no la frenan (lo que les falte se
+        # pide de otra bodega), así que puede usar todo lo que no esté en un
+        # rollo completo: lo suyo, metros de más y el sobrante para stock.
+        items = _items_activos_en_orden(db, bodega_id=bodega_id, filtro=filtro)
+        cobertura = _repartir_lamina(items, fisico)
+        propias = {apartado_item_id, *otros_item_ids}
+        en_rollos_completos = sum(cobertura.get(it.id, 0) for it in items if it.rollo_id is not None and it.id not in propias)
+        reservado = round(en_rollos_completos, 2)
+        libre = round(max(fisico - reservado, 0), 2)
+        metros_reserva_propia = 0.0
     neto = round(metros_salen - metros_reserva_propia, 2)
     if neto > libre + 0.005:
         cotizaciones = _cotizaciones_que_reservan(db, bodega_id=bodega_id, filtro=filtro)
@@ -644,9 +652,11 @@ def validar_reserva_rollos(
             status_code=400,
             detail=(
                 f"No hay suficiente material libre{de_empresa} del código {codigo_interno}: hay {fisico} m en la bodega, "
-                f"pero {reservado} m están apartados para cotizaciones{cotizaciones}. "
-                f"Libres: {libre} m; esta operación necesita {neto} m. "
-                "Para usar material apartado, regístralo desde la producción de ese apartado o cancela el apartado."
+                + (f"pero {reservado} m son de rollos vendidos completos. " if apartado_item_id is not None
+                   else f"pero {reservado} m están apartados para cotizaciones{cotizaciones}. ")
+                + f"Libres: {libre} m; esta operación necesita {neto} m. "
+                + ("Revisa los metros de los rollos." if apartado_item_id is not None else
+                   "Para usar material apartado, regístralo desde la producción de ese apartado o cancela el apartado.")
             ),
         )
 
@@ -1243,7 +1253,7 @@ def _numero_siigo_del_traslado(db: Session, datos: ApartadoCrear) -> str:
     return numero_siigo_de_traslado(db, datos.siigo_numero_traslado)
 
 
-def numero_siigo_de_traslado(db: Session, texto: str, excepto_id: int | None = None) -> str:
+def numero_siigo_de_traslado(db: Session, texto: str, excepto_numero: str = "") -> str:
     """La cotización de Siigo de un traslado: "4140" queda "C-1-4140". Una
     misma cotización no puede ir en dos traslados."""
     numero = re.sub(r"\s+", "", texto or "").upper()
@@ -1254,7 +1264,7 @@ def numero_siigo_de_traslado(db: Session, texto: str, excepto_id: int | None = N
     repetido = (
         db.query(Apartado)
         .filter(Apartado.traslado_a != "", Apartado.siigo_numero == numero, Apartado.estado != EstadoApartado.CANCELADO,
-                Apartado.id != (excepto_id or 0))
+                Apartado.numero_cotizacion != excepto_numero)
         .first()
     )
     if repetido is not None:

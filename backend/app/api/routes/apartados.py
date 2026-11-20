@@ -571,22 +571,67 @@ def eliminar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: 
 def _editar_traslado(db: Session, original: Apartado, datos: ApartadoEditar, usuario: Usuario) -> dict:
     """Traslado a San Gil: lo corrige la encargada de la bodega de donde sale
     (o Admin Inventario) mientras no se haya enviado a producción ni tenga
-    salida. Conserva su número TR, su destino y su bodega; sin cliente,
-    precios ni Siigo. Para sacarlo de otra bodega: anularlo y crearlo allá."""
+    salida. Conserva su número TR y su destino; sin cliente, precios ni
+    Siigo. Una línea que en realidad sale de OTRA bodega pasa al mismo
+    traslado en esa bodega (se le suma si ya existe ahí, o se crea); si
+    todas pasan, la parte de aquí se borra."""
     if original.estado != EstadoApartado.APARTADO:
         raise HTTPException(status_code=400, detail="Este traslado ya se envió a producción o ya salió: no se puede editar.")
     if datos.otras_partes_ids:
         raise HTTPException(status_code=400, detail="Un traslado se edita solo.")
-    if any(linea.bodega_id and linea.bodega_id != original.bodega_id for linea in datos.items):
-        raise HTTPException(status_code=400, detail="Un traslado sale de una sola bodega: para sacarlo de otra, anúlalo y créalo allá.")
-    datos = datos.model_copy(update={
-        "numero_cotizacion": original.numero_cotizacion, "cliente": original.cliente, "traslado_a": original.traslado_a,
-        "bodega_id": original.bodega_id, "orden_interna": False, "material_en_camino": False,
+    limpiar = {"precio": None, "siigo_cantidad": None, "siigo_producto": "", "siigo_incluido": False}
+    propias = [i.model_copy(update={**limpiar, "bodega_id": None}) for i in datos.items
+               if not i.bodega_id or i.bodega_id == original.bodega_id]
+    por_bodega: dict[int, list] = {}
+    for linea in datos.items:
+        if linea.bodega_id and linea.bodega_id != original.bodega_id:
+            por_bodega.setdefault(linea.bodega_id, []).append(linea.model_copy(update={**limpiar, "id": None, "bodega_id": None}))
+    numero, creador, siigo_numero = original.numero_cotizacion, original.creado_por, original.siigo_numero
+    comunes = {
+        "numero_cotizacion": numero, "cliente": original.cliente, "traslado_a": original.traslado_a,
+        "orden_interna": False, "material_en_camino": False,
         "cliente_identificacion": "", "siigo_vendedor": None, "siigo_centro_costo": None, "otras_partes_ids": [],
-        "items": [i.model_copy(update={"bodega_id": None, "precio": None, "siigo_cantidad": None, "siigo_producto": "", "siigo_incluido": False})
-                  for i in datos.items],
-    })
-    apartado = srv.editar_apartado(db, original.id, datos, usuario)
+    }
+    # Primero lo que pasa a otras bodegas (si algo falla allá, no se toca nada aquí).
+    for otra, lineas in por_bodega.items():
+        bodega = db.get(Bodega, otra)
+        nombre = bodega.nombre if bodega else str(otra)
+        try:
+            hermana = (
+                db.query(Apartado)
+                .filter(Apartado.bodega_id == otra, Apartado.numero_cotizacion == numero, Apartado.traslado_a != "",
+                        Apartado.estado == EstadoApartado.APARTADO)
+                .first()
+            )
+            if hermana is not None:
+                actuales = [ApartadoItemEditar(
+                    id=it.id, modalidad=it.modalidad, descripcion=it.descripcion, cantidad=it.cantidad,
+                    codigo_interno=it.codigo_interno, medida=it.medida, producto_id=it.producto_id, rollo_id=it.rollo_id,
+                    tipo_producto=it.tipo_producto or "", empresa=it.empresa_material or "",
+                ) for it in hermana.items]
+                srv.editar_apartado(db, hermana.id, datos.model_copy(update={
+                    **comunes, "bodega_id": otra, "empresa": hermana.empresa or datos.empresa,
+                    "observaciones": hermana.observaciones, "items": actuales + lineas,
+                }), usuario)
+            else:
+                nueva = srv.crear_apartado(db, ApartadoCrear(**{
+                    **comunes, "bodega_id": otra, "empresa": datos.empresa, "items": lineas,
+                    "observaciones": datos.observaciones,
+                }), usuario)
+                nueva.creado_por = creador or nueva.creado_por
+                nueva.siigo_numero = siigo_numero
+        except HTTPException as exc:
+            raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
+    if not propias:
+        srv.quitar_parte(db, original.id, usuario, pasa_a_otra_bodega=True)
+        db.commit()
+        restante = (db.query(Apartado).filter(Apartado.numero_cotizacion == numero, Apartado.traslado_a != "",
+                                              Apartado.estado == EstadoApartado.APARTADO)
+                    .order_by(Apartado.id.desc()).first())
+        return _con_faltantes(db, [restante])[0]
+    apartado = srv.editar_apartado(db, original.id, datos.model_copy(update={
+        **comunes, "bodega_id": original.bodega_id, "items": propias,
+    }), usuario)
     db.commit(); db.refresh(apartado)
     return _con_faltantes(db, [apartado])[0]
 
@@ -981,7 +1026,11 @@ def conectar_cotizacion_siigo_traslado(apartado_id: int, datos: CotizacionSiigoT
         raise HTTPException(status_code=404, detail="Traslado no encontrado.")
     if apartado.estado == EstadoApartado.CANCELADO:
         raise HTTPException(status_code=400, detail="Este traslado está anulado.")
-    apartado.siigo_numero = srv.numero_siigo_de_traslado(db, datos.numero, excepto_id=apartado.id)
+    # Todas las partes del mismo traslado (ej. una en Santander y otra en Maxitejas).
+    numero = srv.numero_siigo_de_traslado(db, datos.numero, excepto_numero=apartado.numero_cotizacion)
+    for parte in db.query(Apartado).filter(Apartado.numero_cotizacion == apartado.numero_cotizacion, Apartado.traslado_a != "",
+                                           Apartado.estado != EstadoApartado.CANCELADO):
+        parte.siigo_numero = numero
     db.commit(); db.refresh(apartado)
     return _con_faltantes(db, [apartado])[0]
 
