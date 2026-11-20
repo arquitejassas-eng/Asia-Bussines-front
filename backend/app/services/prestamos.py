@@ -592,6 +592,8 @@ def resumen(prestamos: list[PrestamoEmpresa]) -> list[dict]:
     descripciones: dict[tuple[str, str, str], str] = {}
     # Rollos de cada material y par, con los kilos con que llegaron (la ruta pone kilos_rollo).
     rollos: dict[tuple, dict[str, int | None]] = {}
+    # (material, par) -> [metros con kilos conocidos, esos kilos]: kilos por metro de lo prestado.
+    peso: dict[tuple, list[float]] = {}
     for p in prestamos:
         if p.saldado:
             continue
@@ -602,6 +604,10 @@ def resumen(prestamos: list[PrestamoEmpresa]) -> list[dict]:
         pares[par] = pares.get(par, 0) + p.cantidad
         if p.referencia_rollo:
             rollos.setdefault((clave, par), {})[p.referencia_rollo] = getattr(p, "kilos_rollo", None)
+        if getattr(p, "kilos", None):
+            acumulado = peso.setdefault((clave, par), [0.0, 0.0])
+            acumulado[0] += p.cantidad
+            acumulado[1] += p.kilos
         descripciones[clave] = descripciones.get(clave) or p.descripcion
     filas = []
     for (tipo, codigo, unidad), pares in por_codigo.items():
@@ -615,8 +621,10 @@ def resumen(prestamos: list[PrestamoEmpresa]) -> list[dict]:
                 continue
             acreedora, deudora = (presta, recibe) if neto > 0 else (recibe, presta)
             de_la_fila = rollos.get(((tipo, codigo, unidad), (acreedora, deudora)), {})
+            metros_con_kilos, kilos_conocidos = peso.get(((tipo, codigo, unidad), (acreedora, deudora)), [0.0, 0.0])
+            kilos = round(abs(neto) * kilos_conocidos / metros_con_kilos, 1) if metros_con_kilos > 0.005 else None
             filas.append({"tipo": tipo, "codigo": codigo, "descripcion": descripciones[(tipo, codigo, unidad)],
-                          "unidad": unidad, "presta": acreedora, "debe": deudora, "cantidad": abs(neto),
+                          "unidad": unidad, "presta": acreedora, "debe": deudora, "cantidad": abs(neto), "kilos": kilos,
                           "rollos": [{"referencia": ref, "kilos": kilos} for ref, kilos in sorted(de_la_fila.items())]})
     return sorted(filas, key=lambda f: (f["debe"], f["tipo"], f["codigo"]))
 

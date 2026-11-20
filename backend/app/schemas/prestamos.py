@@ -23,6 +23,9 @@ class PrestamoResponse(ModeloConFechasUtc):
     referencia_rollo: str
     # Kilos con que llegó el rollo (de su etiqueta), si el préstamo es de un rollo.
     kilos_rollo: int | None = None
+    # Kilos de ESTE préstamo (lámina): los metros prestados por los kilos por
+    # metro del rollo (su etiqueta entre sus metros). None si no se sabe.
+    kilos: float | None = None
     # Préstamo anotado con una cotización que todavía no ha salido ("por_recoger")
     # o que se canceló sin salir ("cancelada"); vacío si ya salió.
     estado_cotizacion: str = ""
@@ -59,6 +62,8 @@ class DeudaEmpresaResponse(BaseModel):
     presta: str
     debe: str
     cantidad: float
+    # Kilos aproximados de lo que se debe (lámina), según los rollos prestados.
+    kilos: float | None = None
     rollos: list[RolloDeudaResponse] = []
 
 

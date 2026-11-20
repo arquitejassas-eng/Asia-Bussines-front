@@ -39,9 +39,17 @@ def reporte_prestamos(
     prestamos = srv.listar(db, empresa=empresa, bodega_id=bodega_id, desde=inicio, hasta=fin, incluir_saldados=incluir_saldados)
     # Los kilos con que llegó cada rollo prestado (los metros solos no dicen cuál rollo es).
     referencias = {p.referencia_rollo for p in prestamos if p.referencia_rollo}
-    pesos = dict(db.query(Rollo.identificador_rollo, Rollo.peso_neto).filter(Rollo.identificador_rollo.in_(referencias)).all()) if referencias else {}
+    filas = (db.query(Rollo.identificador_rollo, Rollo.peso_neto, Rollo.metros_proveedor, Rollo.metros_disponibles, Rollo.metros_consumidos)
+             .filter(Rollo.identificador_rollo.in_(referencias)).all()) if referencias else []
+    pesos = {ref: peso for ref, peso, *_ in filas}
+    metros_rollo = {ref: (prov or 0) or ((disp or 0) + (cons or 0)) for ref, _, prov, disp, cons in filas}
     for p in prestamos:
         p.kilos_rollo = kilos_rollo(pesos.get(p.referencia_rollo)) if p.referencia_rollo else None
+        # Kilos de lo prestado: metros × (kilos de la etiqueta / metros del rollo). Ej. 418 m de un
+        # rollo de 4.314 kg y 1.674 m = 1.077 kg.
+        total = metros_rollo.get(p.referencia_rollo) or 0
+        p.kilos = (round(p.kilos_rollo * p.cantidad / total, 1) if p.unidad == "m" and p.kilos_rollo and total > 0.5
+                   else None)
     estados = srv.estado_de_cotizacion_prestada(
         db, {p.apartado_id for p in prestamos if p.apartado_id is not None and not p.saldado and p.origen == srv.PRESTADO_A_TERCERO})
     for p in prestamos:

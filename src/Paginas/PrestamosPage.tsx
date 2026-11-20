@@ -18,12 +18,13 @@ type VistaCotizacion = {
 type Prestamo = {
   id: number; fecha: string; empresa_presta: string; empresa_recibe: string; prestador: string; bodega_id: number | null;
   numero_cotizacion: string; tipo: string; codigo: string; descripcion: string; cantidad: number; unidad: string;
-  referencia_rollo: string; kilos_rollo: number | null; origen: string; usuario: string; saldado: boolean; saldado_por: string;
+  referencia_rollo: string; kilos_rollo: number | null; kilos?: number | null; origen: string; usuario: string; saldado: boolean; saldado_por: string;
   fecha_saldado: string | null; estado_cotizacion?: string;
   devuelto_con?: string; kilos_devueltos?: number | null; factura?: string;
 };
 type Deuda = {
   tipo: string; codigo: string; descripcion: string; unidad: string; presta: string; debe: string; cantidad: number;
+  kilos?: number | null;
   rollos: { referencia: string; kilos: number | null }[];
 };
 type ProductoBodega = {
@@ -49,8 +50,9 @@ const nombre = (sigla: string) => EMPRESAS[sigla] || sigla || "Sin empresa";
 const quienPresta = (p: Prestamo) => (p.empresa_presta === EXTERNA && p.prestador ? p.prestador : nombre(p.empresa_presta));
 const quienRecibe = (p: Prestamo) => (p.empresa_recibe === EXTERNA && p.prestador ? p.prestador : nombre(p.empresa_recibe));
 const kilosTexto = (kilos: number | null) => (kilos != null ? `${kilos.toLocaleString("es-CO")} kg al llegar` : "sin kilos");
-const cantidadTexto = (cantidad: number, unidad: string) =>
-  `${cantidad.toLocaleString("es-CO", { maximumFractionDigits: 2 })} ${unidad === "m" ? "m" : "und"}`;
+const cantidadTexto = (cantidad: number, unidad: string, kilos?: number | null) =>
+  `${cantidad.toLocaleString("es-CO", { maximumFractionDigits: 2 })} ${unidad === "m" ? "m" : "und"}`
+  + (unidad === "m" && kilos != null ? ` · ${kilos.toLocaleString("es-CO", { maximumFractionDigits: 0 })} kg` : "");
 
 /** Préstamos entre empresas (Admin Inventario): lo que una empresa le prestó
  * a una cotización de la otra. Se anota solo cuando el material sale; aquí
@@ -258,28 +260,56 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const sinSaldar = prestamosVisibles.filter((p) => !p.saldado);
   const todosElegidos = sinSaldar.length > 0 && sinSaldar.every((p) => seleccion.has(p.id));
 
-  // Lo que se ve en pantalla (con los mismos filtros), una hoja por sección.
-  function exportar() {
-    exportarHojasAExcel([
-      { nombre: "Lo que se deben", filas: resumenVisible.map((d) => ({
-        "Quién debe": nombre(d.debe), "A quién": nombre(d.presta), "Material": d.codigo,
-        "Tipo": d.tipo === "lamina" ? "lámina" : "producto", "Descripción": d.descripcion,
-        "Rollos (kilos al llegar)": d.rollos.map((r) => `${r.referencia} (${kilosTexto(r.kilos)})`).join(", "),
-        "Cantidad": d.cantidad, "Unidad": d.unidad === "m" ? "m" : "und",
-      })) },
-      { nombre: vista === "saldados" ? "Saldados" : "Detalle", filas: prestamosVisibles.map((p) => ({
+  // Con los mismos filtros, una hoja por sección. Siempre lleva el historial
+  // completo de los saldados (no solo lo de la pestaña que se está viendo).
+  const [exportando, setExportando] = useState(false);
+  async function exportar() {
+    setExportando(true);
+    try {
+      const parametros = new URLSearchParams();
+      if (empresa) parametros.set("empresa", empresa);
+      if (bodegaId) parametros.set("bodega_id", bodegaId);
+      if (desde) parametros.set("desde", desde);
+      if (hasta) parametros.set("hasta", hasta);
+      parametros.set("incluir_saldados", "true");
+      const todo = await api.get<Reporte>(`/prestamos?${parametros.toString()}`);
+      const todos = (todo?.prestamos ?? reporte.prestamos).filter((p) => !externa || p.prestador === externa);
+      const filaPrestamo = (p: Prestamo) => ({
         "Fecha": formatearFechaColombia(p.fecha), "Presta": quienPresta(p),
         "Recibe": quienRecibe(p), "Cotización": p.numero_cotizacion, "Bodega": nombreBodega(p.bodega_id),
         "Material": p.codigo, "Descripción": p.descripcion, "Rollo": p.referencia_rollo,
         "Kilos del rollo al llegar": p.kilos_rollo ?? "", "Cantidad": p.cantidad,
-        "Unidad": p.unidad === "m" ? "m" : "und", "Dónde se anotó": ORIGEN[p.origen] || p.origen, "Usuario": p.usuario,
-        "Estado": p.saldado ? "Saldado" : "Sin saldar", "Pagaron con": p.devuelto_con || "", "Factura": p.factura || "", "Saldado el": p.fecha_saldado ? formatearFechaColombia(p.fecha_saldado) : "",
-      })) },
-      { nombre: "Sacado sin existencia", filas: reporte.sacado_sin_existencia.map((s) => ({
-        "Fecha": formatearFechaColombia(s.fecha), "Bodega": nombreBodega(s.bodega_id), "Producto": s.producto_codigo,
-        "Descripción": s.producto_descripcion, "Cantidad": s.cantidad, "Cotización": s.cotizacion, "Quién": s.usuario,
-      })) },
-    ], `Prestamos${desde || hasta ? `_${desde || "inicio"}_a_${hasta || "hoy"}` : ""}.xlsx`);
+        "Unidad": p.unidad === "m" ? "m" : "und", "Kilos prestados": p.unidad === "m" ? (p.kilos ?? "") : "",
+        "Dónde se anotó": ORIGEN[p.origen] || p.origen, "Usuario": p.usuario,
+        "Estado": p.saldado ? "Saldado" : "Sin saldar", "Pagaron con": p.devuelto_con || "",
+        "Kilos devueltos": p.kilos_devueltos ?? "", "Factura": p.factura || "",
+        "Saldado el": p.fecha_saldado ? formatearFechaColombia(p.fecha_saldado) : "", "Saldado por": p.saldado_por || "",
+      });
+      exportarHojasAExcel([
+        { nombre: "Lo que se deben", filas: resumenVisible.map((d) => ({
+          "Quién debe": nombre(d.debe), "A quién": nombre(d.presta), "Material": d.codigo,
+          "Tipo": d.tipo === "lamina" ? "lámina" : "producto", "Descripción": d.descripcion,
+          "Rollos (kilos al llegar)": d.rollos.map((r) => `${r.referencia} (${kilosTexto(r.kilos)})`).join(", "),
+          "Cantidad": d.cantidad, "Unidad": d.unidad === "m" ? "m" : "und", "Kilos (aprox.)": d.unidad === "m" ? (d.kilos ?? "") : "",
+        })) },
+        { nombre: "Pendientes", filas: todos.filter((p) => !p.saldado).map(filaPrestamo) },
+        { nombre: "Saldados (historial)", filas: todos.filter((p) => p.saldado).map(filaPrestamo) },
+        { nombre: "Cuadre rollos prestados", filas: cuadre.filter((f) => !externa || f.prestador === externa).map((f) => ({
+          "Fecha": formatearFechaColombia(f.fecha), "Empresa externa": f.prestador, "Cotización": f.numero_cotizacion,
+          "Bodega": nombreBodega(f.bodega_id), "Material": f.codigo, "Rollo": f.referencia_rollo, "Metros": f.metros,
+          "Kilos prestados": f.kilos_prestados ?? "", "Pagaron con": f.devuelto_con, "Kilos devueltos": f.kilos_devueltos ?? "",
+          "Diferencia (kg)": f.diferencia ?? "", "Estado": f.estado, "Factura": f.factura,
+        })) },
+        { nombre: "Sacado sin existencia", filas: reporte.sacado_sin_existencia.map((s) => ({
+          "Fecha": formatearFechaColombia(s.fecha), "Bodega": nombreBodega(s.bodega_id), "Producto": s.producto_codigo,
+          "Descripción": s.producto_descripcion, "Cantidad": s.cantidad, "Cotización": s.cotizacion, "Quién": s.usuario,
+        })) },
+      ], `Prestamos${desde || hasta ? `_${desde || "inicio"}_a_${hasta || "hoy"}` : ""}.xlsx`);
+    } catch (err) {
+      setError(err instanceof ErrorApi ? err.message : "No se pudo descargar el Excel.");
+    } finally {
+      setExportando(false);
+    }
   }
 
   async function saldar() {
@@ -466,7 +496,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             <label className="apartados-check">Desde <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} /></label>
             <label className="apartados-check">Hasta <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} /></label>
             {!cargando && (reporte.resumen.length > 0 || reporte.prestamos.length > 0 || reporte.sacado_sin_existencia.length > 0) && (
-              <button type="button" className="apartados-limpiar" onClick={exportar}>Exportar a Excel</button>
+              <button type="button" className="apartados-limpiar" onClick={exportar} disabled={exportando}>{exportando ? "Preparando Excel..." : "Exportar a Excel"}</button>
             )}
           </div>
 
@@ -498,7 +528,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               </span>
                             ))}
                           </td>
-                          <td><strong>{cantidadTexto(d.cantidad, d.unidad)}</strong></td>
+                          <td><strong>{cantidadTexto(d.cantidad, d.unidad, d.kilos)}</strong></td>
                         </tr>
                       ))}
                       {externosDeben.map((f) => (
@@ -565,7 +595,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               </span>
                             )}
                           </td>
-                          <td>{cantidadTexto(p.cantidad, p.unidad)}</td>
+                          <td>{cantidadTexto(p.cantidad, p.unidad, p.kilos)}</td>
                           <td>{ORIGEN[p.origen] || p.origen}{p.usuario && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>{p.usuario}</span>}</td>
                           <td>
                             {p.saldado
