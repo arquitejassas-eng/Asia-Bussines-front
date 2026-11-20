@@ -857,6 +857,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         (ap.estado === "apartado" && !porProducir) || (enProduccion && ap.salidaPendiente) || ap.estado === "produccion_terminada");
       return (
         <>
+          {/* Planta lo produce igual que una cotización: abre Registrar Producción con sus líneas. */}
+          {tieneProduccionPendiente && !veTodasLasBodegas && (
+            <button onClick={() => irAIniciarProduccion(ap.numeroCotizacion)}>
+              {itemsRollo.some((it) => (it.metrosPendientes ?? 0) > 0) ? "Iniciar Producción" : "Alistar pedido"}
+            </button>
+          )}
           {a.puedeEnviarAProduccion && ap.estado === "apartado" && porProducir && (
             <button
               disabled={ap.faltantes.length > 0 && !ap.faltantesEnCamino}
@@ -1920,7 +1926,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               {/* Traslado a San Gil: mientras no se haya enviado a producción ni tenga salida. */}
                               {ap.trasladoA && ap.estado === "apartado"
                                 && (esAdminInventario || (sesion.rol === "administrativo" && ap.bodegaId === sesion.bodegaId)) && (
-                                <button onClick={() => abrirEdicion([ap])}>Editar</button>
+                                // Admin Inventario lo abre completo: todas las partes que siguen apartadas.
+                                <button onClick={() => abrirEdicion(esAdminInventario
+                                  ? [ap, ...a.apartados.filter((otra) => otra.id !== ap.id && otra.trasladoA
+                                      && otra.numeroCotizacion === ap.numeroCotizacion && otra.estado === "apartado")]
+                                  : [ap])}>Editar</button>
                               )}
                               {puedeImprimir && grupo.some((parte) => parte.items.length > 0) && (
                                 <button onClick={() => imprimir(veTodasLasBodegas ? grupo : [ap])}

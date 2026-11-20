@@ -1250,7 +1250,8 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
 def _numero_siigo_del_traslado(db: Session, datos: ApartadoCrear) -> str:
     if not datos.traslado_a:
         return ""
-    return numero_siigo_de_traslado(db, datos.siigo_numero_traslado)
+    # Las partes de ESTE traslado (una por bodega, mismo TR) comparten el número de Siigo.
+    return numero_siigo_de_traslado(db, datos.siigo_numero_traslado, excepto_numero=datos.numero_cotizacion)
 
 
 def numero_siigo_de_traslado(db: Session, texto: str, excepto_numero: str = "") -> str:

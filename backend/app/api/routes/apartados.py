@@ -578,7 +578,7 @@ def _editar_traslado(db: Session, original: Apartado, datos: ApartadoEditar, usu
     if original.estado != EstadoApartado.APARTADO:
         raise HTTPException(status_code=400, detail="Este traslado ya se envió a producción o ya salió: no se puede editar.")
     if datos.otras_partes_ids:
-        raise HTTPException(status_code=400, detail="Un traslado se edita solo.")
+        return _editar_traslado_completo(db, original, datos, usuario)
     limpiar = {"precio": None, "siigo_cantidad": None, "siigo_producto": "", "siigo_incluido": False}
     propias = [i.model_copy(update={**limpiar, "bodega_id": None}) for i in datos.items
                if not i.bodega_id or i.bodega_id == original.bodega_id]
@@ -634,6 +634,70 @@ def _editar_traslado(db: Session, original: Apartado, datos: ApartadoEditar, usu
     }), usuario)
     db.commit(); db.refresh(apartado)
     return _con_faltantes(db, [apartado])[0]
+
+
+def _editar_traslado_completo(db: Session, original: Apartado, datos: ApartadoEditar, usuario: Usuario) -> dict:
+    """Admin Inventario abre el traslado completo (todas sus partes sin enviar
+    a producción): cada línea dice de qué bodega sale y al guardar cada parte
+    queda con las suyas. Una bodega nueva crea su parte; la que se queda sin
+    líneas se borra. Todo junto o nada."""
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+        raise HTTPException(status_code=403, detail="El traslado completo solo lo edita Admin Inventario.")
+    numero = original.numero_cotizacion
+    partes = [original]
+    for otro_id in dict.fromkeys(datos.otras_partes_ids):
+        if otro_id == original.id:
+            continue
+        otra = db.get(Apartado, otro_id)
+        if otra is None or otra.numero_cotizacion != numero or not otra.traslado_a:
+            raise HTTPException(status_code=400, detail="Una de las partes no es de este traslado.")
+        if otra.estado != EstadoApartado.APARTADO:
+            raise HTTPException(status_code=400, detail="Una parte de este traslado ya se envió a producción o ya salió: no se puede editar.")
+        partes.append(otra)
+    parte_de_bodega: dict[int, Apartado] = {}
+    for parte in partes:
+        parte_de_bodega.setdefault(parte.bodega_id, parte)
+    limpiar = {"precio": None, "siigo_cantidad": None, "siigo_producto": "", "siigo_incluido": False}
+    por_bodega: dict[int, list] = {}
+    for linea in datos.items:
+        bodega = linea.bodega_id or original.bodega_id
+        parte = parte_de_bodega.get(bodega)
+        # Una línea que cambia de bodega entra como nueva en la parte de allá.
+        conserva_id = parte is not None and linea.id is not None and any(it.id == linea.id for it in parte.items)
+        por_bodega.setdefault(bodega, []).append(
+            linea.model_copy(update={**limpiar, "bodega_id": None, "id": linea.id if conserva_id else None}))
+    creador, siigo_numero = original.creado_por, original.siigo_numero
+    comunes = {
+        "numero_cotizacion": numero, "cliente": original.cliente, "traslado_a": original.traslado_a,
+        "orden_interna": False, "material_en_camino": False,
+        "cliente_identificacion": "", "siigo_vendedor": None, "siigo_centro_costo": None, "otras_partes_ids": [],
+    }
+    for bodega_id, lineas in por_bodega.items():
+        bodega = db.get(Bodega, bodega_id)
+        nombre = bodega.nombre if bodega else str(bodega_id)
+        try:
+            parte = parte_de_bodega.get(bodega_id)
+            if parte is not None:
+                srv.editar_apartado(db, parte.id, datos.model_copy(update={
+                    **comunes, "bodega_id": bodega_id, "empresa": parte.empresa or datos.empresa, "items": lineas,
+                }), usuario)
+            else:
+                nueva = srv.crear_apartado(db, ApartadoCrear(**{
+                    **comunes, "bodega_id": bodega_id, "empresa": datos.empresa, "items": lineas,
+                    "observaciones": datos.observaciones,
+                }), usuario)
+                nueva.creado_por = creador or nueva.creado_por
+                nueva.siigo_numero = siigo_numero
+        except HTTPException as exc:
+            raise HTTPException(status_code=exc.status_code, detail=f"{nombre}: {exc.detail}") from exc
+    for parte in partes:
+        if parte.bodega_id not in por_bodega or parte_de_bodega.get(parte.bodega_id) is not parte:
+            srv.quitar_parte(db, parte.id, usuario, pasa_a_otra_bodega=True)
+    db.commit()
+    restante = (db.query(Apartado).filter(Apartado.numero_cotizacion == numero, Apartado.traslado_a != "",
+                                          Apartado.estado == EstadoApartado.APARTADO)
+                .order_by(Apartado.id).first())
+    return _con_faltantes(db, [restante])[0]
 
 
 @router.put("/{apartado_id}", response_model=ApartadoResponse,
