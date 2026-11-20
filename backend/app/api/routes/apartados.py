@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -960,6 +960,30 @@ def confirmar_separacion_stock(apartado_id: int, db: Session = Depends(get_db), 
     apartado = srv.confirmar_separacion_stock(db, apartado_id, usuario)
     db.commit(); db.refresh(apartado)
     return apartado
+
+
+class CotizacionSiigoTrasladoRequest(BaseModel):
+    numero: str = Field(default="", max_length=30)
+
+
+@router.patch("/{apartado_id}/cotizacion-siigo-traslado", response_model=ApartadoResponse,
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+def conectar_cotizacion_siigo_traslado(apartado_id: int, datos: CotizacionSiigoTrasladoRequest,
+                                       db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    """Conecta (o cambia, o quita con "") la cotización hecha directo en Siigo
+    de un traslado ya creado, en cualquier estado menos anulado. Solo la
+    escribe en el traslado: nunca toca Siigo. La pueden poner Admin
+    Inventario, la bodega de donde sale y la encargada que lo creó."""
+    apartado = db.get(Apartado, apartado_id)
+    if apartado is None or not apartado.traslado_a:
+        raise HTTPException(status_code=404, detail="Traslado no encontrado.")
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO and apartado.bodega_id != usuario.bodega_id and apartado.creado_por != usuario.correo:
+        raise HTTPException(status_code=404, detail="Traslado no encontrado.")
+    if apartado.estado == EstadoApartado.CANCELADO:
+        raise HTTPException(status_code=400, detail="Este traslado está anulado.")
+    apartado.siigo_numero = srv.numero_siigo_de_traslado(db, datos.numero, excepto_id=apartado.id)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
 
 
 @router.post("/{apartado_id}/salida-traslado", response_model=ApartadoResponse,

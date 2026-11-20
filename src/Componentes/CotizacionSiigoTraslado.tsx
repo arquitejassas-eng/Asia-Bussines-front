@@ -114,3 +114,39 @@ export function VerCotizacionSiigoTraslado({ empresa, numero }: { empresa: strin
     </>
   );
 }
+
+/** Traslado ya creado sin su cotización de Siigo (o con otra): se conecta aquí. */
+export function ModalConectarSiigoTraslado({ traslado, alCerrar, alGuardar }: {
+  traslado: { id: number; numeroCotizacion: string; empresa: string; siigoNumero: string };
+  alCerrar: () => void;
+  alGuardar: (numero: string) => Promise<string>;
+}) {
+  const [numero, setNumero] = useState(traslado.siigoNumero || "");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  async function guardar(valor: string) {
+    setGuardando(true);
+    setError(await alGuardar(valor));
+    setGuardando(false);
+  }
+
+  return (
+    <div className="rollos-modal-fondo" onClick={alCerrar}>
+      <div className="rollos-modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Cotización de Siigo del traslado {traslado.numeroCotizacion}</h3>
+        <CampoCotizacionSiigoTraslado empresa={traslado.empresa} numero={numero} alCambiar={setNumero} />
+        {error && <p className="inventario-error">{error}</p>}
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem", flexWrap: "wrap" }}>
+          <button type="button" disabled={guardando || !numero.trim()} onClick={() => guardar(numero)}>
+            {guardando ? "Guardando..." : "Conectar"}
+          </button>
+          {traslado.siigoNumero && (
+            <button type="button" className="inventario-boton-eliminar" disabled={guardando} onClick={() => guardar("")}>Quitar</button>
+          )}
+          <button type="button" className="apartados-limpiar" onClick={alCerrar}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -6,7 +6,7 @@ import BarraLateral from "../Componentes/BarraLateral";
 import ModalConfirmacion from "../Componentes/ModalConfirmacion";
 import { IconoSubir } from "../Componentes/Iconos";
 import ModalDefinirConversion from "../Componentes/ModalDefinirConversion";
-import { CampoCotizacionSiigoTraslado, VerCotizacionSiigoTraslado } from "../Componentes/CotizacionSiigoTraslado";
+import { CampoCotizacionSiigoTraslado, ModalConectarSiigoTraslado, VerCotizacionSiigoTraslado } from "../Componentes/CotizacionSiigoTraslado";
 import "../Style/Rollos.css";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { EMPRESAS, AMBAS_EMPRESAS, nombreMaterial } from "../Utils/empresas";
@@ -364,6 +364,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const [unirAbierta, setUnirAbierta] = useState<number | null>(null);
   // Orden interna con lámina lisa producida sin decir en qué se convierte.
   const [conversionAbierta, setConversionAbierta] = useState<ApartadoDeLista | null>(null);
+  const [siigoTraslado, setSiigoTraslado] = useState<ApartadoDeLista | null>(null);
   const cerrarUnir = useCallback(() => setUnirAbierta(null), []);
   // Las que se pueden unir a esta: misma bodega, empresa y estado (ver backend unir_apartado).
   const candidatasParaUnir = (ap: ApartadoDeLista) => a.apartados.filter((otra) => otra.id !== ap.id && !otra.ordenInterna
@@ -1908,6 +1909,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               {a.puedeEditarApartados && !ap.trasladoA && partesActivas.length > 0 && (esAdminInventario || partesActivas.every((parte) => parte.estado === "apartado")) && (
                                 <button onClick={() => abrirEdicion(partesActivas)}>Editar</button>
                               )}
+                                              {ap.trasladoA && ap.estado !== "cancelado"
+                                && (esAdminInventario || (sesion.rol === "administrativo" && (ap.bodegaId === sesion.bodegaId || ap.creadoPor === sesion.correo))) && (
+                                <button title="La cotización que se hizo directo en Siigo para este traslado" onClick={() => setSiigoTraslado(ap)}>
+                                  {ap.siigoNumero ? "Cambiar cotización Siigo" : "Conectar con Siigo"}
+                                </button>
+                              )}
                               {/* Traslado a San Gil: mientras no se haya enviado a producción ni tenga salida. */}
                               {ap.trasladoA && ap.estado === "apartado"
                                 && (esAdminInventario || (sesion.rol === "administrativo" && ap.bodegaId === sesion.bodegaId)) && (
@@ -1984,6 +1991,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           textoConfirmar="Entendido"
           onConfirmar={() => setMensajeInformativo("")}
         />
+      )}
+      {siigoTraslado && (
+        <ModalConectarSiigoTraslado traslado={siigoTraslado} alCerrar={() => setSiigoTraslado(null)}
+          alGuardar={async (numero) => {
+            const error = await a.conectarSiigoTraslado(siigoTraslado.id, numero);
+            if (!error) setSiigoTraslado(null);
+            return error;
+          }} />
       )}
       {conversionAbierta && (
         <ModalDefinirConversion

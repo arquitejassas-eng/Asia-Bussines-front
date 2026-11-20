@@ -911,6 +911,17 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
   }
 
   // Sale el camión del traslado a San Gil: se descuenta todo y queda Entregado.
+  /** Devuelve "" si quedó conectada, o el error para mostrarlo en el modal. */
+  async function conectarSiigoTraslado(id: number, numero: string): Promise<string> {
+    try {
+      await api.patch(`/apartados/${id}/cotizacion-siigo-traslado`, { numero });
+      await cargarApartados();
+      return "";
+    } catch (err) {
+      return err instanceof ErrorApi ? err.message : "No se pudo conectar la cotización de Siigo.";
+    }
+  }
+
   async function darSalidaTraslado(id: number) {
     setErrorAccionApartado("");
     try {
@@ -932,7 +943,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
   }
 
   return {
-    puedeCrearApartados, puedeCrearOrdenInterna, puedeCrearTraslado, bodegaFija, darSalidaTraslado, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeQuitarDeProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
+    puedeCrearApartados, puedeCrearOrdenInterna, puedeCrearTraslado, bodegaFija, darSalidaTraslado, conectarSiigoTraslado, puedeEditarApartados, puedeCancelarApartados, puedeEnviarAProduccion, puedeQuitarDeProduccion, puedeMarcarTerminado, puedeMarcarEntregado,
     apartados, partesDeOtrasBodegas, cargandoApartados, errorApartados, cargarApartados,
     filtroEstado, setFiltroEstado,
 

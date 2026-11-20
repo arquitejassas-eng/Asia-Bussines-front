@@ -1238,16 +1238,23 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
 
 
 def _numero_siigo_del_traslado(db: Session, datos: ApartadoCrear) -> str:
+    if not datos.traslado_a:
+        return ""
+    return numero_siigo_de_traslado(db, datos.siigo_numero_traslado)
+
+
+def numero_siigo_de_traslado(db: Session, texto: str, excepto_id: int | None = None) -> str:
     """La cotización de Siigo de un traslado: "4140" queda "C-1-4140". Una
     misma cotización no puede ir en dos traslados."""
-    numero = re.sub(r"\s+", "", datos.siigo_numero_traslado or "").upper()
-    if not numero or not datos.traslado_a:
+    numero = re.sub(r"\s+", "", texto or "").upper()
+    if not numero:
         return ""
     if numero.isdigit():
         numero = f"C-1-{numero}"
     repetido = (
         db.query(Apartado)
-        .filter(Apartado.traslado_a != "", Apartado.siigo_numero == numero, Apartado.estado != EstadoApartado.CANCELADO)
+        .filter(Apartado.traslado_a != "", Apartado.siigo_numero == numero, Apartado.estado != EstadoApartado.CANCELADO,
+                Apartado.id != (excepto_id or 0))
         .first()
     )
     if repetido is not None:
