@@ -302,6 +302,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       };
       const hojas: HojaExcel[] = [
         { nombre: "Préstamos", filas: [...todos.filter((p) => !p.saldado), ...todos.filter((p) => p.saldado)].map(filaPrestamo) },
+        // Solo lo saldado, con las mismas columnas (para revisar el historial aparte).
+        { nombre: "Saldados", filas: todos.filter((p) => p.saldado).map(filaPrestamo) },
         { nombre: "Resumen: lo que se deben", filas: resumenVisible.map((d) => ({
           "Quién debe": nombre(d.debe), "A quién": nombre(d.presta), "Material": d.codigo,
           "Cantidad": d.cantidad, "Unidad": d.unidad === "m" ? "m" : "und", "Kilos (aprox.)": d.unidad === "m" ? (d.kilos ?? "") : "",
