@@ -528,7 +528,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     </thead>
                     <tbody>
                       {resumenVisible.map((d) => (
-                        <tr key={`${d.tipo}|${d.codigo}|${d.debe}`}>
+                        <tr key={`${d.tipo}|${d.codigo}|${d.unidad}|${d.presta}|${d.debe}`}>
                           <td>
                             <strong>{nombre(d.debe)}</strong>
                             {(d.cotizaciones?.length ?? 0) > 0 && (
