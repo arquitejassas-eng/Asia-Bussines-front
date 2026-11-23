@@ -413,9 +413,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   }, [a.apartados, filtroTexto, codigosBuscados, filtroBodega, filtroEmpresa, soloPendientesSalida, pestana]);
 
   // Excel de TODAS las cotizaciones: las que faltan por producir, las
-  // pendientes por dar salida y las entregadas. Cada fila dice en qué pestaña
-  // de Apartados se busca. Usa los filtros de búsqueda, código, bodega y
-  // empresa, pero no la pestaña ni el estado: siempre salen las tres.
+  // pendientes por dar salida, las entregadas y las anuladas, en orden de
+  // número. Cada fila dice en qué pestaña de Apartados se busca. Usa los
+  // filtros de búsqueda, código, bodega y empresa, pero no la pestaña ni el
+  // estado: siempre salen las cuatro.
   const [descargando, setDescargando] = useState(false);
   async function descargarExcel() {
     setDescargando(true);
@@ -440,14 +441,20 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         ["cotizaciones", "1. Falta por producir", "Apartados → Cotizaciones"],
         ["pendientes_salida", "2. Pendiente por dar salida", "Apartados → Pendientes por dar salida"],
         ["entregadas", "3. Entregada", "Apartados → Entregadas"],
+        ["canceladas", "4. Anulada", "Apartados → Anuladas"],
       ];
+      // Todas juntas en orden de número (4041, 4042, 4043...): la columna
+      // SITUACIÓN dice en qué pestaña está cada una.
       const lista = GRUPOS.flatMap(([pestanaGrupo, situacion, donde]) => todas
         .filter((ap) => vaEnPestana(ap, pestanaGrupo) && pasaFiltros(ap))
-        .sort((x, y) => {
+        .map((ap) => ({ ap, situacion, donde })))
+        .sort(({ ap: x }, { ap: y }) => {
+          // Primero las cotizaciones (4041, 4042...), luego traslados (TR-), órdenes internas (OI-) y el resto.
+          const grupo = (n: string) => (/^\s*\d/.test(n) ? 0 : /^\s*TR-/i.test(n) ? 1 : /^\s*OI-/i.test(n) ? 2 : 3);
           const kx = claveDeNumero(x.numeroCotizacion), ky = claveDeNumero(y.numeroCotizacion);
-          return kx.orden - ky.orden || ky.numero - kx.numero || kx.texto.localeCompare(ky.texto) || x.id - y.id;
-        })
-        .map((ap) => ({ ap, situacion, donde })));
+          return grupo(x.numeroCotizacion) - grupo(y.numeroCotizacion) || kx.numero - ky.numero
+            || kx.texto.localeCompare(ky.texto) || x.id - y.id;
+        });
       if (lista.length === 0) { window.alert("No hay cotizaciones con esos filtros."); return; }
       const cabecera = ({ ap, situacion, donde }: (typeof lista)[number]) => ({
         "Situación": situacion, "Dónde buscarla": donde,
@@ -456,13 +463,37 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         "Estado en el sistema": porDarSalida(ap) && ap.estado !== "entregado" ? "Por dar salida" : (ETIQUETAS_ESTADO[ap.estado] || ap.estado),
         "Creada": fecha(ap.fechaCreacion), "Creada por": ap.creadoPor, "Entregada": fecha(ap.fechaEntregado),
       });
+      // Las de Siigo traen saltos de línea y tabulaciones: en Excel quedaban
+      // renglones escondidos dentro de la celda. Todo en un solo renglón.
       const descripcionLinea = (it: (typeof a.apartados)[number]["items"][number]) =>
-        it.descripcion || it.productoDescripcion || it.codigoInterno || it.productoCodigo || "";
-      const resumen = lista.map((fila) => ({
-        ...cabecera(fila),
-        "Líneas": fila.ap.items.length,
-        "Qué lleva": fila.ap.items.map(descripcionLinea).filter(Boolean).join(" | "),
-        "Siigo": fila.ap.siigoNumero,
+        (it.descripcion || it.productoDescripcion || it.codigoInterno || it.productoCodigo || "").replace(/\s+/g, " ").trim();
+      // Una fila por cada producto de la cotización (una sin líneas, como las
+      // unidas a otra, sale en una fila vacía).
+      // "Línea" cuenta la cotización completa: sus partes (una por bodega,
+      // mismo número) suman sus productos ("1 de 3", "2 de 3", "3 de 3").
+      const totalDeLineas = new Map<string, number>();
+      for (const { ap } of lista) {
+        const clave = numeroSinEmpresa(ap.numeroCotizacion).toUpperCase();
+        totalDeLineas.set(clave, (totalDeLineas.get(clave) ?? 0) + ap.items.length);
+      }
+      const lineaActual = new Map<string, number>();
+      const resumen = lista.flatMap((fila) => (fila.ap.items.length ? fila.ap.items : [null]).map((it) => {
+        const deRollo = it?.modalidad === "por_rollo";
+        const clave = numeroSinEmpresa(fila.ap.numeroCotizacion).toUpperCase();
+        const numeroLinea = it ? (lineaActual.get(clave) ?? 0) + 1 : 0;
+        if (it) lineaActual.set(clave, numeroLinea);
+        return {
+          ...cabecera(fila),
+          "Línea": it ? `${numeroLinea} de ${totalDeLineas.get(clave)}` : "",
+          "Producto": it ? descripcionLinea(it) : "",
+          "Código": it ? (deRollo ? it.codigoInterno || "" : it.productoCodigo || "") : "",
+          "Cantidad": it ? it.cantidad : "",
+          "Medida (m)": it?.medida ?? "",
+          "Metros de rollo": it && deRollo
+            ? (it.metrosRequeridos ?? metrosDeLinea(it.cantidad, it.medida ?? 0, it.tipoProducto).metros) : "",
+          "Tipo": !it ? "" : it.rolloId ? "Rollo completo" : deRollo ? "Material por rollo" : "Producto de stock",
+          "Siigo": fila.ap.siigoNumero,
+        };
       }));
       // Hoja "SALIDA": las mismas columnas de la hoja SALIDA del Excel de
       // inventario (inventario 1000.xlsx), una fila por línea, más en qué
@@ -495,7 +526,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           "FECHA": fecha(ap.fechaCreacion),
           "CODIGO": codigo,
           "REFERENCIA": it?.rolloReferencia || "",
-          "PRODUCTO": it ? (deRollo ? productoDeCodigo(codigo) || it.descripcion : it.productoDescripcion || productoDeCodigo(codigo)) : "",
+          "PRODUCTO": it ? (deRollo ? productoDeCodigo(codigo) || descripcionLinea(it) : (it.productoDescripcion || productoDeCodigo(codigo)).replace(/\s+/g, " ").trim()) : "",
           "CALIBRE": deRollo ? calibreDe(codigo) : "",
           "INFORMACION SIIGO": it ? `${descripcionLinea(it)} - BODEGA ${(ap.bodegaNombre || "").toUpperCase()}` : "",
           "SALE": it ? (deRollo ? metros ?? "" : it.cantidad) : "",
