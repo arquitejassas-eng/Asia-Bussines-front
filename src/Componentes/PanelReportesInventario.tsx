@@ -190,7 +190,31 @@ export function ReporteInventarioPorTipo() {
     const sufijo = [nombreTipo, empresa && nombreEmpresa(empresa), bodega, color && nombreColor(color)].filter(Boolean).join(" - ");
     // Las columnas por bodega de la lámina: solo las bodegas donde hay rollos.
     const bodegasLamina = bodegasDisponibles.filter((b) => rollosFiltrados.some((r) => r.bodega === b));
+    // Toneladas con 3 decimales (1 kg = 0,001 t).
+    const toneladas = (kilos: number | null | undefined) => (kilos == null ? "" : Math.round(kilos) / 1000);
+    // Cuánto hay en toneladas: por empresa y bodega, subtotal por empresa y total.
+    const filasToneladas = (() => {
+      const filas: Record<string, string | number>[] = [];
+      const suma = (lista: FilaRollo[]) => ({
+        "Rollos": lista.length,
+        "Metros": Math.round(lista.reduce((s, r) => s + r.metros_disponibles, 0) * 100) / 100,
+        "Toneladas": Math.round(lista.reduce((s, r) => s + (r.kilos_actuales ?? 0), 0)) / 1000,
+        "Rollos sin peso": lista.filter((r) => r.kilos_actuales == null).length,
+      });
+      const empresas = [...new Set(rollosFiltrados.map((r) => r.empresa))].sort((a, b) => compararTexto(nombreEmpresa(a), nombreEmpresa(b)));
+      for (const e of empresas) {
+        const deLaEmpresa = rollosFiltrados.filter((r) => r.empresa === e);
+        for (const b of bodegasLamina) {
+          const lista = deLaEmpresa.filter((r) => r.bodega === b);
+          if (lista.length) filas.push({ "Empresa": nombreEmpresa(e), "Bodega": b, ...suma(lista) });
+        }
+        filas.push({ "Empresa": `TOTAL ${nombreEmpresa(e).toUpperCase()}`, "Bodega": "", ...suma(deLaEmpresa) });
+      }
+      filas.push({ "Empresa": "TOTAL GENERAL", "Bodega": "", ...suma(rollosFiltrados) });
+      return filas;
+    })();
     const hojasLamina = (prefijo: string) => [
+        { nombre: `${prefijo}Toneladas`, filas: filasToneladas },
         { nombre: `${prefijo}Resumen por código`, filas: filasRollos.map((g) => ({
           "Empresa": nombreEmpresa(g.empresa), "Código": g.codigo, "Espesor (mm)": espesorDe(g),
           "Color": g.color ? nombreColor(g.color) : "", "RAL": g.ral,
@@ -200,7 +224,7 @@ export function ReporteInventarioPorTipo() {
             [`${b} (metros)`, g.porBodega[b] ? Math.round(g.porBodega[b].metros * 100) / 100 : 0],
             [`${b} (kg)`, g.porBodega[b] ? Math.round(g.porBodega[b].kilos) : 0],
           ])),
-          "Rollos": g.rollos, "Metros": Math.round(g.metros * 100) / 100, "Kilos": Math.round(g.kilos),
+          "Rollos": g.rollos, "Metros": Math.round(g.metros * 100) / 100, "Kilos": Math.round(g.kilos), "Toneladas": toneladas(g.kilos),
           "Apartado (m)": Math.round(g.apartado * 100) / 100, "Libre para vender (m)": Math.round(g.libre * 100) / 100,
           "Apartado para": g.cotizaciones.join(", "),
         })) },
@@ -209,7 +233,8 @@ export function ReporteInventarioPorTipo() {
           "Color": colorDe(r) ? nombreColor(colorDe(r)) : "", "RAL": r.ral || "", "Referencia": r.referencia,
           "Ancho (cm)": r.ancho ?? "",
           ...(conDescripcion ? { "Descripción": r.descripcion } : {}),
-          "Metros disponibles": r.metros_disponibles, "Kilos hoy": r.kilos_actuales ?? "", "Kilos al llegar": r.kilos ?? "",
+          "Metros disponibles": r.metros_disponibles, "Kilos hoy": r.kilos_actuales ?? "", "Toneladas hoy": toneladas(r.kilos_actuales),
+          "Kilos al llegar": r.kilos ?? "", "Toneladas al llegar": toneladas(r.kilos),
           "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado, "Apartado": apartadoDelRollo(r) || "Libre",
           "Importación": nombreImportacion(r.importacion),
         })) },
