@@ -167,6 +167,19 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
 
   const [apartadosPorEnviarCount, setApartadosPorEnviarCount] = useState(0);
 
+  // Cotizaciones que esperan la decisión de Admin Inventario: les falta
+  // material y hay de una importación que solo se vende en rollo completo.
+  const [alertasImportacion, setAlertasImportacion] = useState(0);
+  const refrescarAlertasImportacion = useCallback(async () => {
+    if (sesion?.rol !== "admin_inventario") return setAlertasImportacion(0);
+    try {
+      const datos = await api.get<unknown[]>("/importaciones-controladas/alertas/pendientes") || [];
+      setAlertasImportacion(datos.length);
+    } catch {
+      /* Sin conexión un momento: se conserva lo que había. */
+    }
+  }, [sesion?.rol]);
+
   // Cotizaciones de la bodega a las que les falta material que nadie ha mandado:
   // la encargada tiene que pedirlo (alerta en el menú, desde cualquier pantalla).
   const [pedirMaterial, setPedirMaterial] = useState<CotizacionPorPedir[]>([]);
@@ -203,13 +216,16 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     refrescarTrasladosRollos();
     refrescarProductosSinCodigo();
     refrescarPedirMaterial();
+    refrescarAlertasImportacion();
     if (sesion?.correo) cargarUnidadesFamilia();
   }, [cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes, refrescarProduccionPendiente, refrescarApartadosPorEnviar,
-    refrescarTrasladosPendientes, refrescarTrasladosRollos, refrescarProductosSinCodigo, refrescarPedirMaterial, cargarUnidadesFamilia, sesion?.correo]);
+    refrescarTrasladosPendientes, refrescarTrasladosRollos, refrescarProductosSinCodigo, refrescarPedirMaterial, refrescarAlertasImportacion,
+    cargarUnidadesFamilia, sesion?.correo]);
 
   useActualizacionAutomatica(
     () => Promise.all([refrescarSolicitudesPendientes(), refrescarEnviosPendientes(), refrescarProduccionPendiente(), refrescarApartadosPorEnviar(),
-      refrescarTrasladosPendientes(), refrescarTrasladosRollos(), refrescarProductosSinCodigo(), refrescarPedirMaterial()]),
+      refrescarTrasladosPendientes(), refrescarTrasladosRollos(), refrescarProductosSinCodigo(), refrescarPedirMaterial(),
+      refrescarAlertasImportacion()]),
     { activa: Boolean(sesion?.correo) },
   );
 
@@ -221,6 +237,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
     produccionPendienteCount, refrescarProduccionPendiente,
     apartadosPorEnviarCount, refrescarApartadosPorEnviar,
     pedirMaterial, refrescarPedirMaterial,
+    alertasImportacion, refrescarAlertasImportacion,
     unidadesFamilia, unidadPorFamilia, decimalesPorFamilia, cargarUnidadesFamilia, guardarUnidadFamilia,
     mostrarFormularioBodega, setMostrarFormularioBodega, nombreBodegaNueva, setNombreBodegaNueva,
     guardandoBodega, errorBodega, crearBodega,

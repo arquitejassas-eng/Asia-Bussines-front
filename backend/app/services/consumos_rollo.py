@@ -69,6 +69,9 @@ def registrar_consumo_rollo(
     if round(cantidad, 2) > disponibles + TOLERANCIA_METROS:
         raise HTTPException(status_code=400, detail=f"Ese rollo solo tiene {disponibles:g} m disponibles.")
     cantidad = round(min(cantidad, rollo.metros_disponibles), 2)
+    # Importación que solo se vende en rollo completo: no se le sacan metros.
+    from app.services.importaciones_controladas import exigir_rollo_no_controlado
+    exigir_rollo_no_controlado(db, rollo)
     validar_reserva_rollos(
         db, bodega_id=rollo.bodega_id, codigo_interno=rollo.codigo_interno,
         metros_salen=cantidad, rollos_codigo=rollos_codigo, empresa=rollo.empresa or "",

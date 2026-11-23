@@ -44,6 +44,9 @@ class RolloResponse(ModeloConFechasUtc):
     merma_metros: float | None = None
     sobrante_metros: float | None = None
     fecha_merma: datetime | None = None
+    # Rollo completo que salió vendido en una cotización: "3995 · CLIENTE".
+    # Se muestra "Vendido" en vez de "Agotado".
+    vendido_en: str | None = None
     # Sin historial_consumos: ninguna pantalla lo usaba y viajaba completo con
     # cada rollo en cada actualización automática (crece con cada consumo).
     # La hoja de vida del rollo usa GET /rollos/{id}/historial.

@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import datetime, timezone
 
@@ -26,11 +27,12 @@ from app.schemas.apartados import (
 from app.schemas.inventario import ProductoResponse
 from app.services import apartados as srv
 from app.services import siigo, siigo_cotizacion
-from app.services import importar_cotizaciones
+from app.services import importaciones_controladas, importar_cotizaciones
 from app.services.salida_apartado import registrar_salida
 from app.services.seccionados import LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO
 
 router = APIRouter(prefix="/apartados", tags=["Apartados"])
+logger = logging.getLogger(__name__)
 
 
 def _con_faltantes(db: Session, apartados: list[Apartado]) -> list[Apartado]:
@@ -474,7 +476,22 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
         selectinload(Apartado.items).selectinload(ApartadoItem.rollo),
         selectinload(Apartado.items).selectinload(ApartadoItem.producto),
     ).filter(Apartado.id.in_(ids)).populate_existing()}
+    _revisar_importaciones(db, {por_id[i].numero_cotizacion for i in ids})
     return _con_faltantes(db, [por_id[i] for i in ids])[0]
+
+
+def _revisar_importaciones(db: Session, numeros: set[str]) -> None:
+    """Después de guardar: ¿a alguna línea le falta material en su bodega y
+    hay de una importación controlada? Crea o cierra la alerta para Admin
+    Inventario. Si esto falla la cotización ya quedó guardada (Planta igual
+    no puede cortar esos rollos: ver exigir_rollo_no_controlado)."""
+    try:
+        for numero in numeros:
+            importaciones_controladas.evaluar_cotizacion(db, numero)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.exception("No se pudieron revisar las importaciones controladas de %s", numeros)
 
 
 def _subir_recien_creada_a_siigo(db: Session, creados: list[Apartado], usuario: Usuario) -> None:
@@ -705,6 +722,13 @@ def _editar_traslado_completo(db: Session, original: Apartado, datos: ApartadoEd
 def editar_apartado(
     apartado_id: int, datos: ApartadoEditar, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> Apartado:
+    resultado = _editar_apartado(apartado_id, datos, db, usuario)
+    numero = resultado.get("numero_cotizacion") if isinstance(resultado, dict) else getattr(resultado, "numero_cotizacion", "")
+    _revisar_importaciones(db, {numero} if numero else set())
+    return resultado
+
+
+def _editar_apartado(apartado_id: int, datos: ApartadoEditar, db: Session, usuario: Usuario) -> Apartado:
     """El vendedor (las suyas) o Admin Inventario (cualquiera, y sus órdenes internas) corrige una cotización activa (ver srv.editar_apartado).
     Las líneas que salen de OTRA bodega se pasan a la misma cotización en esa
     bodega: se le suman si ya existe ahí, o se crea. Todo junto o nada."""

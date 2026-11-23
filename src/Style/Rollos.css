@@ -256,6 +256,11 @@
   color: var(--at-red, #C23B2C);
 }
 
+.rollos-estado-badge.estado-vendido {
+  background: rgba(27, 122, 58, 0.12);
+  color: #1b7a3a;
+}
+
 .rollos-boton-consumo {
   padding: 0.4rem 0.8rem;
   border: none;

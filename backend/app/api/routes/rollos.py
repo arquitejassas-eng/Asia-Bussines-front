@@ -102,6 +102,28 @@ def asignar_peso_actual(db: Session, rollos: list[Rollo]) -> None:
     espesores = {e.espesor: e for e in db.query(TablaEspesorEquivalencia).all()}
     for rollo in rollos:
         rollo.peso_actual_toneladas = srv_excel.peso_actual_del_rollo(rollo, espesores)
+    asignar_vendido_en(db, rollos)
+
+
+def asignar_vendido_en(db: Session, rollos: list[Rollo]) -> None:
+    """Rollos agotados que salieron completos en una cotización (rollo
+    completo con salida): se muestran como "Vendido", con la cotización."""
+    from app.models.apartado import Apartado, ApartadoItem
+    ids = [r.id for r in rollos if r.estado == EstadoRollo.AGOTADO]
+    if not ids:
+        return
+    filas = (
+        db.query(ApartadoItem.rollo_id, Apartado.numero_cotizacion, Apartado.cliente)
+        .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
+        .filter(ApartadoItem.rollo_id.in_(ids), ApartadoItem.metros_consumidos > 0)
+        .order_by(Apartado.id.desc())
+        .all()
+    )
+    vendido: dict[int, str] = {}
+    for rollo_id, numero, cliente in filas:
+        vendido.setdefault(rollo_id, f"{numero} · {cliente}".strip(" ·") if cliente else numero)
+    for rollo in rollos:
+        rollo.vendido_en = vendido.get(rollo.id)
 
 
 @router.get("/{rollo_id}/historial", response_model=list[MovimientoResponse])

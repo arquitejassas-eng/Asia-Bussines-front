@@ -252,6 +252,28 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
     setMostrarFormularioApartado(true);
   }
 
+  /** Alerta de importación controlada: abre una cotización nueva de la
+   *  empresa dueña del rollo para la otra empresa, con el rollo completo ya
+   *  escogido. Al darle salida el rollo pasa a la compradora (ver
+   *  venta_entre_empresas) y la alerta se cierra sola. */
+  function abrirVentaRolloCompleto(venta: {
+    rollo_id: number; referencia: string; codigo: string; metros: number; bodega_id: number;
+    empresa_vende: string; empresa_compra: string; numero_cotizacion: string;
+  }) {
+    abrirFormularioApartado(false);
+    const bodegaId = String(venta.bodega_id);
+    const cliente = venta.empresa_compra === "ABG" ? "ASIA BUSINESS GROUP S.A.S." : venta.empresa_compra === "AR" ? "ARQUITEJAS S.A.S." : "";
+    setFormulario((actual) => ({
+      ...actual, empresa: venta.empresa_vende, bodegaId, cliente,
+      observaciones: `Venta del rollo completo ${venta.referencia} (importación que solo se vende completa) para la cotización ${venta.numero_cotizacion}.`,
+      items: [{
+        ...ITEM_VACIO, modalidad: "rollo_completo", bodegaId, rolloId: venta.rollo_id, rolloResumen: venta.referencia,
+        codigoInterno: venta.codigo, medida: String(venta.metros), cantidad: "1", descripcion: `ROLLO COMPLETO ${venta.referencia}`,
+      }],
+    }));
+    ponerSiguienteNumero(venta.empresa_vende);
+  }
+
   /** Abre el mismo formulario con los datos de la cotización para corregirla.
    *  Con varias partes (la misma cotización en varias bodegas) se abre
    *  completa: cada línea con su bodega, y al guardar se reparte sola. */
@@ -948,7 +970,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
     filtroEstado, setFiltroEstado,
 
     formulario, mostrarFormularioApartado, abrirFormularioApartado, cerrarFormularioApartado,
-    editandoId, abrirEdicionApartado, parteEditada, otrasPartesIds,
+    editandoId, abrirEdicionApartado, abrirVentaRolloCompleto, parteEditada, otrasPartesIds,
     actualizarCampoApartado, actualizarCampoSiigo, cambiarBodegaItem, cambiarEmpresaItem, marcarMaterialEnCamino, agregarItemApartado, quitarItemApartado, actualizarItemApartado,
     cambiarModalidadItem, rollosParaApartar, cargarRollosParaApartar, seleccionarRolloCompleto,
     guardandoApartado, errorFormularioApartado, crearApartado,

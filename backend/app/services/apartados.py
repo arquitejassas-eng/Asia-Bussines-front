@@ -2132,6 +2132,9 @@ def enviar_a_produccion(db: Session, apartado_id: int, usuario: Usuario) -> Apar
     apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
     if apartado.estado != EstadoApartado.APARTADO:
         raise HTTPException(status_code=400, detail="Este apartado ya fue enviado a producción o no está activo.")
+    # Le falta material y solo hay de una importación controlada: decide Admin Inventario.
+    from app.services.importaciones_controladas import exigir_sin_alerta_pendiente
+    exigir_sin_alerta_pendiente(db, apartado)
     if apartado.salida_pendiente and not _solo_rollos_completos(apartado.items):
         raise HTTPException(status_code=400, detail="Esta cotización no tiene nada que producir: se le da salida desde Apartados.")
     # Un rollo completo también pasa por Planta (alistan el rollo); las

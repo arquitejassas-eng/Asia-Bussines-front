@@ -11,6 +11,7 @@ import "../Style/Rollos.css";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { EMPRESAS, AMBAS_EMPRESAS, nombreMaterial } from "../Utils/empresas";
 import PanelImportarCotizaciones from "../Componentes/PanelImportarCotizaciones";
+import PanelAlertasImportacion from "../Componentes/PanelAlertasImportacion";
 import PanelRegistrarSalida from "../Componentes/PanelRegistrarSalida";
 import PanelSepararCotizacion from "../Componentes/PanelSepararCotizacion";
 import PanelUnirCotizacion from "../Componentes/PanelUnirCotizacion";
@@ -352,6 +353,20 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
   const notificaciones = contarNotificacionesBarraLateral(almacen, sesion);
   const [mensajeInformativo, setMensajeInformativo] = useState("");
+  // Cotizaciones que esperan la decisión de Admin Inventario: les falta
+  // material y hay de una importación que solo se vende en rollo completo.
+  const [esperandoDecision, setEsperandoDecision] = useState<Map<number, string>>(new Map());
+  const cargarEsperandoDecision = useCallback(async () => {
+    try {
+      const datos = await api.get<{ apartado_id: number; codigo: string; metros_faltantes: number; importaciones: string }[]>(
+        "/importaciones-controladas/alertas/pendientes") || [];
+      setEsperandoDecision(new Map(datos.map((d) => [d.apartado_id,
+        `Faltan ${d.metros_faltantes.toLocaleString("es-CO")} m de ${d.codigo} en esta bodega y hay de la ${d.importaciones} (solo se vende en rollo completo). Hasta que Admin Inventario decida no se puede producir.`])));
+    } catch {
+      /* Sin conexión un momento: se conserva lo que había. */
+    }
+  }, []);
+  useEffect(() => { cargarEsperandoDecision(); }, [cargarEsperandoDecision, a.apartados]);
   // Acciones que cambian el estado de un apartado piden confirmación: antes
   // un clic accidental lo enviaba a producción o cerraba la producción.
   // Carga desde Excel y salida con hoja de vida (solo Admin Inventario).
@@ -830,6 +845,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         </button>
       )}
       <div className="apartado-chips">
+        {esperandoDecision.has(ap.id) && (
+          <span className="apartado-chip" style={{ color: "#b3261e", fontWeight: 700 }} title={esperandoDecision.get(ap.id)}>
+            ⚠ Esperando autorización de Admin Inventario
+          </span>
+        )}
         {itemsRollo.length > 0 && (
           <span className={`apartado-chip ${rolloPendientes ? "" : "apartado-chip-ok"}`}>
             Rollo {itemsRollo.length - rolloPendientes}/{itemsRollo.length}{rolloPendientes ? "" : " ✓"}
@@ -1730,6 +1750,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
           {mostrarImportar && (
             <PanelImportarCotizaciones alTerminar={a.cargarApartados} alCerrar={() => setMostrarImportar(false)} />
+          )}
+
+          {esAdminInventario && !a.mostrarFormularioApartado && (
+            <PanelAlertasImportacion
+              alAbrirVenta={(venta) => { a.abrirVentaRolloCompleto(venta); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+              alCambiar={() => { a.cargarApartados(); cargarEsperandoDecision(); }}
+            />
           )}
 
           {!a.mostrarFormularioApartado && (

@@ -25,6 +25,8 @@ from app.services.empresas import EMPRESAS_CONOCIDAS
 from app.services.productos import nuevo_producto_en_bodega
 
 MOTIVO_COMPRA_OTRA_EMPRESA = "compra_otra_empresa"
+# Cliente de la cotización (solo letras, sin "SAS") que es una de las dos empresas.
+NOMBRES_EMPRESAS = {"ARQUITEJAS": "AR", "ASIABUSINESS": "ABG", "ASIABUSINESSGROUP": "ABG"}
 
 
 def empresa_compradora(apartado: Apartado) -> str:
@@ -35,11 +37,10 @@ def empresa_compradora(apartado: Apartado) -> str:
     if apartado.orden_interna:
         return ""
     nombre = re.sub(r"[^A-Z]", "", unicodedata.normalize("NFD", apartado.cliente or "").upper())
-    if nombre.startswith("ARQUITEJAS"):
-        return "AR"
-    if nombre.startswith("ASIABUSINESS"):
-        return "ABG"
-    return ""
+    # Nombre EXACTO (solo letras, con o sin S.A.S.): "ARQUITEJAS BUCARAMANGA
+    # S.A.S" es otra empresa, un cliente normal (cotización 3995: sus rollos
+    # quedaron como de Arquitejas en Santander cuando ya habían salido).
+    return NOMBRES_EMPRESAS.get(nombre.removesuffix("SAS"), "")
 
 
 def _vende_a_la_otra(apartado: Apartado, empresa_material: str | None) -> str:

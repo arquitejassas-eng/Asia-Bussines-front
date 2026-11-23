@@ -2,7 +2,7 @@ import { useContext, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ApartadosPorEnviarContexto } from "./AvisosApartados";
 import { TrasladosRollosContexto } from "./AvisosTrasladosRollos";
-import { ProductosSinCodigoContexto } from "./AvisosProductosSinCodigo";
+import { AlertasImportacionContexto, ProductosSinCodigoContexto } from "./AvisosProductosSinCodigo";
 import { PedirMaterialContexto } from "./AvisosPedirMaterial";
 import "../Style/Barralateral.css";
 
@@ -34,6 +34,7 @@ export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 
   const apartadosPorEnviar = useContext(ApartadosPorEnviarContexto);
   const trasladosRollos = useContext(TrasladosRollosContexto);
   const productosSinCodigo = useContext(ProductosSinCodigoContexto);
+  const alertasImportacion = useContext(AlertasImportacionContexto);
   const pedirMaterial = useContext(PedirMaterialContexto);
   const [verPedir, setVerPedir] = useState(false);
   // Solo la encargada de la bodega: cotizaciones a las que les falta material que nadie ha mandado.
@@ -54,6 +55,11 @@ export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 
               {modulo.notificable && notificaciones > 0 && <span className="barra-notificacion">{notificaciones}</span>}
               {modulo.clave === "apartados" && sesion?.rol === "administrativo" && apartadosPorEnviar > 0 && (
                 <span className="barra-notificacion" title="Cotizaciones aprobadas por enviar a producción">{apartadosPorEnviar}</span>
+              )}
+              {modulo.clave === "apartados" && sesion?.rol === "admin_inventario" && alertasImportacion > 0 && (
+                <span className="barra-notificacion barra-notificacion-aviso" title="Cotizaciones esperando tu decisión: necesitan material de una importación que solo se vende en rollo completo">
+                  ⚠ {alertasImportacion}
+                </span>
               )}
               {modulo.clave === "admin_inventario" && sesion?.rol === "admin_inventario" && trasladosRollos > 0 && (
                 <span className="barra-notificacion" title="Rollos pedidos entre bodegas que todavía no llegan">{trasladosRollos}</span>

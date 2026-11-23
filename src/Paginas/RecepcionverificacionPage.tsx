@@ -6,6 +6,7 @@ import { useControladorRecepcion } from "../Componentes/Recepcionverificacion";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import PanelAdminEquivalencias from "../Componentes/PanelAdminEquivalencias";
 import PanelMaterialEnCamino from "../Componentes/PanelMaterialEnCamino";
+import PanelImportacionesControladas from "../Componentes/PanelImportacionesControladas";
 import { api, ErrorApi } from "../Componentes/Api";
 import { nombreEmpresa } from "../Utils/empresas";
 import "../Style/Recepcionverificacion.css";
@@ -506,6 +507,8 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
             {avisoEnCamino && <p className="recepcion-exito">{avisoEnCamino}</p>}
 
             <PanelMaterialEnCamino puedeGestionar={esAdminInventario} recargar={recargarEnCamino} />
+
+            {esAdminInventario && <PanelImportacionesControladas />}
 
             {c.historialRecepciones.length > 0 && (
               <section className="recepcion-tarjeta">

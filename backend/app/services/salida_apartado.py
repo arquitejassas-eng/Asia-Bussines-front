@@ -85,6 +85,9 @@ def registrar_salida(db: Session, apartado_id: int, datos: RegistrarSalidaReques
             )
         if not item.rollo_id:
             exigir_rollo_libre(db, rollo)
+            # Por corte: un rollo de importación controlada no se corta.
+            from app.services.importaciones_controladas import exigir_rollo_no_controlado
+            exigir_rollo_no_controlado(db, rollo)
         if rollo.codigo_interno != item.codigo_interno:
             raise HTTPException(
                 status_code=400,

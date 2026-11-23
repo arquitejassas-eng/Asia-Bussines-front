@@ -8,7 +8,7 @@ import ErrorDePantalla from "./Componentes/ErrorDePantalla";
 import { ApartadosPorEnviarContexto } from "./Componentes/AvisosApartados";
 import { PedirMaterialContexto } from "./Componentes/AvisosPedirMaterial";
 import { TrasladosRollosContexto } from "./Componentes/AvisosTrasladosRollos";
-import { ProductosSinCodigoContexto } from "./Componentes/AvisosProductosSinCodigo";
+import { AlertasImportacionContexto, ProductosSinCodigoContexto } from "./Componentes/AvisosProductosSinCodigo";
 
 // Cada módulo se descarga solo al abrir su ruta. Al crecer la aplicación, una
 // pantalla nueva no penaliza el primer acceso de los demás usuarios.
@@ -121,6 +121,7 @@ export default function App() {
     <PedirMaterialContexto.Provider value={almacen.pedirMaterial}>
     <TrasladosRollosContexto.Provider value={almacen.trasladosRollos.length}>
     <ProductosSinCodigoContexto.Provider value={almacen.productosSinCodigo.length}>
+    <AlertasImportacionContexto.Provider value={almacen.alertasImportacion}>
     <ErrorDePantalla key={pathname}>
     <Suspense fallback={<main aria-live="polite">Cargando módulo...</main>}>
       <Routes>
@@ -194,6 +195,7 @@ export default function App() {
       </Routes>
     </Suspense>
     </ErrorDePantalla>
+    </AlertasImportacionContexto.Provider>
     </ProductosSinCodigoContexto.Provider>
     </TrasladosRollosContexto.Provider>
     </PedirMaterialContexto.Provider>

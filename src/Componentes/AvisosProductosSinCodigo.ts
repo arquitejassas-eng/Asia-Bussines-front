@@ -41,3 +41,5 @@ function origenDesdeApi(valor: unknown): ProductoSinCodigo["origen"] {
 /** Cuántos productos esperan código: badge de "Inventario total" para Admin
  * Inventario. Lo llena App.tsx desde useAlmacenGlobal. */
 export const ProductosSinCodigoContexto = createContext(0);
+// Cotizaciones esperando la decisión de Admin Inventario (importación que solo se vende en rollo completo).
+export const AlertasImportacionContexto = createContext(0);

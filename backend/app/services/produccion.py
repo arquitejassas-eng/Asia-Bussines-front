@@ -52,6 +52,9 @@ def _apartado_item_para_produccion(db: Session, apartado_item_id: int, usuario: 
         raise HTTPException(status_code=404, detail="Solicitud de producción no encontrada.")
     if item.apartado.estado not in (EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION):
         raise HTTPException(status_code=400, detail="Ese apartado no está disponible para registrar producción.")
+    # Le falta material y solo hay de una importación controlada: decide Admin Inventario.
+    from app.services.importaciones_controladas import exigir_sin_alerta_pendiente
+    exigir_sin_alerta_pendiente(db, item.apartado)
     # Si esta cotización también tiene ítems de stock, no se deja avanzar la
     # producción del rollo hasta que alguien confirme (PATCH
     # /apartados/{id}/confirmar-separacion-stock) que ya se separó -- esta es
@@ -375,6 +378,11 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         if rollo.estado == "agotado" or item.metros > rollo.metros_disponibles:
             raise HTTPException(status_code=400, detail=f"El rollo {rollo.identificador_rollo} no tiene metros suficientes.")
         exigir_rollo_libre(db, rollo)
+    # Importación con costo diferente: sus rollos solo se venden completos.
+    from app.services.importaciones_controladas import claves_activas, exigir_rollo_no_controlado
+    claves = claves_activas(db)
+    for rollo in bloqueados:
+        exigir_rollo_no_controlado(db, rollo, claves)
 
     # Stock adicional: de qué rollo salió cada línea. Con un solo rollo es
     # ese; con varios lo escoge Planta. Solo se revisa que de ese rollo sí se

@@ -15,7 +15,7 @@ type Rollo = ReturnType<typeof rolloDesdeApi>;
 type Bodega = { id: number; nombre: string };
 
 const POR_PAGINA = 25;
-const ESTADOS: [string, string][] = [["", "En bodega (cerrados y abiertos)"], ["cerrado", "Cerrados"], ["abierto", "Abiertos"], ["agotado", "Agotados"]];
+const ESTADOS: [string, string][] = [["", "En bodega (cerrados y abiertos)"], ["cerrado", "Cerrados"], ["abierto", "Abiertos"], ["agotado", "Agotados y vendidos"]];
 
 function normalizar(texto: unknown) {
   return String(texto ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -145,9 +145,15 @@ export default function PanelBuscarRollos({ bodegas, empresa, setEmpresa, conHis
                         <td data-etiqueta="Kilos">{kilos != null ? `${kilos.toLocaleString("es-CO")} kg` : "—"}</td>
                         <td data-etiqueta="Metros disponibles">{r.metrosDisponibles}</td>
                         <td data-etiqueta="Estado">
-                          <span className={`rollos-estado-badge estado-${r.estado}`}>
-                            {(ESTADOS_ROLLO as Record<string, string>)[r.estado] || r.estado}
-                          </span>
+                          {r.vendidoEn ? (
+                            <span className="rollos-estado-badge estado-vendido" title={`Salió vendido completo en la cotización ${r.vendidoEn}`}>
+                              Vendido · {r.vendidoEn.split(" · ")[0]}
+                            </span>
+                          ) : (
+                            <span className={`rollos-estado-badge estado-${r.estado}`}>
+                              {(ESTADOS_ROLLO as Record<string, string>)[r.estado] || r.estado}
+                            </span>
+                          )}
                           {conHistorial && (
                             <button type="button" className="rollos-boton-secundario buscar-rollos-historial" onClick={() => h.abrirHistorial(r)}>
                               Ver historial
