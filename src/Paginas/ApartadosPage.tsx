@@ -1158,22 +1158,31 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           <div className="pagina-cabecera">
             <div className="pagina-cabecera-texto">
               <h1 className="inventario-titulo">Apartados</h1>
-              <p className="inventario-carga-ayuda">
-                {a.puedeCrearApartados
-                  ? <>Cuando se aprueba una cotización, créala aquí y elige de qué bodega sale el material.
-                    Cada línea puede ser material por rollo (código de clasificación, color y calibre) o un
-                    producto de stock (Tornillos, Amarres, etc.). El material queda reservado en esa bodega y a
-                    su encargada lo envía a producción desde la lista cuando quiera.
+              {/* Corto y por rol: una frase y, si aplica, qué hace cada botón. */}
+              {a.puedeCrearApartados ? (
+                <div className="pagina-ayuda">
+                  <p>
                     {esAdminInventario
-                      ? <> Aquí ves todas las cotizaciones (también las de los vendedores). Para producir stock (tejas, caballetes,
-                        flanches o lámina lisa) crea una orden de producción interna.</>
-                      : <> Aquí ves solo las cotizaciones que tú creaste.</>}</>
-                  : a.puedeEnviarAProduccion
-                    ? <>Aquí llegan las cotizaciones aprobadas (de los vendedores o de Admin Inventario) con el material ya reservado en tu
-                      bodega. Envíalas a producción desde la lista con el botón "Enviar a producción". Para mandar productos o rollos a
-                      San Gil (que no lleva inventario en el sistema) usa "+ Traslado a San Gil".</>
-                    : <>Cotizaciones aprobadas con su material reservado.</>}
-              </p>
+                      ? "Todas las cotizaciones aprobadas, también las de los vendedores."
+                      : "Tus cotizaciones aprobadas. Solo ves las que tú creaste."}
+                  </p>
+                  <ul>
+                    <li><strong>Nuevo apartado:</strong> reserva el material (rollos o stock) en la bodega que escojas; la bodega lo envía a producción.</li>
+                    {esAdminInventario && <li><strong>Orden interna:</strong> producir stock (tejas, caballetes, flanches o lámina lisa).</li>}
+                    {a.puedeCrearTraslado && <li><strong>Traslado a San Gil:</strong> mandar productos o rollos a San Gil.</li>}
+                  </ul>
+                </div>
+              ) : a.puedeEnviarAProduccion ? (
+                <div className="pagina-ayuda">
+                  <p>Cotizaciones aprobadas con material reservado en tu bodega.</p>
+                  <ul>
+                    <li><strong>Enviar a producción:</strong> desde cada cotización de la lista.</li>
+                    {a.puedeCrearTraslado && <li><strong>Traslado a San Gil:</strong> mandar productos o rollos a San Gil.</li>}
+                  </ul>
+                </div>
+              ) : (
+                <p className="inventario-carga-ayuda">Cotizaciones aprobadas con su material reservado.</p>
+              )}
             </div>
             {(a.puedeCrearApartados || a.puedeCrearOrdenInterna || a.puedeCrearTraslado) && !a.mostrarFormularioApartado && !mostrarImportar && (
               <div className="pagina-acciones">

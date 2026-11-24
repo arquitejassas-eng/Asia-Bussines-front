@@ -100,9 +100,9 @@ export default function PanelMaterialEnCamino({ puedeGestionar, recargar }: { pu
     <section className="recepcion-tarjeta">
       <h3>Material en camino</h3>
       <p className="recepcion-texto-ayuda">
-        Checklists de material comprado que todavía no llega. Es de la empresa: cualquier bodega puede apartar
-        de aquí. {puedeGestionar
-          ? "Cuando llegue una mula, dale ingreso a sus rollos arriba en Recepción y márcalos aquí como llegados."
+        Material comprado que todavía no llega; cualquier bodega puede apartar de aquí.{" "}
+        {puedeGestionar
+          ? "Abre el checklist, marca los rollos que llegaron y envíalos a cada bodega."
           : "Admin Inventario marca los rollos a medida que llegan."}
       </p>
       {puedeGestionar && (

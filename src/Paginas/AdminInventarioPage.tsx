@@ -150,16 +150,18 @@ function AdminInventarioPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesi
           <div className="pagina-cabecera">
             <div className="pagina-cabecera-texto">
               <h1 className="inventario-titulo">Inventario total</h1>
-              <p className="inventario-carga-ayuda">
-                {c.soloLectura ? (
-                  "Consulta el inventario real de productos y rollos en cada sede."
-                ) : (
-                  <>
-                    Consulta el inventario real de cada sede y reparte el material que recibiste entre ellas.
-                    Al enviar, la sede destino recibe una notificación para confirmar si ya llegó.
-                  </>
-                )}
-              </p>
+              {c.soloLectura ? (
+                <p className="inventario-carga-ayuda">Rollos y productos que hay en cada sede.</p>
+              ) : (
+                <div className="pagina-ayuda">
+                  <p>Rollos y productos que hay en cada sede, y lo que tienes por repartir.</p>
+                  <ul>
+                    <li><strong>Nuevo envío:</strong> mandar material por repartir a una sede; ella confirma cuando le llega.</li>
+                    <li><strong>Buscador de rollos:</strong> ver su hoja de vida, pedirlo a otra sede, corregirlo o darle salida externa.</li>
+                    <li><strong>Unidades por familia:</strong> cómo se cuenta cada familia de productos.</li>
+                  </ul>
+                </div>
+              )}
             </div>
             {!c.soloLectura && !c.mostrarFormularioEnvio && (
               <div className="pagina-acciones">

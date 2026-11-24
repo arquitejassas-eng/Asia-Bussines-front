@@ -164,3 +164,15 @@ textarea:focus-visible {
   font-weight: 700;
   font-size: 0.85em;
 }
+
+/* Ayuda corta bajo el título de una página: una frase y qué hace cada botón. */
+.pagina-ayuda {
+  max-width: 62ch;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--at-muted, #7C6A56);
+}
+.pagina-ayuda p { margin: 0 0 0.35rem; }
+.pagina-ayuda ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.15rem; }
+.pagina-ayuda strong { color: var(--at-text-2, #4A392C); font-weight: 600; }
+.rollos-ayuda, .merma-ayuda { margin: 0 0 1.25rem; }

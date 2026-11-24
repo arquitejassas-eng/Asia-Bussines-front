@@ -5,7 +5,8 @@ import { EMPRESAS } from "../Utils/empresas";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { exportarHojasAExcel, type HojaExcel } from "../Utils/exportarExcel";
 import ModalDevolverRolloPrestado from "../Componentes/ModalDevolverRolloPrestado";
-import CuadreRollosPrestados, { ESTADO as ESTADO_CUADRE, type FilaCuadre } from "../Componentes/CuadreRollosPrestados";
+import CuadreRollosPrestados, { CUADRE_PENDIENTE, ESTADO as ESTADO_CUADRE, type FilaCuadre } from "../Componentes/CuadreRollosPrestados";
+import Paginacion from "../Componentes/Paginacion";
 import "../Style/Inventario.css";
 import "../Style/Merma.css";
 import "../Style/Rollos.css";
@@ -45,6 +46,7 @@ const ORIGEN: Record<string, string> = {
   prestamo_a_tercero: "Prestado a empresa externa", devuelto_por_tercero: "Prestado a empresa externa (devuelto)",
 };
 const EXTERNA = "EXT";
+const POR_PAGINA = 15;
 const nombre = (sigla: string) => EMPRESAS[sigla] || sigla || "Sin empresa";
 // Un tercero (empresa de afuera) va por su nombre, preste o reciba.
 const quienPresta = (p: Prestamo) => (p.empresa_presta === EXTERNA && p.prestador ? p.prestador : nombre(p.empresa_presta));
@@ -258,7 +260,26 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     .filter((p) => !externa || p.prestador === externa);
   const resumenVisible = externa ? reporte.resumen.filter((d) => d.presta === externa || d.debe === externa) : reporte.resumen;
   const sinSaldar = prestamosVisibles.filter((p) => !p.saldado);
-  const todosElegidos = sinSaldar.length > 0 && sinSaldar.every((p) => seleccion.has(p.id));
+
+  // Una sección a la vez (antes todo iba en una sola página larguísima) y
+  // tablas por páginas de POR_PAGINA filas.
+  const [seccion, setSeccion] = useState<"resumen" | "prestamos" | "cuadre" | "sacado">("resumen");
+  const [paginaPrestamos, setPaginaPrestamos] = useState(1);
+  const [paginaSacado, setPaginaSacado] = useState(1);
+  const hayFiltros = Boolean(empresa || externa || bodegaId || desde || hasta);
+  useEffect(() => { setPaginaPrestamos(1); setPaginaSacado(1); }, [empresa, externa, bodegaId, desde, hasta, vista]);
+  const totalPaginasPrestamos = Math.max(1, Math.ceil(prestamosVisibles.length / POR_PAGINA));
+  const paginaPrestamosValida = Math.min(paginaPrestamos, totalPaginasPrestamos);
+  const prestamosPagina = prestamosVisibles.slice((paginaPrestamosValida - 1) * POR_PAGINA, paginaPrestamosValida * POR_PAGINA);
+  const sinSaldarPagina = prestamosPagina.filter((p) => !p.saldado);
+  const todosElegidos = sinSaldarPagina.length > 0 && sinSaldarPagina.every((p) => seleccion.has(p.id));
+  const totalPaginasSacado = Math.max(1, Math.ceil(reporte.sacado_sin_existencia.length / POR_PAGINA));
+  const sacadoPagina = reporte.sacado_sin_existencia.slice((Math.min(paginaSacado, totalPaginasSacado) - 1) * POR_PAGINA, Math.min(paginaSacado, totalPaginasSacado) * POR_PAGINA);
+  const cuadreDeLaVista = cuadre.filter((f) => CUADRE_PENDIENTE.has(f.estado) === (vista === "pendientes") && (!externa || f.prestador === externa));
+  const secciones: ["resumen" | "prestamos" | "cuadre" | "sacado", string, number][] = vista === "pendientes"
+    ? [["resumen", "Lo que se deben", resumenVisible.length + externosDeben.length], ["prestamos", "Cada préstamo", prestamosVisibles.length],
+      ["cuadre", "Rollos prestados afuera", cuadreDeLaVista.length], ["sacado", "Sacado sin existencia", reporte.sacado_sin_existencia.length]]
+    : [["prestamos", "Préstamos saldados", prestamosVisibles.length], ["cuadre", "Rollos prestados afuera", cuadreDeLaVista.length]];
 
   // Con los mismos filtros, una hoja por sección. Siempre lleva el historial
   // completo de los saldados (no solo lo de la pestaña que se está viendo).
@@ -345,30 +366,34 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
 
       <div className="layout-contenido">
         <div className="inventario-page">
-          <h1 className="inventario-titulo">Préstamos entre empresas</h1>
-          <p className="inventario-carga-ayuda">
-            Cuando una línea de una cotización dice <strong>"Material de"</strong> la otra empresa, lo que sale de esa línea
-            (al producir, al terminar la producción o al dar salida) queda anotado aquí como préstamo. Cuando las empresas
-            cuadren cuentas, marca los préstamos como saldados. Los rollos que nos prestan (otra empresa o una persona)
-            se anotan al ingresarlos a mano en Rollos almacenados; márcalos como saldados cuando se devuelvan o se paguen.
-            Lo que le prestamos a una <strong>empresa de afuera</strong> (ej. caballetes) se registra con
-            «Prestar a una empresa externa» y vuelve al stock con <strong>Devolver</strong>.
-          </p>
+          <div className="pagina-cabecera">
+            <div className="pagina-cabecera-texto">
+              <h1 className="inventario-titulo">Préstamos entre empresas</h1>
+              <div className="pagina-ayuda">
+                <p>Lo que Arquitejas y Asia Business se deben entre sí, y lo que se le presta a empresas de afuera.</p>
+                <ul>
+                  <li><strong>Entre las dos empresas:</strong> se anota solo cuando sale material «de» la otra empresa en una cotización.</li>
+                  <li><strong>Saldar:</strong> cuando las empresas cuadran cuentas, marca los préstamos y dale Saldar.</li>
+                  <li><strong>Empresa de afuera:</strong> se registra con «Prestar a empresa externa» y vuelve con Devolver.</li>
+                </ul>
+              </div>
+            </div>
+            <div className="pagina-acciones">
+              <button type="button" className={mostrarPrestar ? "boton-terciario" : "inventario-boton"}
+                onClick={() => { setMostrarPrestar((v) => !v); setErrorPrestar(""); }}>
+                {mostrarPrestar ? "Cancelar préstamo" : "+ Prestar a empresa externa"}
+              </button>
+            </div>
+          </div>
 
           {aviso && <p className="inventario-exito" role="status" onClick={() => setAviso("")}>{aviso}</p>}
-
-          <div style={{ margin: "0.75rem 0" }}>
-            <button type="button" className="inventario-boton" onClick={() => { setMostrarPrestar((v) => !v); setErrorPrestar(""); }}>
-              {mostrarPrestar ? "Cancelar préstamo" : "+ Prestar a una empresa externa"}
-            </button>
-          </div>
 
           {mostrarPrestar && (
             <form className="inventario-form" onSubmit={prestar} noValidate>
               <h2 className="inventario-form-subtitulo">Prestar a una empresa externa</h2>
               <p className="inventario-carga-ayuda">
-                Lo prestado sale de la bodega y queda abajo como «Sin saldar» hasta que lo devuelvan
-                (botón <strong>Devolver</strong>) o lo paguen (<strong>Saldar</strong>). Un rollo se presta completo.
+                Sale de la bodega y queda «Sin saldar» hasta que lo devuelvan (<strong>Devolver</strong>) o lo paguen
+                (<strong>Saldar</strong>). Los rollos se prestan completos.
               </p>
               <div className="rollo-prestado-opciones" role="radiogroup" aria-label="¿Qué prestas?" style={{ marginBottom: "0.75rem" }}>
                 {([["cotizacion", "Desde una cotización"], ["producto", "Producto (ej. caballetes)"], ["rollo", "Rollo completo"]] as const).map(([valor, texto]) => (
@@ -381,9 +406,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               </div>
               {prestarQue === "cotizacion" && (
                 <p className="inventario-carga-ayuda">
-                  Si hicieron una cotización para el préstamo, escribe su número (puede ser apenas la creaste): lo que lleva
-                  queda aquí como préstamo, con el número de la cotización. El material sale con la <strong>Salida</strong> de
-                  la cotización, como siempre; nada se descuenta dos veces.
+                  Escribe el número de la cotización del préstamo: lo que lleva queda anotado aquí. El material sale con la
+                  <strong> Salida</strong> de la cotización, como siempre (no se descuenta dos veces).
                 </p>
               )}
               <div className="inventario-form-grid">
@@ -481,162 +505,197 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             </form>
           )}
 
-          <div className="inventario-tipos" role="tablist" aria-label="Qué ver" style={{ margin: "0.75rem 0" }}>
-            {([["pendientes", "Pendientes"], ["saldados", "Saldados"]] as const).map(([valor, texto]) => (
-              <button key={valor} type="button" role="tab" aria-selected={vista === valor}
-                className={`inventario-tipo-boton ${vista === valor ? "inventario-tipo-activo" : ""}`}
-                onClick={() => { setVista(valor); setSeleccion(new Set()); }}>{texto}</button>
-            ))}
+          {/* ===== Barra: Pendientes / Saldados + filtros con etiqueta ===== */}
+          <div className="prestamos-barra">
+            <div className="prestamos-vista" role="tablist" aria-label="Qué ver">
+              {([["pendientes", "Pendientes"], ["saldados", "Saldados"]] as const).map(([valor, texto]) => (
+                <button key={valor} type="button" role="tab" aria-selected={vista === valor}
+                  className={vista === valor ? "activo" : ""}
+                  onClick={() => { setVista(valor); setSeleccion(new Set()); setSeccion(valor === "saldados" && (seccion === "resumen" || seccion === "sacado") ? "prestamos" : seccion); }}>
+                  {texto}
+                </button>
+              ))}
+            </div>
+            <div className="prestamos-filtros">
+              <label>
+                <span>Empresa</span>
+                <select value={empresa} onChange={(e) => setEmpresa(e.target.value)}>
+                  <option value="">Las dos</option>
+                  {Object.entries(EMPRESAS).map(([sigla, n]) => <option key={sigla} value={sigla}>{n}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Empresa de afuera</span>
+                <select value={externa} onChange={(e) => setExterna(e.target.value)}>
+                  <option value="">Todas</option>
+                  {empresasExternas.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Bodega</span>
+                <select value={bodegaId} onChange={(e) => setBodegaId(e.target.value)}>
+                  <option value="">Todas</option>
+                  {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Desde</span>
+                <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+              </label>
+              <label>
+                <span>Hasta</span>
+                <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+              </label>
+              <div className="prestamos-filtros-acciones">
+                {hayFiltros && (
+                  <button type="button" className="apartados-limpiar"
+                    onClick={() => { setEmpresa(""); setExterna(""); setBodegaId(""); setDesde(""); setHasta(""); }}>
+                    Limpiar filtros
+                  </button>
+                )}
+                {!cargando && (reporte.resumen.length > 0 || reporte.prestamos.length > 0 || reporte.sacado_sin_existencia.length > 0) && (
+                  <button type="button" className="boton-terciario" onClick={exportar} disabled={exportando}>
+                    {exportando ? "Preparando..." : "Exportar a Excel"}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="apartados-filtros">
-            <select className={`apartados-select ${empresa ? "apartados-select-activo" : ""}`} aria-label="Empresa"
-              value={empresa} onChange={(e) => setEmpresa(e.target.value)}>
-              <option value="">Las dos empresas</option>
-              {Object.entries(EMPRESAS).map(([sigla, n]) => <option key={sigla} value={sigla}>{n}</option>)}
-            </select>
-            <select className={`apartados-select ${externa ? "apartados-select-activo" : ""}`} aria-label="Empresa externa"
-              value={externa} onChange={(e) => setExterna(e.target.value)}>
-              <option value="">Todas las empresas externas</option>
-              {empresasExternas.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <select className={`apartados-select ${bodegaId ? "apartados-select-activo" : ""}`} aria-label="Bodega"
-              value={bodegaId} onChange={(e) => setBodegaId(e.target.value)}>
-              <option value="">Todas las bodegas</option>
-              {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-            </select>
-            <label className="apartados-check">Desde <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} /></label>
-            <label className="apartados-check">Hasta <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} /></label>
-            {!cargando && (reporte.resumen.length > 0 || reporte.prestamos.length > 0 || reporte.sacado_sin_existencia.length > 0) && (
-              <button type="button" className="apartados-limpiar" onClick={exportar} disabled={exportando}>{exportando ? "Preparando Excel..." : "Exportar a Excel"}</button>
-            )}
+          {/* ===== Secciones: una a la vez, con su número ===== */}
+          <div className="prestamos-secciones" role="tablist" aria-label="Sección">
+            {secciones.map(([valor, texto, cuantos]) => (
+              <button key={valor} type="button" role="tab" aria-selected={seccion === valor}
+                className={seccion === valor ? "activo" : ""} onClick={() => setSeccion(valor)}>
+                {texto}
+                {cuantos > 0 && <span className="prestamos-contador">{cuantos}</span>}
+              </button>
+            ))}
           </div>
 
           {error && <p className="inventario-error">{error}</p>}
           {cargando ? <p className="inventario-cargando">Cargando préstamos...</p> : (
             <>
-              {/* ================== LO QUE SE DEBEN ================== */}
-              {vista === "pendientes" && <>
-              <h2 className="inventario-form-subtitulo">Lo que se deben (sin saldar)</h2>
+              {/* ================== RESUMEN: LO QUE SE DEBEN ================== */}
+              {seccion === "resumen" && vista === "pendientes" && <>
+              <div className="prestamos-seccion-cabeza">
+                <h2 className="inventario-form-subtitulo">Lo que se deben</h2>
+                <p>El total sin saldar, por material. En «Cada préstamo» está el detalle para saldarlos.</p>
+              </div>
               {resumenVisible.length === 0 && externosDeben.length === 0 ? (
-                <p className="inventario-vacio">No se debe nada{desde || hasta || bodegaId || externa ? " con estos filtros" : ""}.</p>
+                <p className="inventario-vacio">✓ No se debe nada{hayFiltros ? " con estos filtros" : ""}.</p>
               ) : (
-                <div className="inventario-tabla-contenedor">
-                  <table className="inventario-tabla">
-                    <thead>
-                      <tr><th>Quién debe</th><th>A quién</th><th>Material</th><th>Descripción / rollo</th><th>Cantidad</th></tr>
-                    </thead>
-                    <tbody>
-                      {resumenVisible.map((d) => (
-                        <tr key={`${d.tipo}|${d.codigo}|${d.unidad}|${d.presta}|${d.debe}`}>
-                          <td>
-                            <strong>{nombre(d.debe)}</strong>
-                            {(d.cotizaciones?.length ?? 0) > 0 && (
-                              <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Cot. {d.cotizaciones!.join(", ")}</span>
-                            )}
-                          </td>
-                          <td>{nombre(d.presta)}</td>
-                          <td>{d.codigo} <span className="rollos-texto-ayuda" style={{ margin: 0 }}>({d.tipo === "lamina" ? "lámina" : "producto"})</span></td>
-                          <td>
-                            {d.descripcion || "—"}
-                            {d.rollos.map((r) => (
-                              <span key={r.referencia} className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>
-                                Rollo {r.referencia} · {kilosTexto(r.kilos)}
-                              </span>
-                            ))}
-                          </td>
-                          <td><strong>{cantidadTexto(d.cantidad, d.unidad, d.kilos)}</strong></td>
-                        </tr>
-                      ))}
-                      {externosDeben.map((f) => (
-                        <tr key={`ext-${f.id}`}>
-                          <td>
-                            <strong>{f.estado === "por_pagar" ? nombre(f.empresa_presta) : f.prestador}</strong>
-                            {f.numero_cotizacion && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Cot. {f.numero_cotizacion}</span>}
-                          </td>
-                          <td>{f.estado === "por_pagar" ? f.prestador : nombre(f.empresa_presta)}</td>
-                          <td>{f.codigo} <span className="rollos-texto-ayuda" style={{ margin: 0 }}>(lámina)</span></td>
-                          <td>
-                            Rollo prestado {f.referencia_rollo} · {(f.kilos_prestados ?? 0).toLocaleString("es-CO")} kg
-                            <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Pagaron con: {f.devuelto_con}</span>
-                          </td>
-                          <td><strong style={{ color: "#b3261e" }}>{Math.abs(f.diferencia ?? 0).toLocaleString("es-CO")} kg {f.estado === "por_pagar" ? "por pagar" : "por facturar"}</strong></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="prestamos-deudas">
+                  {resumenVisible.map((d) => (
+                    <article key={`${d.tipo}|${d.codigo}|${d.unidad}|${d.presta}|${d.debe}`} className="prestamos-deuda">
+                      <p className="prestamos-deuda-quien">
+                        <strong>{nombre(d.debe)}</strong> le debe a <strong>{nombre(d.presta)}</strong>
+                      </p>
+                      <p className="prestamos-deuda-cantidad">{cantidadTexto(d.cantidad, d.unidad, d.kilos)}</p>
+                      <p className="prestamos-deuda-material">
+                        <strong>{d.codigo}</strong> · {d.tipo === "lamina" ? "lámina" : "producto"}
+                      </p>
+                      {(d.rollos.length > 0 || (d.cotizaciones?.length ?? 0) > 0) && (
+                        <p className="prestamos-deuda-detalle">
+                          {d.rollos.map((r) => `Rollo ${r.referencia} (${kilosTexto(r.kilos)})`).join(" · ")}
+                          {d.rollos.length > 0 && (d.cotizaciones?.length ?? 0) > 0 ? " · " : ""}
+                          {(d.cotizaciones?.length ?? 0) > 0 ? `Cot. ${d.cotizaciones!.join(", ")}` : ""}
+                        </p>
+                      )}
+                    </article>
+                  ))}
+                  {externosDeben.map((f) => (
+                    <article key={`ext-${f.id}`} className="prestamos-deuda prestamos-deuda-externa">
+                      <p className="prestamos-deuda-quien">
+                        <strong>{f.estado === "por_pagar" ? nombre(f.empresa_presta) : f.prestador}</strong> le debe a{" "}
+                        <strong>{f.estado === "por_pagar" ? f.prestador : nombre(f.empresa_presta)}</strong>
+                        <span className="prestamos-etiqueta">Empresa de afuera</span>
+                      </p>
+                      <p className="prestamos-deuda-cantidad">
+                        {Math.abs(f.diferencia ?? 0).toLocaleString("es-CO")} kg <span>{f.estado === "por_pagar" ? "por pagar" : "por facturar"}</span>
+                      </p>
+                      <p className="prestamos-deuda-material"><strong>{f.codigo}</strong> · lámina</p>
+                      <p className="prestamos-deuda-detalle">
+                        Rollo prestado {f.referencia_rollo} ({(f.kilos_prestados ?? 0).toLocaleString("es-CO")} kg) · pagaron con {f.devuelto_con}
+                        {f.numero_cotizacion ? ` · Cot. ${f.numero_cotizacion}` : ""}
+                      </p>
+                    </article>
+                  ))}
                 </div>
               )}
               </>}
 
-              {/* ================== DETALLE ================== */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginTop: "1.5rem" }}>
-                <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>{vista === "saldados" ? "Préstamos saldados" : "Detalle de cada préstamo"}</h2>
+              {/* ================== CADA PRÉSTAMO ================== */}
+              {seccion === "prestamos" && <>
+              <div className="prestamos-seccion-fila">
+                <div className="prestamos-seccion-cabeza" style={{ margin: 0 }}>
+                  <h2 className="inventario-form-subtitulo">{vista === "saldados" ? "Préstamos saldados" : "Cada préstamo"}</h2>
+                  {vista === "pendientes" && sinSaldar.length > 0 && <p>Marca con la casilla los que ya se pagaron y dale Saldar.</p>}
+                </div>
                 {vista === "pendientes" && sinSaldar.length > 0 && (
-                  <button type="button" className="inventario-boton" disabled={seleccion.size === 0 || saldando} onClick={saldar}>
-                    {saldando ? "Guardando..." : seleccion.size ? `Saldar ${seleccion.size} seleccionado${seleccion.size === 1 ? "" : "s"}` : "Elige cuáles saldar"}
+                  <button type="button" className="inventario-boton" disabled={seleccion.size === 0 || saldando} onClick={saldar}
+                    title={seleccion.size === 0 ? "Marca primero los préstamos que ya se pagaron" : ""}>
+                    {saldando ? "Guardando..." : seleccion.size ? `✓ Saldar ${seleccion.size} préstamo${seleccion.size === 1 ? "" : "s"}` : "✓ Saldar"}
                   </button>
                 )}
               </div>
               {prestamosVisibles.length === 0 ? (
-                <p className="inventario-vacio">{vista === "saldados" ? "No hay préstamos saldados" : "No hay préstamos sin saldar"}{desde || hasta || bodegaId || empresa ? " con estos filtros" : ""}.</p>
+                <p className="inventario-vacio">{vista === "saldados" ? "No hay préstamos saldados" : "✓ No hay préstamos sin saldar"}{hayFiltros ? " con estos filtros" : ""}.</p>
               ) : (
+                <>
                 <div className="inventario-tabla-contenedor">
-                  <table className="inventario-tabla">
+                  <table className="inventario-tabla prestamos-tabla">
                     <thead>
                       <tr>
-                        <th>
-                          <input type="checkbox" aria-label="Elegir todos" checked={todosElegidos} disabled={sinSaldar.length === 0}
-                            onChange={() => setSeleccion(todosElegidos ? new Set() : new Set(sinSaldar.map((p) => p.id)))} />
+                        <th className="prestamos-col-marca">
+                          <input type="checkbox" aria-label="Elegir todos los de esta página" checked={todosElegidos} disabled={sinSaldarPagina.length === 0}
+                            onChange={() => setSeleccion((actual) => {
+                              const nueva = new Set(actual);
+                              sinSaldarPagina.forEach((p) => (todosElegidos ? nueva.delete(p.id) : nueva.add(p.id)));
+                              return nueva;
+                            })} />
                         </th>
-                        <th>Fecha</th><th>Presta</th><th>Recibe</th><th>Cotización</th><th>Bodega</th>
-                        <th>Material</th><th>Cantidad</th><th>Dónde se anotó</th><th>Estado</th>
+                        <th>Fecha</th><th>Quién presta → recibe</th><th>Material</th><th className="prestamos-num">Cantidad</th>
+                        <th>Cotización</th><th>Estado</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {prestamosVisibles.map((p) => (
-                        <tr key={p.id}>
-                          <td>
-                            {!p.saldado && <input type="checkbox" aria-label={`Elegir préstamo ${p.id}`} checked={seleccion.has(p.id)} onChange={() => alternar(p.id)} />}
+                      {prestamosPagina.map((p) => (
+                        <tr key={p.id} className={seleccion.has(p.id) ? "prestamos-fila-marcada" : ""}>
+                          <td className="prestamos-col-marca">
+                            {!p.saldado && <input type="checkbox" aria-label={`Elegir préstamo ${p.codigo} del ${formatearFechaColombia(p.fecha, false)}`} checked={seleccion.has(p.id)} onChange={() => alternar(p.id)} />}
                           </td>
-                          <td>{formatearFechaColombia(p.fecha)}</td>
-                          <td>{quienPresta(p)}</td>
-                          <td>{quienRecibe(p)}</td>
-                          <td>{p.numero_cotizacion ? <strong>Cot. {p.numero_cotizacion}</strong> : "—"}</td>
-                          <td>{nombreBodega(p.bodega_id)}</td>
-                          <td>
-                            <strong>{p.codigo}</strong> {p.descripcion}
-                            {p.referencia_rollo && (
-                              <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>
-                                Rollo {p.referencia_rollo} · {kilosTexto(p.kilos_rollo)}
-                              </span>
-                            )}
+                          <td className="prestamos-fecha" title={`${ORIGEN[p.origen] || p.origen}${p.usuario ? ` · ${p.usuario}` : ""}`}>
+                            {formatearFechaColombia(p.fecha, false)}
+                            <small>{nombreBodega(p.bodega_id)}</small>
                           </td>
-                          <td>{cantidadTexto(p.cantidad, p.unidad, p.kilos)}</td>
-                          <td>{ORIGEN[p.origen] || p.origen}{p.usuario && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>{p.usuario}</span>}</td>
-                          <td>
-                            {p.saldado
-                              ? `${p.origen === "devuelto_por_tercero" ? "Devuelto" : "Saldado"}${p.fecha_saldado ? ` el ${formatearFechaColombia(p.fecha_saldado)}` : ""}`
-                              : "Sin saldar"}
-                            {p.devuelto_con && (
-                              <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>
-                                Pagaron con: {p.devuelto_con}{p.factura ? ` · Factura ${p.factura}` : ""}
-                              </span>
+                          <td className="prestamos-quien">
+                            <strong>{quienPresta(p)}</strong> <span aria-label="le presta a">→</span> {quienRecibe(p)}
+                          </td>
+                          <td className="prestamos-material">
+                            <strong>{p.codigo}</strong>
+                            <small title={p.descripcion}>{p.descripcion}</small>
+                            {p.referencia_rollo && <small>Rollo {p.referencia_rollo} · {kilosTexto(p.kilos_rollo)}</small>}
+                          </td>
+                          <td className="prestamos-num"><strong>{cantidadTexto(p.cantidad, p.unidad, p.kilos)}</strong></td>
+                          <td>{p.numero_cotizacion ? `Cot. ${p.numero_cotizacion}` : "—"}</td>
+                          <td className="prestamos-estado-celda">
+                            {p.saldado ? (
+                              <>
+                                <span className="prestamos-estado prestamos-estado-ok">✓ {p.origen === "devuelto_por_tercero" ? "Devuelto" : "Saldado"}</span>
+                                {p.fecha_saldado && <small>{formatearFechaColombia(p.fecha_saldado, false)}</small>}
+                              </>
+                            ) : p.estado_cotizacion === "por_recoger" ? (
+                              <span className="prestamos-estado prestamos-estado-espera" title={`Falta darle Salida a la cotización ${p.numero_cotizacion}`}>⏳ Por recoger</span>
+                            ) : (
+                              <span className="prestamos-estado prestamos-estado-pendiente">● Sin saldar</span>
                             )}
-                            {!p.saldado && p.estado_cotizacion === "por_recoger" && (
-                              <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block", color: "#8a5a00" }}>
-                                Por recoger: falta darle Salida a la cotización {p.numero_cotizacion}
-                              </span>
-                            )}
+                            {p.devuelto_con && <small>Pagaron con: {p.devuelto_con}{p.factura ? ` · Factura ${p.factura}` : ""}</small>}
                             {!p.saldado && p.origen === "prestamo_a_tercero" && p.estado_cotizacion === "cancelada" && (
-                              <button type="button" className="apartados-limpiar" style={{ display: "block", marginTop: "0.35rem" }}
-                                onClick={() => cerrarCancelado(p)}>Cerrar (cotización cancelada)</button>
+                              <button type="button" className="apartados-limpiar" onClick={() => cerrarCancelado(p)}>Cerrar (cotización cancelada)</button>
                             )}
-                            {/* Botón principal (antes era un enlace que no se veía). Mientras la
-                                cotización no tenga Salida se ve, pero apagado y diciendo por qué. */}
                             {!p.saldado && p.origen === "prestamo_a_tercero" && (!p.estado_cotizacion || p.estado_cotizacion === "por_recoger") && (
-                              <button type="button" className="inventario-boton"
-                                style={{ display: "block", marginTop: "0.5rem", whiteSpace: "nowrap", padding: "0.45rem 0.9rem" }}
+                              <button type="button" className="prestamos-boton-devolver"
                                 disabled={p.estado_cotizacion === "por_recoger"}
                                 title={p.estado_cotizacion === "por_recoger"
                                   ? `Primero dale Salida a la cotización ${p.numero_cotizacion} en Apartados`
@@ -649,39 +708,49 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                     </tbody>
                   </table>
                 </div>
+                <Paginacion paginacion={{ total: prestamosVisibles.length, pagina: paginaPrestamos, total_paginas: totalPaginasPrestamos }}
+                  alCambiarPagina={setPaginaPrestamos} etiqueta="préstamos" />
+                </>
               )}
+              </>}
 
-              <CuadreRollosPrestados nombreBodega={nombreBodega} recargar={recargarCuadre} vista={vista} alCargar={alCargarCuadre} externa={externa} />
+              {/* ================== ROLLOS PRESTADOS A EMPRESAS DE AFUERA ================== */}
+              <div hidden={seccion !== "cuadre"}>
+                <CuadreRollosPrestados nombreBodega={nombreBodega} recargar={recargarCuadre} vista={vista} alCargar={alCargarCuadre} externa={externa} />
+              </div>
 
               {/* ================== SACADO SIN EXISTENCIA ================== */}
-              {vista === "pendientes" && <>
-              <h2 className="inventario-form-subtitulo" style={{ marginTop: "1.5rem" }}>Sacado sin existencia en el sistema</h2>
-              <p className="inventario-carga-ayuda">
-                Lo que Planta sacó de la bodega para una cotización aunque el sistema decía que no había (en 0 o en negativo).
-                El stock del sistema no cambió: si hace falta, cuenta lo que hay y corrígelo en Inventario total.
-              </p>
+              {seccion === "sacado" && vista === "pendientes" && <>
+              <div className="prestamos-seccion-cabeza">
+                <h2 className="inventario-form-subtitulo">Sacado sin existencia en el sistema</h2>
+                <p>Lo que Planta sacó aunque el sistema decía que no había. Si hace falta, cuenta y corrige el stock en Inventario total.</p>
+              </div>
               {reporte.sacado_sin_existencia.length === 0 ? (
-                <p className="inventario-vacio">Nada{desde || hasta || bodegaId ? " con estos filtros" : ""}.</p>
+                <p className="inventario-vacio">✓ Nada{hayFiltros ? " con estos filtros" : ""}.</p>
               ) : (
+                <>
                 <div className="inventario-tabla-contenedor">
-                  <table className="inventario-tabla">
+                  <table className="inventario-tabla prestamos-tabla">
                     <thead>
-                      <tr><th>Fecha</th><th>Bodega</th><th>Producto</th><th>Cantidad</th><th>Cotización</th><th>Quién</th></tr>
+                      <tr><th>Fecha</th><th>Bodega</th><th>Producto</th><th className="prestamos-num">Cantidad</th><th>Cotización</th><th>Quién</th></tr>
                     </thead>
                     <tbody>
-                      {reporte.sacado_sin_existencia.map((s, i) => (
+                      {sacadoPagina.map((s, i) => (
                         <tr key={`${s.fecha}-${i}`} title={s.observaciones}>
-                          <td>{formatearFechaColombia(s.fecha)}</td>
+                          <td className="prestamos-fecha">{formatearFechaColombia(s.fecha, false)}</td>
                           <td>{nombreBodega(s.bodega_id)}</td>
-                          <td><strong>{s.producto_codigo}</strong> {s.producto_descripcion}</td>
-                          <td>{s.cantidad}</td>
-                          <td>{s.cotizacion || "—"}</td>
+                          <td className="prestamos-material"><strong>{s.producto_codigo}</strong><small title={s.producto_descripcion}>{s.producto_descripcion}</small></td>
+                          <td className="prestamos-num">{s.cantidad}</td>
+                          <td>{s.cotizacion ? `Cot. ${s.cotizacion}` : "—"}</td>
                           <td>{s.usuario || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                <Paginacion paginacion={{ total: reporte.sacado_sin_existencia.length, pagina: paginaSacado, total_paginas: totalPaginasSacado }}
+                  alCambiarPagina={setPaginaSacado} etiqueta="registros" />
+                </>
               )}
               </>}
             </>

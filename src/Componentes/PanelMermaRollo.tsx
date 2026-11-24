@@ -75,10 +75,8 @@ export default function PanelMermaRollo({ bodegas = [], alCambiar }: { bodegas?:
     <section className="produccion-tarjeta">
       <h2>Merma / sobrante de rollo</h2>
       <p className="produccion-vacio" style={{ marginBottom: "0.75rem" }}>
-        Cuando un rollo se acaba, escribe su referencia (la de la hoja de vida) o sus kilos. <strong>Terminar rollo</strong>: lo
-        que todavía le queda en el sistema sale como <strong>merma</strong> y el rollo queda agotado.{" "}
-        <strong>Sobrante</strong>: si el rollo rindió más metros de los que dice el sistema, súmaselos aquí antes de
-        registrar la producción.
+        Busca el rollo por referencia o kilos. <strong>Terminar rollo</strong>: lo que le queda en el sistema sale como
+        merma y queda agotado. <strong>Sobrante</strong>: súmale los metros de más antes de registrar la producción.
       </p>
       <form onSubmit={buscar} style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         <input

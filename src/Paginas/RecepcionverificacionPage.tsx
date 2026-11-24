@@ -120,12 +120,18 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
         <div className="recepcion-page">
           <main className="recepcion-contenido">
             <h2 className="recepcion-titulo">Recepción y Verificación de material</h2>
-            <p className="recepcion-subtitulo">
-              Carga el Excel del proveedor y el sistema calculará automáticamente los
-              metros de cada rollo, clasificará el material con la nomenclatura interna,
-              los comparará con lo reportado y te mostrará las diferencias antes de
-              afectar el inventario.
-            </p>
+            <div className="pagina-ayuda recepcion-ayuda">
+              <p>Sube el Excel del proveedor: la app calcula los metros, clasifica cada rollo y te muestra las diferencias antes de tocar el inventario.</p>
+              <ul>
+                <li><strong>Confirmar recepción:</strong> el material ya llegó y entra al inventario.</li>
+                {esAdminInventario && (
+                  <>
+                    <li><strong>Guardar como material en camino:</strong> todavía no llega, pero ya se puede apartar. Después, en el checklist, marcas lo que llega y lo envías a cada bodega.</li>
+                    <li><strong>Importaciones de rollo completo:</strong> al final de la página marcas las que no se cortan (ej. 17AR).</li>
+                  </>
+                )}
+              </ul>
+            </div>
 
             <div className="recepcion-pasos">
               <span className={`recepcion-paso ${c.paso === "carga" ? "activo" : ""}`}>
@@ -135,7 +141,7 @@ function RecepcionVerificacionPage({ sesion, onCerrarSesion, almacen }) {
                 2. Verificar columnas
               </span>
               <span className={`recepcion-paso ${c.paso === "verificacion" ? "activo" : ""}`}>
-                3. Verificación, clasificación y confirmación
+                3. Revisar y confirmar
               </span>
             </div>
 

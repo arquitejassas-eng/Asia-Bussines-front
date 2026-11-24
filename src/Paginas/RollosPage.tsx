@@ -30,11 +30,17 @@ function RollosPage({ sesion, onCerrarSesion, almacen }) {
       <div className="layout-contenido">
         <div className="rollos-page">
           <h1 className="rollos-titulo">Rollos almacenados</h1>
-          <p className="rollos-subtitulo">
-            Materia prima (rollos de acero) de {sesion?.bodegaNombre}. Aunque varios rollos
-            compartan el mismo código interno, cada uno mantiene sus propios metros, estado e
-            historial — el sistema nunca los une ni suma sus metros automáticamente.
-          </p>
+          <div className="pagina-ayuda rollos-ayuda">
+            <p>
+              Los rollos de {sesion?.bodegaNombre || "la bodega"}. Cada rollo lleva sus propios metros e historial, aunque
+              tenga el mismo código que otro.
+            </p>
+            <ul>
+              <li><strong>Cargar rollos existentes desde Excel:</strong> subir de una vez los rollos que ya están en la bodega.</li>
+              <li><strong>Ingresar rollo manualmente:</strong> registrar un rollo suelto.</li>
+              <li><strong>Material nuevo del proveedor:</strong> entra por Recepción y Verificación, no por aquí.</li>
+            </ul>
+          </div>
 
           {/* ================== CARGA MASIVA DE ROLLOS EXISTENTES ================== */}
           <PanelCargaMasivaRollos

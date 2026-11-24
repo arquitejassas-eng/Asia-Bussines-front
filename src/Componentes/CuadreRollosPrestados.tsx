@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { exportarHojasAExcel } from "../Utils/exportarExcel";
+import Paginacion from "./Paginacion";
+
+const POR_PAGINA = 15;
 
 export type FilaCuadre = {
   id: number; fecha: string; prestador: string; numero_cotizacion: string; bodega_id: number | null; empresa_presta: string;
@@ -76,6 +79,11 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
   const totalPorPagar = porPagar.reduce((suma, f) => suma - (f.diferencia || 0), 0);
   const deLaVista = filas.filter((f) => CUADRE_PENDIENTE.has(f.estado) === (vista === "pendientes") && (!externa || f.prestador === externa));
   const visibles = soloPorFacturar && vista === "pendientes" ? [...porFacturar, ...porPagar] : deLaVista;
+  const [pagina, setPagina] = useState(1);
+  useEffect(() => { setPagina(1); }, [vista, externa]);
+  const totalPaginas = Math.max(1, Math.ceil(visibles.length / POR_PAGINA));
+  const paginaValida = Math.min(pagina, totalPaginas);
+  const deLaPagina = visibles.slice((paginaValida - 1) * POR_PAGINA, paginaValida * POR_PAGINA);
 
   function exportar() {
     exportarHojasAExcel([{ nombre: "Cuadre rollos prestados", filas: visibles.map((f) => ({
@@ -89,57 +97,70 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginTop: "1.5rem" }}>
-        <h2 className="inventario-form-subtitulo" style={{ margin: 0 }}>Cuadre de rollos prestados a empresas externas</h2>
+      <div className="prestamos-seccion-fila">
+        <div className="prestamos-seccion-cabeza" style={{ margin: 0 }}>
+          <h2 className="inventario-form-subtitulo">Rollos prestados a empresas de afuera</h2>
+          <p>
+            {vista === "saldados"
+              ? "Los que ya quedaron cuadrados, facturados o pagados."
+              : "Kilos que se prestaron contra los que devolvieron. Si devolvieron menos, se les factura; si devolvieron más, les debemos."}
+          </p>
+        </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           {vista === "pendientes" && <label className="apartados-check">
-            <input type="checkbox" checked={soloPorFacturar} onChange={(e) => setSoloPorFacturar(e.target.checked)} /> Solo lo que hay que facturar o pagar
+            <input type="checkbox" checked={soloPorFacturar} onChange={(e) => { setSoloPorFacturar(e.target.checked); setPagina(1); }} /> Solo por facturar o pagar
           </label>}
-          {visibles.length > 0 && <button type="button" className="apartados-limpiar" onClick={exportar}>Exportar a Excel</button>}
+          {visibles.length > 0 && <button type="button" className="boton-terciario" onClick={exportar}>Exportar a Excel</button>}
         </div>
       </div>
-      <p className="inventario-carga-ayuda">
-        Kilos del rollo que se prestó contra los del rollo que devolvieron. Si devolvieron <strong>menos</strong>, esa
-        empresa nos debe la diferencia y se le factura. Si devolvieron <strong>más</strong>, nosotros les debemos la
-        diferencia. En los dos casos escribe el número de la factura cuando se haga.
-        {vista === "saldados" && " Aquí están los que ya quedaron cuadrados, facturados o pagados."}
-        {vista === "pendientes" && porFacturar.length > 0 && <> <strong style={{ color: "#b3261e" }}>Por facturar: {kg(Math.round(totalPorFacturar * 10) / 10)} en {porFacturar.length} rollo{porFacturar.length === 1 ? "" : "s"}.</strong></>}
-        {vista === "pendientes" && porPagar.length > 0 && <> <strong style={{ color: "#b3261e" }}>Les debemos: {kg(Math.round(totalPorPagar * 10) / 10)} en {porPagar.length} rollo{porPagar.length === 1 ? "" : "s"}.</strong></>}
-      </p>
+      {vista === "pendientes" && (porFacturar.length > 0 || porPagar.length > 0) && (
+        <div className="prestamos-totales">
+          {porFacturar.length > 0 && (
+            <div><span>Por facturar (nos deben)</span><strong>{kg(Math.round(totalPorFacturar * 10) / 10)}</strong><small>{porFacturar.length} rollo{porFacturar.length === 1 ? "" : "s"}</small></div>
+          )}
+          {porPagar.length > 0 && (
+            <div><span>Por pagar (les debemos)</span><strong>{kg(Math.round(totalPorPagar * 10) / 10)}</strong><small>{porPagar.length} rollo{porPagar.length === 1 ? "" : "s"}</small></div>
+          )}
+        </div>
+      )}
       {error && <p className="inventario-error">{error}</p>}
       {cargando ? <p className="inventario-cargando">Cargando...</p> : visibles.length === 0 ? (
         <p className="inventario-vacio">{vista === "saldados" ? "Ningún rollo prestado ha quedado saldado todavía."
-          : soloPorFacturar ? "No hay nada por facturar." : "No hay rollos prestados pendientes con empresas externas."}</p>
+          : soloPorFacturar ? "✓ No hay nada por facturar ni por pagar." : "✓ No hay rollos prestados pendientes con empresas de afuera."}</p>
       ) : (
+        <>
         <div className="inventario-tabla-contenedor">
-          <table className="inventario-tabla">
+          <table className="inventario-tabla prestamos-tabla">
             <thead>
-              <tr><th>Fecha</th><th>Empresa</th><th>Rollo prestado</th><th>Kg prestados</th><th>Pagaron con</th><th>Kg devueltos</th><th>Diferencia</th><th>Estado / factura</th></tr>
+              <tr><th>Fecha</th><th>Empresa</th><th>Rollo prestado</th><th>Pagaron con</th><th>Diferencia</th><th>Estado / factura</th></tr>
             </thead>
             <tbody>
-              {visibles.map((f) => {
+              {deLaPagina.map((f) => {
                 const estado = ESTADO[f.estado] || { texto: f.estado, color: "#666" };
                 const conFactura = ["por_facturar", "facturado", "por_pagar", "pagado"].includes(f.estado);
+                const tono = ["cuadrado", "pagado", "facturado"].includes(f.estado) ? "ok"
+                  : ["por_facturar", "por_pagar"].includes(f.estado) ? "alerta"
+                  : ["pendiente", "por_recoger"].includes(f.estado) ? "pendiente" : "espera";
                 return (
                   <tr key={f.id}>
-                    <td>{formatearFechaColombia(f.fecha)}</td>
-                    <td><strong>{f.prestador}</strong>{f.numero_cotizacion && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>Cot. {f.numero_cotizacion}</span>}</td>
-                    <td>
-                      {f.referencia_rollo}
-                      <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>{f.codigo} · {f.metros.toLocaleString("es-CO")} m · {nombreBodega(f.bodega_id)}</span>
+                    <td className="prestamos-fecha">{formatearFechaColombia(f.fecha, false)}<small>{nombreBodega(f.bodega_id)}</small></td>
+                    <td className="prestamos-material"><strong>{f.prestador}</strong>{f.numero_cotizacion && <small>Cot. {f.numero_cotizacion}</small>}</td>
+                    <td className="prestamos-material">
+                      <strong>{f.referencia_rollo}</strong>
+                      <small>{f.codigo} · {f.metros.toLocaleString("es-CO")} m · {kg(f.kilos_prestados)}</small>
                     </td>
-                    <td>{kg(f.kilos_prestados)}</td>
-                    <td>{f.devuelto_con || "—"}{f.fecha_devuelto && f.devuelto_con && <span className="rollos-texto-ayuda" style={{ margin: 0, display: "block" }}>{formatearFechaColombia(f.fecha_devuelto)}</span>}</td>
-                    <td>{kg(f.kilos_devueltos)}</td>
+                    <td className="prestamos-material">
+                      {f.devuelto_con ? <><span>{f.devuelto_con}</span><small>{kg(f.kilos_devueltos)}{f.fecha_devuelto ? ` · ${formatearFechaColombia(f.fecha_devuelto, false)}` : ""}</small></> : "—"}
+                    </td>
                     <td>
                       {f.diferencia == null ? "—" : (
-                        <strong style={{ color: f.diferencia >= 1 ? "#b3261e" : f.diferencia <= -1 ? "#1b5fa8" : undefined }}>
-                          {f.diferencia >= 1 ? `Nos deben ${kg(f.diferencia)}` : f.diferencia <= -1 ? `Les debemos ${kg(-f.diferencia)}` : kg(0)}
+                        <strong style={{ color: f.diferencia >= 1 ? "#b3261e" : f.diferencia <= -1 ? "#1b5fa8" : undefined, whiteSpace: "nowrap" }}>
+                          {f.diferencia >= 1 ? `Nos deben ${kg(f.diferencia)}` : f.diferencia <= -1 ? `Les debemos ${kg(-f.diferencia)}` : "Cuadra"}
                         </strong>
                       )}
                     </td>
-                    <td>
-                      <strong style={{ color: estado.color }}>{estado.texto}</strong>
+                    <td className="prestamos-estado-celda">
+                      <span className={`prestamos-estado prestamos-estado-${tono}`}>{estado.texto}</span>
                       {conFactura && (
                         <span style={{ display: "flex", gap: "0.35rem", marginTop: "0.35rem" }}>
                           <input style={{ width: "8rem" }} placeholder="N.º factura" aria-label="Número de factura" maxLength={60}
@@ -156,6 +177,9 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
             </tbody>
           </table>
         </div>
+        <Paginacion paginacion={{ total: visibles.length, pagina: paginaValida, total_paginas: totalPaginas }}
+          alCambiarPagina={setPagina} etiqueta="rollos" />
+        </>
       )}
     </>
   );

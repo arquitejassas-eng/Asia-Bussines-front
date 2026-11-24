@@ -2046,3 +2046,234 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
 .apartados-falta-tabla th, .apartados-falta-tabla td { padding: 0.3rem 0.75rem 0.3rem 0; text-align: left; vertical-align: top; }
 .apartados-falta-tabla th { font-size: 0.75rem; text-transform: uppercase; color: var(--at-muted, #7C6A56); }
 .apartados-falta-tabla .num { text-align: right; white-space: nowrap; }
+
+
+/* ── Préstamos entre empresas ─────────────────────────────────────────────
+   "Lo que se deben" en tarjetas que se leen como una frase: quién le debe a
+   quién, cuánto (grande) y de qué material. Estados con ícono + texto + color. */
+.prestamos-seccion-cabeza { margin: 1.25rem 0 0.75rem; }
+.prestamos-seccion-cabeza h2 { margin: 0 0 0.2rem; }
+.prestamos-seccion-cabeza p { margin: 0; font-size: 0.86rem; color: var(--at-muted, #7C6A56); }
+
+.prestamos-deudas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+.prestamos-deuda {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-left: 4px solid var(--at-amber, #B8720A);
+  border-radius: var(--at-r-md, 12px);
+  background: var(--at-surface, #FFFFFF);
+}
+.prestamos-deuda p { margin: 0; }
+.prestamos-deuda-externa { border-left-color: var(--at-terra, #B7451F); }
+.prestamos-deuda-quien { font-size: 0.9rem; color: var(--at-text-2, #4A392C); }
+.prestamos-deuda-cantidad {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--at-text, #251C14);
+}
+.prestamos-deuda-cantidad span { font-size: 0.85rem; font-weight: 600; color: var(--at-red, #C23B2C); }
+.prestamos-deuda-material { font-size: 0.88rem; color: var(--at-text-2, #4A392C); }
+.prestamos-deuda-detalle { font-size: 0.8rem; color: var(--at-muted, #7C6A56); }
+.prestamos-etiqueta {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(183, 69, 31, 0.1);
+  color: var(--at-terra, #B7451F);
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.prestamos-estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.prestamos-estado-ok { background: var(--at-green-dim, rgba(27, 122, 58, 0.12)); color: var(--at-green, #1B7A3A); }
+.prestamos-estado-pendiente { background: var(--at-amber-dim, rgba(184, 114, 10, 0.12)); color: #8A5A00; }
+.prestamos-estado-espera { background: rgba(37, 28, 20, 0.07); color: var(--at-text-2, #4A392C); }
+
+/* Barra: Pendientes/Saldados (segmentado) + filtros con etiqueta visible. */
+.prestamos-barra {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 1rem 0 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--at-border-soft, #EBE2D2);
+  border-radius: var(--at-r-md, 12px);
+  background: var(--at-surface, #FFFFFF);
+}
+.prestamos-vista {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: var(--at-surface-2, #F1E9DC);
+}
+.prestamos-vista button {
+  min-height: 40px;
+  padding: 0 1.25rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--at-text-2, #4A392C);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.prestamos-vista button.activo { background: var(--at-terra, #B7451F); color: #FFFFFF; }
+.prestamos-vista button:focus-visible,
+.prestamos-secciones button:focus-visible { outline: 2px solid var(--at-terra, #B7451F); outline-offset: 2px; }
+
+.prestamos-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 0.75rem;
+}
+.prestamos-filtros label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--at-muted, #7C6A56);
+}
+.prestamos-filtros select,
+.prestamos-filtros input {
+  min-height: 40px;
+  min-width: 150px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-radius: var(--at-r-sm, 8px);
+  background: var(--at-surface, #FFFFFF);
+  color: var(--at-text, #251C14);
+  font: inherit;
+  font-size: 0.88rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.prestamos-filtros-acciones { display: flex; gap: 0.5rem; align-items: center; margin-left: auto; }
+
+/* Secciones: una a la vez, con su número. */
+.prestamos-secciones {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--at-border, #E1D5C0);
+  margin-bottom: 0.5rem;
+}
+.prestamos-secciones button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  padding: 0 1rem;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--at-muted, #7C6A56);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.prestamos-secciones button.activo { color: var(--at-terra, #B7451F); border-bottom-color: var(--at-terra, #B7451F); }
+.prestamos-contador {
+  min-width: 1.5rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--at-surface-2, #F1E9DC);
+  color: var(--at-text-2, #4A392C);
+  font-size: 0.75rem;
+  line-height: 1.4rem;
+  text-align: center;
+}
+.prestamos-secciones button.activo .prestamos-contador { background: rgba(183, 69, 31, 0.12); color: var(--at-terra, #B7451F); }
+
+.prestamos-seccion-fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1.25rem 0 0.75rem;
+}
+
+/* Tabla compacta: textos secundarios en una línea debajo, sin columnas de más. */
+.prestamos-tabla td { vertical-align: top; }
+.prestamos-tabla small {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--at-muted, #7C6A56);
+}
+.prestamos-fecha { white-space: nowrap; }
+.prestamos-quien { white-space: nowrap; }
+.prestamos-material { max-width: 280px; }
+.prestamos-material small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prestamos-num { text-align: right; white-space: nowrap; }
+.prestamos-col-marca { width: 2.5rem; }
+.prestamos-fila-marcada td { background: rgba(183, 69, 31, 0.05); }
+.prestamos-estado-celda { min-width: 150px; }
+.prestamos-estado-celda .apartados-limpiar { display: block; margin-top: 0.35rem; }
+.prestamos-estado-alerta { background: var(--at-red-dim, rgba(194, 59, 44, 0.12)); color: var(--at-red, #C23B2C); }
+.prestamos-boton-devolver {
+  display: block;
+  min-height: 36px;
+  margin-top: 0.4rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--at-terra, #B7451F);
+  border-radius: var(--at-r-sm, 8px);
+  background: var(--at-surface, #FFFFFF);
+  color: var(--at-terra, #B7451F);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.prestamos-boton-devolver:not(:disabled):hover { background: rgba(183, 69, 31, 0.08); }
+.prestamos-boton-devolver:disabled { border-style: dashed; border-color: var(--at-border, #E1D5C0); color: var(--at-muted, #7C6A56); cursor: not-allowed; }
+
+/* Totales del cuadre (por facturar / por pagar). */
+.prestamos-totales { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 0 0 0.75rem; }
+.prestamos-totales div {
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-left: 4px solid var(--at-red, #C23B2C);
+  border-radius: var(--at-r-md, 12px);
+  background: var(--at-surface, #FFFFFF);
+}
+.prestamos-totales span { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--at-muted, #7C6A56); }
+.prestamos-totales strong { font-size: 1.25rem; color: var(--at-text, #251C14); }
+.prestamos-totales small { font-size: 0.8rem; color: var(--at-muted, #7C6A56); }
+
+@media (max-width: 640px) {
+  .prestamos-filtros label { flex: 1 1 45%; }
+  .prestamos-filtros select, .prestamos-filtros input { min-width: 0; width: 100%; }
+  .prestamos-filtros-acciones { margin-left: 0; }
+}

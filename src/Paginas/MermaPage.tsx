@@ -24,11 +24,13 @@ function MermaPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerr
       <div className="layout-contenido">
         <div className="inventario-page">
           <h1 className="inventario-titulo">Merma</h1>
-          <p className="inventario-carga-ayuda">
-            Rollos que ya se acabaron, de todas las bodegas, con la merma que dejaron (los metros que el sistema todavía
-            les daba y ya no existían) y los metros de más cuando rindieron más de lo registrado. Agrupados por código,
-            igual que en Rollos almacenados.
-          </p>
+          <div className="pagina-ayuda merma-ayuda">
+            <p>Rollos que ya se acabaron, de todas las bodegas, agrupados por código.</p>
+            <ul>
+              <li><strong>Merma:</strong> metros que el sistema todavía le daba al rollo y ya no existían.</li>
+              <li><strong>Metros de más:</strong> cuando el rollo rindió más de lo registrado.</li>
+            </ul>
+          </div>
 
           {/* ================== TERMINAR ROLLO / SOBRANTE ================== */}
           <PanelMermaRollo bodegas={almacen.bodegas} alCambiar={m.cargar} />
