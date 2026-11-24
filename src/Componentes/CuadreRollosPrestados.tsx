@@ -11,6 +11,8 @@ export type FilaCuadre = {
   codigo: string; referencia_rollo: string; metros: number; kilos_prestados: number | null; devuelto_con: string;
   kilos_devueltos: number | null; fecha_devuelto: string | null; diferencia: number | null; estado: string;
   factura: string; fecha_factura: string | null;
+  /** "nos_prestaron": la empresa de afuera nos prestó a nosotros; "prestamos": le prestamos. */
+  direccion?: string; empresa_nuestra?: string;
 };
 
 export const ESTADO: Record<string, { texto: string; color: string }> = {
@@ -99,11 +101,11 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
     <>
       <div className="prestamos-seccion-fila">
         <div className="prestamos-seccion-cabeza" style={{ margin: 0 }}>
-          <h2 className="inventario-form-subtitulo">Rollos prestados a empresas de afuera</h2>
+          <h2 className="inventario-form-subtitulo">Rollos prestados con empresas de afuera</h2>
           <p>
             {vista === "saldados"
               ? "Los que ya quedaron cuadrados, facturados o pagados."
-              : "Kilos que se prestaron contra los que devolvieron. Si devolvieron menos, se les factura; si devolvieron más, les debemos."}
+              : "Los que les prestamos y los que nos prestaron: kilos prestados contra los devueltos. La diferencia se factura o se paga."}
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
@@ -132,7 +134,7 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
         <div className="inventario-tabla-contenedor">
           <table className="inventario-tabla prestamos-tabla">
             <thead>
-              <tr><th>Fecha</th><th>Empresa</th><th>Rollo prestado</th><th>Pagaron con</th><th>Diferencia</th><th>Estado / factura</th></tr>
+              <tr><th>Fecha</th><th>Empresa</th><th>Rollo prestado</th><th>Se devolvió con</th><th>Diferencia</th><th>Estado / factura</th></tr>
             </thead>
             <tbody>
               {deLaPagina.map((f) => {
@@ -144,7 +146,10 @@ export default function CuadreRollosPrestados({ nombreBodega, recargar, vista, a
                 return (
                   <tr key={f.id}>
                     <td className="prestamos-fecha">{formatearFechaColombia(f.fecha, false)}<small>{nombreBodega(f.bodega_id)}</small></td>
-                    <td className="prestamos-material"><strong>{f.prestador}</strong>{f.numero_cotizacion && <small>Cot. {f.numero_cotizacion}</small>}</td>
+                    <td className="prestamos-material">
+                      <strong>{f.prestador}</strong>
+                      <small>{f.direccion === "nos_prestaron" ? "Nos prestó a nosotros" : "Le prestamos"}{f.numero_cotizacion ? ` · Cot. ${f.numero_cotizacion}` : ""}</small>
+                    </td>
                     <td className="prestamos-material">
                       <strong>{f.referencia_rollo}</strong>
                       <small>{f.codigo} · {f.metros.toLocaleString("es-CO")} m · {kg(f.kilos_prestados)}</small>

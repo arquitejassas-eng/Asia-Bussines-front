@@ -2277,3 +2277,15 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
   .prestamos-filtros select, .prestamos-filtros input { min-width: 0; width: 100%; }
   .prestamos-filtros-acciones { margin-left: 0; }
 }
+
+/* Modal: devolverle a la empresa de afuera que nos prestó. */
+.devolver-tercero-lista { display: grid; gap: 0.4rem; margin: 0.6rem 0; max-height: 280px; overflow-y: auto; }
+.devolver-tercero-lista label {
+  display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.6rem 0.75rem;
+  border: 1px solid var(--at-border, #E1D5C0); border-radius: var(--at-r-sm, 8px); cursor: pointer;
+}
+.devolver-tercero-lista label.activo { border-color: var(--at-terra, #B7451F); background: rgba(183, 69, 31, 0.06); }
+.devolver-tercero-lista small { display: block; font-size: 0.8rem; color: var(--at-muted, #7C6A56); }
+.devolver-tercero-cuadre { margin: 0.5rem 0; padding: 0.55rem 0.75rem; border-radius: var(--at-r-sm, 8px); font-size: 0.88rem; font-weight: 600; }
+.devolver-tercero-cuadre.ok { background: var(--at-green-dim, rgba(27, 122, 58, 0.12)); color: var(--at-green, #1B7A3A); }
+.devolver-tercero-cuadre.alerta { background: var(--at-amber-dim, rgba(184, 114, 10, 0.12)); color: #8A5A00; }

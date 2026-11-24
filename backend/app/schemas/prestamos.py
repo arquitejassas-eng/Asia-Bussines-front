@@ -117,5 +117,10 @@ class DevolverConOtroRolloRequest(BaseModel):
     metros: float = Field(gt=0)
 
 
+class DevolverATerceroRequest(BaseModel):
+    """Rollo con que le devolvemos (o pagamos) a la empresa de afuera que nos prestó."""
+    rollo_id: int
+
+
 class FacturaPrestamoRequest(BaseModel):
     factura: str = Field(default="", max_length=60)

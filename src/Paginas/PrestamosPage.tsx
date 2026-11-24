@@ -5,6 +5,7 @@ import { EMPRESAS } from "../Utils/empresas";
 import { formatearFechaColombia } from "../Utils/fechas";
 import { exportarHojasAExcel, type HojaExcel } from "../Utils/exportarExcel";
 import ModalDevolverRolloPrestado from "../Componentes/ModalDevolverRolloPrestado";
+import ModalDevolverATercero from "../Componentes/ModalDevolverATercero";
 import CuadreRollosPrestados, { CUADRE_PENDIENTE, ESTADO as ESTADO_CUADRE, type FilaCuadre } from "../Componentes/CuadreRollosPrestados";
 import Paginacion from "../Componentes/Paginacion";
 import "../Style/Inventario.css";
@@ -44,6 +45,7 @@ const ORIGEN: Record<string, string> = {
   produccion: "Producción (Planta)", fin_produccion: "Producción terminada", salida: "Salida (Admin Inventario)",
   stock_planta: "Planta sacó de stock", union_cotizacion: "Al unir la cotización", ingreso_rollo: "Ingreso del rollo (prestado)",
   prestamo_a_tercero: "Prestado a empresa externa", devuelto_por_tercero: "Prestado a empresa externa (devuelto)",
+  devuelto_a_tercero: "Nos lo prestaron (ya devuelto)",
 };
 const EXTERNA = "EXT";
 const POR_PAGINA = 15;
@@ -98,6 +100,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   const [aviso, setAviso] = useState("");
   // Rollo prestado a una empresa externa que están devolviendo (el mismo u otro rollo).
   const [rolloADevolver, setRolloADevolver] = useState<Prestamo | null>(null);
+  // Rollo que NOS prestó una empresa de afuera y le estamos devolviendo (o pagando con otro).
+  const [devolverATercero, setDevolverATercero] = useState<Prestamo | null>(null);
   const [recargarCuadre, setRecargarCuadre] = useState(0);
 
   useEffect(() => {
@@ -607,8 +611,8 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   {externosDeben.map((f) => (
                     <article key={`ext-${f.id}`} className="prestamos-deuda prestamos-deuda-externa">
                       <p className="prestamos-deuda-quien">
-                        <strong>{f.estado === "por_pagar" ? nombre(f.empresa_presta) : f.prestador}</strong> le debe a{" "}
-                        <strong>{f.estado === "por_pagar" ? f.prestador : nombre(f.empresa_presta)}</strong>
+                        <strong>{f.estado === "por_pagar" ? nombre(f.empresa_nuestra || f.empresa_presta) : f.prestador}</strong> le debe a{" "}
+                        <strong>{f.estado === "por_pagar" ? f.prestador : nombre(f.empresa_nuestra || f.empresa_presta)}</strong>
                         <span className="prestamos-etiqueta">Empresa de afuera</span>
                       </p>
                       <p className="prestamos-deuda-cantidad">
@@ -616,7 +620,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                       </p>
                       <p className="prestamos-deuda-material"><strong>{f.codigo}</strong> · lámina</p>
                       <p className="prestamos-deuda-detalle">
-                        Rollo prestado {f.referencia_rollo} ({(f.kilos_prestados ?? 0).toLocaleString("es-CO")} kg) · pagaron con {f.devuelto_con}
+                        {f.direccion === "nos_prestaron" ? "Nos prestó" : "Rollo prestado"} {f.referencia_rollo} ({(f.kilos_prestados ?? 0).toLocaleString("es-CO")} kg) · {f.direccion === "nos_prestaron" ? "le dimos" : "pagaron con"} {f.devuelto_con}
                         {f.numero_cotizacion ? ` · Cot. ${f.numero_cotizacion}` : ""}
                       </p>
                     </article>
@@ -682,7 +686,7 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           <td className="prestamos-estado-celda">
                             {p.saldado ? (
                               <>
-                                <span className="prestamos-estado prestamos-estado-ok">✓ {p.origen === "devuelto_por_tercero" ? "Devuelto" : "Saldado"}</span>
+                                <span className="prestamos-estado prestamos-estado-ok">✓ {p.origen === "devuelto_por_tercero" || p.origen === "devuelto_a_tercero" ? "Devuelto" : "Saldado"}</span>
                                 {p.fecha_saldado && <small>{formatearFechaColombia(p.fecha_saldado, false)}</small>}
                               </>
                             ) : p.estado_cotizacion === "por_recoger" ? (
@@ -701,6 +705,10 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                                   ? `Primero dale Salida a la cotización ${p.numero_cotizacion} en Apartados`
                                   : p.unidad === "m" ? "Registrar con qué rollo pagaron" : "Registrar lo que devolvieron"}
                                 onClick={() => devolver(p)}>↩ Devolver</button>
+                            )}
+                            {!p.saldado && p.origen === "ingreso_rollo" && p.empresa_presta === EXTERNA && (
+                              <button type="button" className="prestamos-boton-devolver" title={`Entregarle a ${p.prestador} el mismo rollo u otro`}
+                                onClick={() => { setAviso(""); setDevolverATercero(p); }}>↩ Devolver</button>
                             )}
                           </td>
                         </tr>
@@ -754,6 +762,10 @@ function PrestamosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               )}
               </>}
             </>
+          )}
+          {devolverATercero && (
+            <ModalDevolverATercero prestamo={devolverATercero} nombreBodega={nombreBodega} alCerrar={() => setDevolverATercero(null)}
+              alGuardar={async (mensaje) => { setDevolverATercero(null); setAviso(mensaje); setError(""); await cargar(); }} />
           )}
           {rolloADevolver && (
             <ModalDevolverRolloPrestado prestamo={rolloADevolver} alCerrar={() => setRolloADevolver(null)}

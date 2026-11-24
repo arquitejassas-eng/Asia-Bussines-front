@@ -8,7 +8,7 @@ from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.rollo import Rollo
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.prestamos import (
-    DevolverConOtroRolloRequest, DevolverDeTerceroRequest, FacturaPrestamoRequest, PrestamoResponse, PrestarATerceroRequest, PrestarDesdeCotizacionRequest,
+    DevolverATerceroRequest, DevolverConOtroRolloRequest, DevolverDeTerceroRequest, FacturaPrestamoRequest, PrestamoResponse, PrestarATerceroRequest, PrestarDesdeCotizacionRequest,
     ReportePrestamosResponse, SaldarPrestamosRequest,
 )
 from app.services import prestamos as srv
@@ -138,6 +138,22 @@ def devolver_con_otro_rollo(prestamo_id: int, datos: DevolverConOtroRolloRequest
     """Pagaron el rollo prestado con otro rollo: entra a la bodega y queda el cuadre de kilos."""
     prestamo = srv.devolver_con_otro_rollo(db, prestamo_id, codigo_interno=datos.codigo_interno, referencia=datos.referencia,
                                            kilos=datos.kilos, metros=datos.metros, usuario=usuario)
+    db.commit()
+    db.refresh(prestamo)
+    return prestamo
+
+
+@router.get("/{prestamo_id}/rollos-para-devolver")
+def rollos_para_devolver(prestamo_id: int, buscar: str = "", db: Session = Depends(get_db)) -> list[dict]:
+    """Rollos con que se le puede devolver a la empresa de afuera que nos prestó."""
+    return srv.rollos_para_devolver_a_tercero(db, prestamo_id, buscar)
+
+
+@router.post("/{prestamo_id}/devolver-a-tercero", response_model=PrestamoResponse)
+def devolver_a_tercero(prestamo_id: int, datos: DevolverATerceroRequest, db: Session = Depends(get_db),
+                       usuario: Usuario = Depends(usuario_actual)):
+    """Le devolvemos (o pagamos con otro rollo) a la empresa de afuera que nos prestó: el rollo sale."""
+    prestamo = srv.devolver_a_tercero(db, prestamo_id, datos.rollo_id, usuario)
     db.commit()
     db.refresh(prestamo)
     return prestamo
