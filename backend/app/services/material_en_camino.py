@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.bodega import Bodega
+from app.models.envio import Envio, EnvioItem, EstadoEnvio
 from app.models.material_en_camino import Cargamento, CargamentoRollo
 from app.models.movimiento import Movimiento, TipoMovimiento
 from app.models.recepcion import Recepcion
@@ -127,12 +129,14 @@ def resumen_cargamento(db: Session, cargamento: Cargamento) -> dict:
     ya_ingresaron: set[str] = set()
     if referencias:
         ya_ingresaron = {ref for (ref,) in db.query(Rollo.identificador_rollo).filter(Rollo.identificador_rollo.in_(referencias))}
+    ubicacion = ubicacion_de_rollos(db, [r.identificador_rollo for r in cargamento.rollos if r.identificador_rollo])
     rollos = [
         {
             "id": r.id, "identificador_rollo": r.identificador_rollo, "codigo_interno": r.codigo_interno,
             "descripcion": r.descripcion, "metros": r.metros, "peso_neto": r.peso_neto, "llego": r.llego, "llego_por": r.llego_por,
             "fecha_llegada": r.fecha_llegada,
             "ya_tiene_ingreso": not r.llego and r.identificador_rollo in ya_ingresaron,
+            **ubicacion.get(r.identificador_rollo, {}),
         }
         for r in cargamento.rollos
     ]
@@ -153,3 +157,30 @@ def resumen_cargamento(db: Session, cargamento: Cargamento) -> dict:
         "rollos_ya_con_ingreso": len(ya_ingresaron),
         "rollos": rollos,
     }
+
+
+def ubicacion_de_rollos(db: Session, referencias: list[str]) -> dict[str, dict]:
+    """Por referencia, el rollo del inventario y a dónde se mandó: en camino a
+    una bodega (envío sin confirmar), ya en una bodega, o por repartir."""
+    if not referencias:
+        return {}
+    rollos = db.query(Rollo).filter(Rollo.identificador_rollo.in_(referencias)).all()
+    if not rollos:
+        return {}
+    nombres = {b.id: b.nombre for b in db.query(Bodega).all()}
+    pendientes = dict(
+        db.query(EnvioItem.rollo_id, Envio.bodega_destino_id)
+        .join(Envio, Envio.id == EnvioItem.envio_id)
+        .filter(EnvioItem.rollo_id.in_([r.id for r in rollos]), Envio.estado == EstadoEnvio.PENDIENTE_CONFIRMACION)
+        .all()
+    )
+    resultado: dict[str, dict] = {}
+    for r in rollos:
+        if r.bodega_id is not None:
+            datos = {"destino": nombres.get(r.bodega_id, ""), "estado_envio": "recibido"}
+        elif r.id in pendientes:
+            datos = {"destino": nombres.get(pendientes[r.id], ""), "estado_envio": "pendiente_confirmacion"}
+        else:
+            datos = {"destino": "", "estado_envio": ""}
+        resultado[r.identificador_rollo] = {"rollo_inventario_id": r.id, **datos}
+    return resultado

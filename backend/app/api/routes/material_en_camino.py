@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.deps import get_db, requiere_rol, usuario_actual
 from app.models.material_en_camino import Cargamento
 from app.models.usuario import RolUsuario, Usuario
-from app.schemas.material_en_camino import CargamentoResponse, MarcarLlegadaRequest
+from app.models.material_en_camino import CargamentoRollo
+from app.models.rollo import Rollo
+from app.schemas.envios import EnvioCrear, EnvioItemCrear
+from app.schemas.material_en_camino import CargamentoResponse, EnviarDesdeChecklistRequest, MarcarLlegadaRequest
+from app.services import envios as srv_envios
 from app.services import material_en_camino as srv
 
 router = APIRouter(prefix="/material-en-camino", tags=["Material en camino"])
@@ -53,6 +57,47 @@ def marcar_llegada(
     pendientes = [por_id[i] for i in dict.fromkeys(datos.rollo_ids) if not por_id[i].llego]
     srv.registrar_llegada(db, cargamento, pendientes, usuario)
     if all(r.llego for r in cargamento.rollos):
+        _cerrar(cargamento, usuario)
+    db.commit(); db.refresh(cargamento)
+    return srv.resumen_cargamento(db, cargamento)
+
+
+@router.post("/{cargamento_id}/enviar", response_model=CargamentoResponse, dependencies=solo_admin_inventario)
+def enviar_desde_checklist(
+    cargamento_id: int, datos: EnviarDesdeChecklistRequest,
+    db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
+) -> dict:
+    """Desde el checklist, sin pasar por "Nuevo envío": los rollos escogidos
+    que todavía no estaban marcados como llegados se marcan (entran al
+    inventario de Admin Inventario) y salen en un envío para esa bodega, que
+    lo confirma como siempre."""
+    cargamento = db.query(Cargamento).filter(Cargamento.id == cargamento_id).with_for_update().first()
+    if cargamento is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No se encontró ese checklist.")
+    por_id = {r.id: r for r in cargamento.rollos}
+    if any(i not in por_id for i in datos.rollo_ids):
+        raise HTTPException(status_code=400, detail="Algunos rollos no pertenecen a este checklist.")
+    escogidos: list[CargamentoRollo] = [por_id[i] for i in dict.fromkeys(datos.rollo_ids)]
+    sin_llegar = [r for r in escogidos if not r.llego]
+    if sin_llegar:
+        if cargamento.estado != srv.EN_CAMINO:
+            raise HTTPException(status_code=400, detail="Este checklist ya está cerrado: sus rollos que no llegaron ya no vendrán.")
+        srv.registrar_llegada(db, cargamento, sin_llegar, usuario)
+        db.flush()
+    referencias = [r.identificador_rollo for r in escogidos]
+    en_inventario = {r.identificador_rollo: r for r in db.query(Rollo).filter(Rollo.identificador_rollo.in_(referencias))}
+    faltan = [ref for ref in referencias if ref not in en_inventario]
+    if faltan:
+        raise HTTPException(status_code=400, detail=f"Estos rollos no están en el inventario: {', '.join(faltan)}.")
+    ya_repartidos = [ref for ref in referencias if en_inventario[ref].bodega_id is not None]
+    if ya_repartidos:
+        raise HTTPException(status_code=400, detail=f"Estos rollos ya están en una bodega: {', '.join(ya_repartidos)}.")
+    srv_envios.crear_envio(db, EnvioCrear(
+        bodega_destino_id=datos.bodega_destino_id,
+        items=[EnvioItemCrear(rollo_id=en_inventario[ref].id) for ref in referencias],
+        observaciones=datos.observaciones or f"Desde el checklist {cargamento.archivo_origen}.",
+    ), usuario)
+    if cargamento.estado == srv.EN_CAMINO and all(r.llego for r in cargamento.rollos):
         _cerrar(cargamento, usuario)
     db.commit(); db.refresh(cargamento)
     return srv.resumen_cargamento(db, cargamento)

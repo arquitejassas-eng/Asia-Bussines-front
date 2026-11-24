@@ -614,3 +614,235 @@
     width: 100%;
   }
 }
+/* ── Material en camino: barra del checklist ──────────────────────────────
+   Fila 1: buscar (izquierda) y administrar el checklist (derecha, discreto).
+   Fila 2: barra de acciones sobre los rollos marcados, en dos grupos con
+   título (Llegada / Enviar a bodega). Se resalta cuando hay rollos marcados. */
+.encamino-barra {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.encamino-barra-fila {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.encamino-buscar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1 1 260px;
+  max-width: 380px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--at-muted, #7C6A56);
+}
+
+.encamino-buscar input,
+.encamino-enviar select {
+  min-height: 44px;
+  padding: 0 0.85rem;
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-radius: var(--at-r-sm, 8px);
+  background: var(--at-surface, #FFFDF9);
+  color: var(--at-text, #2A1F16);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.encamino-buscar input:focus-visible,
+.encamino-enviar select:focus-visible {
+  outline: 2px solid var(--at-terra, #B7451F);
+  outline-offset: 1px;
+}
+
+.encamino-admin {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.encamino-acciones {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--at-border-soft, #EDE3D3);
+  border-radius: var(--at-r-md, 12px);
+  background: var(--at-surface-2, #F1E9DC);
+  transition: background var(--at-ease, 160ms cubic-bezier(0.4, 0, 0.2, 1)),
+    border-color var(--at-ease, 160ms cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.encamino-acciones.activa {
+  border-color: var(--at-terra, #B7451F);
+  background: rgba(183, 69, 31, 0.06);
+}
+
+.encamino-seleccion {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+  flex-wrap: wrap;
+  flex: 1 1 220px;
+  font-size: 0.9rem;
+  color: var(--at-text-2, #4A392C);
+}
+
+.encamino-grupos {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.encamino-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.encamino-grupo + .encamino-grupo {
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--at-border, #E1D5C0);
+}
+
+.encamino-grupo-titulo {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--at-muted, #7C6A56);
+}
+
+.encamino-enviar {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.encamino-enviar select {
+  min-width: 170px;
+}
+
+.encamino-boton {
+  min-height: 44px;
+  padding: 0 1.1rem;
+  border-radius: var(--at-r-sm, 8px);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--at-ease, 160ms cubic-bezier(0.4, 0, 0.2, 1)),
+    border-color var(--at-ease, 160ms cubic-bezier(0.4, 0, 0.2, 1)),
+    color var(--at-ease, 160ms cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.encamino-boton:focus-visible {
+  outline: 2px solid var(--at-terra, #B7451F);
+  outline-offset: 2px;
+}
+
+.encamino-boton:disabled {
+  cursor: not-allowed;
+  background: transparent;
+  border: 1px dashed var(--at-border, #E1D5C0);
+  color: var(--at-muted, #7C6A56);
+  box-shadow: none;
+}
+
+.encamino-boton-primario {
+  border: 1px solid var(--at-terra, #B7451F);
+  background: var(--at-terra, #B7451F);
+  color: #FFFFFF;
+}
+
+.encamino-boton-primario:not(:disabled):hover {
+  background: var(--at-terra-light, #D9642F);
+  border-color: var(--at-terra-light, #D9642F);
+}
+
+.encamino-boton-secundario {
+  border: 1px solid var(--at-terra, #B7451F);
+  background: var(--at-surface, #FFFDF9);
+  color: var(--at-terra, #B7451F);
+}
+
+.encamino-boton-secundario:not(:disabled):hover {
+  background: rgba(183, 69, 31, 0.08);
+}
+
+.encamino-boton-suave {
+  border: 1px solid var(--at-border, #E1D5C0);
+  background: transparent;
+  color: var(--at-text-2, #4A392C);
+  font-weight: 600;
+}
+
+.encamino-boton-suave:hover {
+  background: var(--at-surface-2, #F1E9DC);
+}
+
+.encamino-boton-peligro {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--at-red, #C23B2C);
+  font-weight: 600;
+}
+
+.encamino-boton-peligro:hover {
+  background: var(--at-red-dim, rgba(194, 59, 44, 0.12));
+}
+
+.encamino-enlace {
+  min-height: 32px;
+  padding: 0 0.25rem;
+  border: none;
+  background: none;
+  color: var(--at-terra, #B7451F);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .encamino-grupos,
+  .encamino-grupo,
+  .encamino-enviar {
+    width: 100%;
+  }
+  .encamino-grupo + .encamino-grupo {
+    padding-left: 0;
+    border-left: none;
+  }
+  .encamino-enviar select {
+    flex: 1;
+    min-width: 0;
+  }
+  .encamino-boton-secundario {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .encamino-acciones,
+  .encamino-boton {
+    transition: none;
+  }
+}

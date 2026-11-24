@@ -20,6 +20,13 @@ class MarcarLlegadaRequest(BaseModel):
     rollo_ids: list[int] = Field(min_length=1)
 
 
+class EnviarDesdeChecklistRequest(BaseModel):
+    # Rollos del checklist (ids de CargamentoRollo) que salen para esa bodega.
+    rollo_ids: list[int] = Field(min_length=1)
+    bodega_destino_id: int
+    observaciones: str = ""
+
+
 class RolloEnCamino(BaseModel):
     id: int
     identificador_rollo: str
@@ -31,6 +38,12 @@ class RolloEnCamino(BaseModel):
     llego_por: str
     fecha_llegada: datetime | None
     ya_tiene_ingreso: bool
+    # Ya en el inventario: a dónde se mandó. estado_envio: "" (por repartir
+    # en Admin Inventario), "pendiente_confirmacion" (va para `destino`) o
+    # "recibido" (ya está en `destino`). Vacío si todavía no tiene ingreso.
+    rollo_inventario_id: int | None = None
+    destino: str = ""
+    estado_envio: str = ""
 
     @field_serializer("fecha_llegada", when_used="json")
     def _fecha(self, valor: datetime | None) -> str | None:
