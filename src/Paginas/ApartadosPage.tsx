@@ -78,13 +78,19 @@ function claveDeNumero(numero: string) {
 const num = (n: number | null | undefined) => (n ?? 0).toLocaleString("es-CO", { maximumFractionDigits: 2 });
 
 function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null; tipoProducto?: string; convertirEn?: string;
-  productoMetrosPorUnidad?: number | null; productoTipo?: string }) {
+  productoMetrosPorUnidad?: number | null; productoTipo?: string; descripcion?: string; productoDescripcion?: string }) {
   if (it.modalidad === "por_stock") {
     // Teja, caballete o flanche de stock: las piezas y los metros que suman
     // (cortadas, con la medida del corte).
-    const largo = it.medida || it.productoMetrosPorUnidad;
+    // El largo: el del corte, el del producto o el escrito en la descripción
+    // ("2 FLANCHES DE 3 MTR ... 0,33"), solo si es lámina (tiene espesor 0,xx).
+    const textos = `${it.descripcion || ""} ${it.productoDescripcion || ""}`.toUpperCase();
+    const esLamina = /\b0\s*[.,]\s*\d{2}\b/.test(textos) && !/UPVC|PORCELANATO/.test(textos);
+    const escrito = esLamina ? /\bDE\s+(\d+(?:[.,]\d+)?)\s*(?:M|MT|MTS|MTR|MTRS|METROS)\b/.exec(textos) : null;
+    const largo = it.medida || it.productoMetrosPorUnidad || (escrito ? Number(escrito[1].replace(",", ".")) : 0);
     if (!largo) return `${num(it.cantidad)} und`;
-    const pieza = it.productoTipo === "caballete" ? "caballete" : it.productoTipo === "flanche" ? "flanche" : "und";
+    const tipo = it.productoTipo || (textos.includes("FLANCHE") ? "flanche" : textos.includes("CABALLETE") ? "caballete" : "");
+    const pieza = tipo === "caballete" ? "caballete" : tipo === "flanche" ? "flanche" : "und";
     const nombre = pieza === "und" ? "und" : `${pieza}${it.cantidad === 1 ? "" : "s"}`;
     return `${num(it.cantidad)} ${nombre} de ${num(largo)} m = ${num(Math.round(it.cantidad * largo * 100) / 100)} m`;
   }

@@ -71,6 +71,49 @@ def _espesor(codigo_interno: str | None, *textos: str | None) -> float | None:
     return None
 
 
+# Largo y desarrollo escritos en la descripción: "2 FLANCHES DE 3 MTR DESARROLLO 24 BLANCO 9010 0,33".
+LARGO_EN_TEXTO = re.compile(r"\bDE\s+(\d+(?:[.,]\d+)?)\s*(?:M|MT|MTS|MTR|MTRS|METROS)\b", re.IGNORECASE)
+LARGO_SUELTO = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*(?:M|MT|MTS|MTR|MTRS|METROS)\b", re.IGNORECASE)
+DESARROLLO_EN_TEXTO = re.compile(r"DESARROLLO\s*(\d+(?:[.,]\d+)?)", re.IGNORECASE)
+ANCHO_LAMINA_CM = 122
+
+
+def _numero_texto(valor: str) -> float:
+    return float(valor.replace(",", "."))
+
+
+def pieza_de_lamina(producto: Producto | None, descripcion: str = "") -> tuple[float, float] | None:
+    """(largo de cada pieza en m, parte del ancho de la lámina que usa) de un
+    producto de stock de lámina (teja, caballete, flanche); None si no es
+    lámina o no se sabe su largo. El largo sale del producto o, si no lo
+    tiene (los cargados del Excel), de la descripción ("DE 3 MTR"). La parte
+    del ancho: el desarrollo escrito (flanche desarrollo 24 = 24 de 122 cm) o,
+    si no, las secciones por corte (caballete 1/3, flanche 1/5, teja entera)."""
+    if producto is None:
+        return None
+    textos = [descripcion or "", producto.descripcion or ""]
+    todo = " ".join([*textos, producto.familia or ""]).upper()
+    if "UPVC" in todo or "PORCELANATO" in todo:
+        return None
+    tipo = producto.tipo_producto if producto.tipo_producto in SECCIONES_POR_TIPO_PRODUCTO else (
+        "flanche" if "FLANCHE" in todo else "caballete" if "CABALLETE" in todo else "")
+    largo = float(producto.metros_por_unidad or 0)
+    if not largo and (tipo or "TEJA" in todo or "LAMINA" in todo or "LÁMINA" in todo):
+        # Solo si es lámina: que tenga espesor (0,27 / 0,33 ...), para no tomar "DE 6" de una fibra.
+        if _espesor(None, producto.calibre, *textos) is not None:
+            for texto in textos:
+                encontrado = LARGO_EN_TEXTO.search(texto) or LARGO_SUELTO.search(texto)
+                if encontrado:
+                    largo = _numero_texto(encontrado.group(1))
+                    break
+    if not largo:
+        return None
+    desarrollo = next((_numero_texto(d.group(1)) for d in map(DESARROLLO_EN_TEXTO.search, textos) if d), None)
+    if tipo and desarrollo and 0 < desarrollo < ANCHO_LAMINA_CM:
+        return largo, desarrollo / ANCHO_LAMINA_CM
+    return largo, 1 / SECCIONES_POR_TIPO_PRODUCTO.get(tipo, 1)
+
+
 def peso_por_metro(db: Session, espesor: float | None) -> float | None:
     """Kilos por metro del espesor, con 3 decimales (como la tabla del negocio)."""
     if espesor is None:
@@ -101,12 +144,13 @@ def cantidad_sugerida(db: Session, empresa: str, *, modalidad: str, codigo_inter
             if not producto.metros_por_unidad:
                 return {"cantidad": None, "unidad": "m2", "aviso": "Este porcelanato no tiene m² por caja en Inventario: escribe los m².", "kilos": None}
             return {"cantidad": round(cantidad * float(producto.metros_por_unidad), 2), "unidad": "m2", "aviso": "", "kilos": None}
-        if producto is not None and producto.metros_por_unidad:
+        pieza = pieza_de_lamina(producto, descripcion)
+        if pieza is not None:
             # Teja, lámina, caballete o flanche de stock: es lámina, se cobra por
-            # kilo / centímetro. Un caballete o flanche es una sección del ancho
-            # (3 o 5 por corte): cada pieza pesa su largo entre las secciones.
-            secciones = SECCIONES_POR_TIPO_PRODUCTO.get(producto.tipo_producto or "", 1)
-            metros = round(cantidad * float(producto.metros_por_unidad) / secciones, 2)
+            # kilo / centímetro. Cada pieza pesa su largo por la parte del ancho
+            # de la lámina que usa (ver pieza_de_lamina).
+            largo, fraccion = pieza
+            metros = round(cantidad * largo * fraccion, 2)
             espesor = _espesor(None, producto.calibre, producto.descripcion, descripcion)
         else:
             return {"cantidad": round(cantidad, 2), "unidad": "und", "aviso": "", "kilos": None}
