@@ -285,7 +285,10 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
   // mismo código de clasificación (mismo color y espesor). Solo tejas.
   function puedeProducirJunto(solicitud) {
     const principal = solicitudesElegidas[0];
+    // La otra línea también tiene que ser de teja: un caballete o flanche se
+    // cuenta por cortes (3 o 5 por corte), no se puede sumar como teja.
     return Boolean(principal) && !SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && solicitud.itemId !== principal.itemId
+      && !SECCIONES_POR_TIPO_PRODUCTO[solicitud.tipoProducto]
       && solicitud.apartadoId === principal.apartadoId && solicitud.codigoInterno === principal.codigoInterno
       && modeloEnDescripcion(solicitud.descripcion) === modeloEnDescripcion(principal.descripcion);
   }

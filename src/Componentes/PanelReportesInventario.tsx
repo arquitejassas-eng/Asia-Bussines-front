@@ -262,6 +262,55 @@ export function ReporteInventarioPorTipo() {
     }
   }
 
+  // Lámina sin separar por empresa: una fila por código con Arquitejas y Asia
+  // sumados (lo que hay y lo que se puede vender), y cuánto es de cada una.
+  function exportarSinEmpresa() {
+    const sufijo = [bodega, color && nombreColor(color)].filter(Boolean).join(" - ");
+    const bodegasLamina = bodegasDisponibles.filter((b) => rollosFiltrados.some((r) => r.bodega === b));
+    const toneladas = (kilos: number) => Math.round(kilos) / 1000;
+    const m2 = (n: number) => Math.round(n * 100) / 100;
+    const porCodigo = new Map<string, { codigo: string; calibre: number; color: string; ral: string; anchos: Set<number>;
+      porBodega: Record<string, { metros: number; kilos: number }>; rollos: number; metros: number; kilos: number;
+      apartado: number; libre: number; libreAR: number; libreABG: number; cotizaciones: Set<string> }>();
+    for (const g of filasRollos) {
+      const t = porCodigo.get(g.codigo) || { codigo: g.codigo, calibre: g.calibre, color: g.color, ral: g.ral, anchos: new Set<number>(),
+        porBodega: {}, rollos: 0, metros: 0, kilos: 0, apartado: 0, libre: 0, libreAR: 0, libreABG: 0, cotizaciones: new Set<string>() };
+      g.lista.forEach((r) => { if (r.ancho != null) t.anchos.add(r.ancho); });
+      for (const [b, c] of Object.entries(g.porBodega)) {
+        const celda = t.porBodega[b] || { metros: 0, kilos: 0 };
+        celda.metros += c.metros; celda.kilos += c.kilos;
+        t.porBodega[b] = celda;
+      }
+      t.rollos += g.rollos; t.metros += g.metros; t.kilos += g.kilos; t.apartado += g.apartado; t.libre += g.libre;
+      if (g.empresa === "AR") t.libreAR += g.libre; else if (g.empresa === "ABG") t.libreABG += g.libre;
+      g.cotizaciones.forEach((c) => t.cotizaciones.add(c));
+      t.ral = t.ral || g.ral;
+      porCodigo.set(g.codigo, t);
+    }
+    const filas = [...porCodigo.values()].sort((a, b) => (a.calibre || 0) - (b.calibre || 0) || compararTexto(a.codigo, b.codigo));
+    exportarHojasAExcel([
+      { nombre: "Total por código", filas: filas.map((t) => ({
+        "Código": t.codigo, "Espesor (mm)": espesorDe(t), "Color": t.color ? nombreColor(t.color) : "", "RAL": t.ral,
+        "Ancho (cm)": [...t.anchos].sort((x, y) => x - y).join(" / "),
+        ...Object.fromEntries(bodegasLamina.flatMap((b) => [
+          [`${b} (metros)`, t.porBodega[b] ? m2(t.porBodega[b].metros) : 0],
+          [`${b} (kg)`, t.porBodega[b] ? Math.round(t.porBodega[b].kilos) : 0],
+        ])),
+        "Rollos": t.rollos, "Metros": m2(t.metros), "Kilos": Math.round(t.kilos), "Toneladas": toneladas(t.kilos),
+        "Apartado (m)": m2(t.apartado), "Libre para vender (m)": m2(t.libre),
+        "De eso, libre Arquitejas (m)": m2(t.libreAR), "De eso, libre Asia Business (m)": m2(t.libreABG),
+        "Apartado para": [...t.cotizaciones].join(", "),
+      })) },
+      { nombre: "Detalle por rollo", filas: [...rollosFiltrados].sort((a, b) => compararTexto(a.codigo, b.codigo) || ordenRollos(a, b)).map((r) => ({
+        "Código": r.codigo, "Bodega": r.bodega, "Empresa": nombreEmpresa(r.empresa), "Espesor (mm)": espesorDe(r),
+        "Color": colorDe(r) ? nombreColor(colorDe(r)) : "", "RAL": r.ral || "", "Referencia": r.referencia, "Ancho (cm)": r.ancho ?? "",
+        "Metros disponibles": r.metros_disponibles, "Kilos hoy": r.kilos_actuales ?? "",
+        "Estado": ETIQUETAS_ESTADO[r.estado] || r.estado, "Apartado": apartadoDelRollo(r) || "Libre",
+        "Importación": nombreImportacion(r.importacion),
+      })) },
+    ], `Lámina total por código (las dos empresas)${sufijo ? ` - ${sufijo}` : ""}.xlsx`);
+  }
+
   const totalUnidades = filasProductos.reduce((s, g) => s + g.total, 0);
   const totalMetros = filasRollos.reduce((s, g) => s + g.metros, 0);
   const totalKilos = filasRollos.reduce((s, g) => s + g.kilos, 0);
@@ -319,6 +368,12 @@ export function ReporteInventarioPorTipo() {
             disabled={esRollos ? filasRollos.length === 0 : filasProductos.length === 0 && !(conLamina && filasRollos.length)}>
             📥 Exportar a Excel
           </button>
+          {(esRollos || conLamina) && (
+            <button type="button" className="reportes-boton-secundario" onClick={exportarSinEmpresa} disabled={filasRollos.length === 0}
+              title="Lámina: una fila por código con Arquitejas y Asia Business sumados">
+              📥 Lámina total por código (sin separar empresas)
+            </button>
+          )}
         </div>
       </section>
 
