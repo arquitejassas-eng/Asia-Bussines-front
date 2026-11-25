@@ -32,7 +32,7 @@ from app.models.siigo import SiigoPreferencia
 from app.models.usuario import Usuario
 from app.services import siigo
 from app.services.empresas import EMPRESAS_CONOCIDAS
-from app.services.seccionados import metros_de_linea
+from app.services.seccionados import SECCIONES_POR_TIPO_PRODUCTO, metros_de_linea
 
 logger = logging.getLogger("arquitejas.siigo")
 
@@ -47,9 +47,6 @@ _sin_confirmar: dict[int, float] = {}  # cotización -> time.monotonic() del int
 MINUTOS_SIN_RECREAR = 10
 
 UNIDAD_POR_EMPRESA = {"ABG": "kg", "AR": "cm"}
-# Caballetes y flanches YA HECHOS (de stock) se venden por unidad aunque
-# guarden su largo; los que se mandan a producir van como la teja (por rollo).
-TIPOS_DE_STOCK_POR_UNIDAD = ("caballete", "flanche")
 
 
 def es_porcelanato(producto: Producto | None) -> bool:
@@ -104,9 +101,12 @@ def cantidad_sugerida(db: Session, empresa: str, *, modalidad: str, codigo_inter
             if not producto.metros_por_unidad:
                 return {"cantidad": None, "unidad": "m2", "aviso": "Este porcelanato no tiene m² por caja en Inventario: escribe los m².", "kilos": None}
             return {"cantidad": round(cantidad * float(producto.metros_por_unidad), 2), "unidad": "m2", "aviso": "", "kilos": None}
-        if producto is not None and producto.metros_por_unidad and producto.tipo_producto not in TIPOS_DE_STOCK_POR_UNIDAD:
-            # Teja o lámina de stock: también se cobra por kilo / centímetro.
-            metros = round(cantidad * float(producto.metros_por_unidad), 2)
+        if producto is not None and producto.metros_por_unidad:
+            # Teja, lámina, caballete o flanche de stock: es lámina, se cobra por
+            # kilo / centímetro. Un caballete o flanche es una sección del ancho
+            # (3 o 5 por corte): cada pieza pesa su largo entre las secciones.
+            secciones = SECCIONES_POR_TIPO_PRODUCTO.get(producto.tipo_producto or "", 1)
+            metros = round(cantidad * float(producto.metros_por_unidad) / secciones, 2)
             espesor = _espesor(None, producto.calibre, producto.descripcion, descripcion)
         else:
             return {"cantidad": round(cantidad, 2), "unidad": "und", "aviso": "", "kilos": None}
