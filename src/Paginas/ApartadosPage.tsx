@@ -77,8 +77,17 @@ function claveDeNumero(numero: string) {
 // Con coma decimal, como se escriben en las cotizaciones: 5,3 m.
 const num = (n: number | null | undefined) => (n ?? 0).toLocaleString("es-CO", { maximumFractionDigits: 2 });
 
-function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null; tipoProducto?: string; convertirEn?: string }) {
-  if (it.modalidad === "por_stock") return `${num(it.cantidad)} und`;
+function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number | null; metrosRequeridos: number | null; tipoProducto?: string; convertirEn?: string;
+  productoMetrosPorUnidad?: number | null; productoTipo?: string }) {
+  if (it.modalidad === "por_stock") {
+    // Teja, caballete o flanche de stock: las piezas y los metros que suman
+    // (cortadas, con la medida del corte).
+    const largo = it.medida || it.productoMetrosPorUnidad;
+    if (!largo) return `${num(it.cantidad)} und`;
+    const pieza = it.productoTipo === "caballete" ? "caballete" : it.productoTipo === "flanche" ? "flanche" : "und";
+    const nombre = pieza === "und" ? "und" : `${pieza}${it.cantidad === 1 ? "" : "s"}`;
+    return `${num(it.cantidad)} ${nombre} de ${num(largo)} m = ${num(Math.round(it.cantidad * largo * 100) / 100)} m`;
+  }
   if (it.tipoProducto === "lamina_lisa") {
     return `${num(it.cantidad)} lámina${it.cantidad === 1 ? "" : "s"} lisa${it.cantidad === 1 ? "" : "s"} de ${num(it.medida)} m = ${num(it.metrosRequeridos)} m`
       + (it.convertirEn ? ` → ${num(it.cantidad * (it.convertirEn === "flanche" ? 5 : 3))} ${it.convertirEn}s` : "");

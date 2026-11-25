@@ -236,6 +236,9 @@ class ApartadoItemResponse(BaseModel):
     rollo_referencia: str | None = None
     producto_codigo: str | None = None
     producto_descripcion: str | None = None
+    # Producto de stock de lámina: largo de cada pieza y si es teja, caballete o flanche.
+    producto_metros_por_unidad: float | None = None
+    producto_tipo: str = ""
     tipo_producto: str = ""
     # "" = material de la empresa de la cotización.
     empresa_material: str = ""

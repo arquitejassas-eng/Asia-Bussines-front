@@ -232,6 +232,17 @@ class ApartadoItem(Base):
         return self.producto.descripcion if self.producto is not None else None
 
     @property
+    def producto_metros_por_unidad(self) -> float | None:
+        """Largo de cada pieza del producto de stock (teja, caballete, flanche): para mostrar los metros."""
+        if self.producto is None or not self.producto.metros_por_unidad:
+            return None
+        return float(self.producto.metros_por_unidad)
+
+    @property
+    def producto_tipo(self) -> str:
+        return (self.producto.tipo_producto or "") if self.producto is not None else ""
+
+    @property
     def metros_pendientes(self) -> float | None:
         """Solo tiene sentido para POR_ROLLO -- None para POR_STOCK."""
         if self.metros_requeridos is None:
