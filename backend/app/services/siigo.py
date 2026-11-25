@@ -137,6 +137,12 @@ def pedir(empresa: str, metodo: str, ruta: str, *, json: dict | None = None, par
             if respuesta.status_code >= 400:
                 codigo, mensaje = _mensaje_de_error(respuesta)
                 logger.warning("Siigo %s %s (%s): %s %s", metodo, ruta, config["empresa"], respuesta.status_code, mensaje)
+                # Su propio servidor se demoró ("Request timed out", 504/408): es
+                # lo mismo que no responder a tiempo. Al crear, la cotización puede
+                # haber quedado hecha: con codigo "timeout" se busca antes de repetirla.
+                if respuesta.status_code in (408, 504) or "timed out" in mensaje.lower():
+                    raise ErrorSiigo("Siigo no respondió a tiempo (su servidor está lento). Espera unos minutos e intenta de nuevo.",
+                                     estado=respuesta.status_code, codigo="timeout")
                 raise ErrorSiigo(f"Siigo rechazó la petición: {mensaje}", estado=respuesta.status_code, codigo=codigo)
             return respuesta.json() if respuesta.content else {}
     raise ErrorSiigo("Siigo está recibiendo muchas consultas. Espera un minuto e intenta de nuevo.", estado=429, codigo="requests_limit")

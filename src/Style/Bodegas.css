@@ -591,3 +591,17 @@
   .bodegas-tabla-inventario .bod-col-estado { grid-column: 1 / -1; min-width: 0; }
   .bodegas-tabla-inventario .bodegas-boton-solicitar { width: 100%; padding: 0.7rem; }
 }
+
+/* Administrar usuarios: otras bodegas que maneja una cuenta. */
+.usuarios-otras-bodegas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: 0.75rem 0 0.25rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--at-border, #E1D5C0);
+  border-radius: var(--at-r-sm, 8px);
+}
+.usuarios-otras-bodegas legend { padding: 0 0.3rem; font-weight: 700; font-size: 0.85rem; }
+.usuarios-otras-bodegas p { flex-basis: 100%; margin: 0; font-size: 0.8rem; color: var(--at-muted, #7C6A56); }
+.usuarios-otras-bodegas label { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 500; }

@@ -363,3 +363,40 @@
     width: auto;
   }
 }
+
+/* Cuentas con varias bodegas: "Bodega: Santander ▾" en vez del nombre fijo. */
+.barra-selector-bodega {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0 0 1.4rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+.barra-selector-bodega > span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--at-steel-muted, #B0A18C);
+}
+.barra-selector-bodega select {
+  min-height: 40px;
+  padding: 0 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--at-r-sm, 8px);
+  background: rgba(255, 255, 255, 0.06);
+  color: #F5EFE6;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.barra-selector-bodega select:focus-visible { outline: 2px solid var(--at-terra-light, #D9642F); outline-offset: 2px; }
+.barra-selector-bodega option { color: #251C14; background: #FFFFFF; }
+.barra-selector-aviso {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #F2B8A0;
+}

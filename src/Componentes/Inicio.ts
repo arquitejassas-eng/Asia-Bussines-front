@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { api, ErrorApi } from "./Api";
 import { guardarToken } from "../Utils/auth";
+import { ultimaBodega, type BodegaDeSesion } from "../Utils/bodegaActiva";
 
 // El login ahora pasa por el backend real. La contraseña ya no se valida
 // en el navegador contra una lista fija: el servidor responde con el token
 // y los datos de la sesión (bodega, rol) según lo que haya en MySQL.
 
-type Sesion = { correo: string; bodegaId: number; bodegaNombre: string; rol: string };
+type Sesion = { correo: string; bodegaId: number; bodegaNombre: string; rol: string; bodegas?: BodegaDeSesion[] };
 
 export function useControladorInicio(onLogin: (sesion: Sesion) => void) {
   const [correo, setCorreo] = useState("");
@@ -37,14 +38,18 @@ export function useControladorInicio(onLogin: (sesion: Sesion) => void) {
       const respuesta = await api.post("/auth/login", { correo, contrasena });
 
       if (!respuesta) throw new Error("Respuesta vacía del servidor.");
-      const datos = respuesta as { access_token: string; sesion: { correo: string; bodega_id: number; bodega_nombre: string; rol: string } };
+      const datos = respuesta as { access_token: string; sesion: { correo: string; bodega_id: number; bodega_nombre: string; rol: string; bodegas?: BodegaDeSesion[] } };
       guardarToken(datos.access_token);
 
+      // Si maneja varias bodegas, entra a la última que escogió.
+      const bodegas = datos.sesion.bodegas || [];
+      const ultima = bodegas.length > 1 ? ultimaBodega(datos.sesion.correo, bodegas) : null;
       onLogin?.({
         correo: datos.sesion.correo,
-        bodegaId: datos.sesion.bodega_id,
-        bodegaNombre: datos.sesion.bodega_nombre,
+        bodegaId: ultima?.id ?? datos.sesion.bodega_id,
+        bodegaNombre: ultima?.nombre ?? datos.sesion.bodega_nombre,
         rol: datos.sesion.rol,
+        bodegas,
       });
     } catch (err) {
       if (err instanceof ErrorApi && err.status === 401) {

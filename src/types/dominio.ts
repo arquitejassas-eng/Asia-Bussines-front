@@ -1,7 +1,7 @@
 import type { ProductoSinCodigo } from "../Componentes/AvisosProductosSinCodigo";
 import type { TrasladoRollo } from "../Componentes/AvisosTrasladosRollos";
 
-export type Sesion = { correo: string; bodegaId: number | null; bodegaNombre: string; rol: string };
+export type Sesion = { correo: string; bodegaId: number | null; bodegaNombre: string; rol: string; bodegas?: { id: number; nombre: string }[] };
 export type Bodega = { id: number; nombre: string };
 export type SolicitudApi = {
   id: number; estado: string; tipo_operacion: string; cantidad: number; producto_codigo: string;
@@ -42,7 +42,7 @@ export type Solicitud = {
 };
 export type UnidadFamilia = { id: number; familia: string; unidad: string; permiteDecimales: boolean };
 export type UsuarioApi = { id: number; correo: string; rol: string; bodega_id: number | null; activo: boolean };
-export type Usuario = { id: number; correo: string; rol: string; bodegaId: number | null; activo: boolean };
+export type Usuario = { id: number; correo: string; rol: string; bodegaId: number | null; activo: boolean; bodegasExtraIds?: number[] };
 export type AlmacenGlobal = {
   bodegas: Bodega[]; solicitudes: Solicitud[]; envios: Envio[]; unidadesFamilia: UnidadFamilia[];
   // Traslados que esta bodega tiene por despachar o por recibir (campanita).

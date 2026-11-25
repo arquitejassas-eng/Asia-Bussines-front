@@ -8,11 +8,18 @@ class LoginRequest(BaseModel):
     contrasena: str
 
 
+class BodegaDeSesion(BaseModel):
+    id: int
+    nombre: str
+
+
 class SesionResponse(BaseModel):
     correo: str
     bodega_id: int | None
     bodega_nombre: str
     rol: RolUsuario
+    # Todas las bodegas que maneja (la suya primero); más de una = selector en el menú.
+    bodegas: list[BodegaDeSesion] = []
 
 
 class TokenResponse(BaseModel):

@@ -1,4 +1,5 @@
 import { obtenerToken } from "../Utils/auth";
+import { encabezadoBodega } from "../Utils/bodegaActiva";
 
 const URL_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -29,6 +30,9 @@ async function peticion<T = unknown>(ruta: string, opciones: OpcionesPeticion = 
   const encabezados = new Headers(opciones.encabezados);
   encabezados.set("Content-Type", "application/json");
   if (token) encabezados.set("Authorization", `Bearer ${token}`);
+  // Cuenta con varias bodegas: la escogida en el menú (salvo que la petición pida otra).
+  const bodega = encabezadoBodega();
+  if (bodega && !encabezados.has("X-Bodega-Id")) encabezados.set("X-Bodega-Id", bodega);
   if (esFormulario) encabezados.delete("Content-Type");
 
   const respuesta = await fetch(`${URL_BASE}${ruta}`, {
@@ -57,7 +61,7 @@ async function peticion<T = unknown>(ruta: string, opciones: OpcionesPeticion = 
 }
 
 export const api = {
-  get: <T = unknown>(ruta: string) => peticion<T>(ruta),
+  get: <T = unknown>(ruta: string, encabezados?: HeadersInit) => peticion<T>(ruta, { encabezados }),
   post: <T = unknown>(ruta: string, cuerpo?: unknown) => peticion<T>(ruta, { metodo: "POST", cuerpo }),
   put: <T = unknown>(ruta: string, cuerpo?: unknown) => peticion<T>(ruta, { metodo: "PUT", cuerpo }),
   patch: <T = unknown>(ruta: string, cuerpo?: unknown) => peticion<T>(ruta, { metodo: "PATCH", cuerpo }),

@@ -48,7 +48,8 @@ def actualizar_usuario(
     usuario_id: int, datos: UsuarioActualizar, db: Session = Depends(get_db),
     superadmin: Usuario = Depends(usuario_actual),
 ) -> Usuario:
-    usuario = srv.actualizar_usuario(db, usuario_id, rol=datos.rol, bodega_id=datos.bodega_id, superadmin=superadmin)
+    usuario = srv.actualizar_usuario(db, usuario_id, rol=datos.rol, bodega_id=datos.bodega_id, superadmin=superadmin,
+                                     bodegas_extra_ids=datos.bodegas_extra_ids)
     db.commit()
     db.refresh(usuario)
     return usuario

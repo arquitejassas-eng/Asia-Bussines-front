@@ -49,7 +49,7 @@ const PrestamosPage = pantalla(() => import("./Paginas/PrestamosPage"));
 
 const CLAVE_SESION = "arquitejas_sesion";
 
-type Sesion = { correo: string; bodegaId: number | null; bodegaNombre: string; rol: string };
+type Sesion = { correo: string; bodegaId: number | null; bodegaNombre: string; rol: string; bodegas?: { id: number; nombre: string }[] };
 
 function leerSesionGuardada(): Sesion | null {
   try {

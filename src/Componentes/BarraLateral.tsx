@@ -4,9 +4,10 @@ import { ApartadosPorEnviarContexto } from "./AvisosApartados";
 import { TrasladosRollosContexto } from "./AvisosTrasladosRollos";
 import { AlertasImportacionContexto, ProductosSinCodigoContexto } from "./AvisosProductosSinCodigo";
 import { PedirMaterialContexto } from "./AvisosPedirMaterial";
+import SelectorBodega from "./SelectorBodega";
 import "../Style/Barralateral.css";
 
-type Sesion = { rol?: string; bodegaNombre?: string } | null | undefined;
+type Sesion = { rol?: string; bodegaNombre?: string; bodegaId?: number | null; bodegas?: { id: number; nombre: string }[] } | null | undefined;
 type Props = { sesion: Sesion; onCerrarSesion: () => void; notificaciones?: number };
 
 // `roles` debe reflejar exactamente los mismos arrays que protegen cada ruta
@@ -46,7 +47,11 @@ export default function BarraLateral({ sesion, onCerrarSesion, notificaciones = 
   return (
     <aside className="barra-lateral">
       <div className="barra-marca"><span className="barra-marca-icono">◆</span> Arquitejas</div>
-      <p className="barra-bodega">{sesion?.bodegaNombre || "—"}</p>
+      {(sesion?.bodegas?.length ?? 0) > 1 ? (
+        <SelectorBodega rol={sesion?.rol || ""} bodegaId={sesion?.bodegaId ?? null} bodegas={sesion?.bodegas || []} />
+      ) : (
+        <p className="barra-bodega">{sesion?.bodegaNombre || "—"}</p>
+      )}
       <nav className="barra-nav">
         {modulosVisibles.map((modulo) => modulo.disponible && (
           <div key={modulo.clave} className="barra-item-grupo">

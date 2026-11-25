@@ -10,7 +10,8 @@ const numeroOpcional = (valor: unknown) => valor == null ? null : Number(valor);
 
 export function usuarioDesdeApi(u: RegistroApi) {
   return { id: numero(u.id), correo: texto(u.correo), rol: texto(u.rol),
-    bodegaId: numeroOpcional(u.bodega_id), activo: Boolean(u.activo) };
+    bodegaId: numeroOpcional(u.bodega_id), activo: Boolean(u.activo),
+    bodegasExtraIds: Array.isArray(u.bodegas_extra_ids) ? (u.bodegas_extra_ids as unknown[]).map(numero) : [] };
 }
 
 export function productoDesdeApi(p: RegistroApi) {

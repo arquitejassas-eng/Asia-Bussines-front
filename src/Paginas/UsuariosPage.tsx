@@ -113,7 +113,14 @@ function UsuariosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
                       <tr key={usr.id}>
                         <td>{usr.correo}{usr.correo === sesion?.correo ? " (tú)" : ""}</td>
                         <td>{ETIQUETAS_ROL[usr.rol] || usr.rol}</td>
-                        <td>{usr.bodegaId == null ? "—" : bodegasPorId[usr.bodegaId] || usr.bodegaId}</td>
+                        <td>
+                          {usr.bodegaId == null ? "—" : bodegasPorId[usr.bodegaId] || usr.bodegaId}
+                          {(usr.bodegasExtraIds?.length ?? 0) > 0 && (
+                            <small style={{ display: "block", opacity: 0.75 }}>
+                              + {usr.bodegasExtraIds!.map((id) => bodegasPorId[id] || id).join(", ")}
+                            </small>
+                          )}
+                        </td>
                         <td>{usr.activo ? "Activo" : "Desactivado"}</td>
                         <td className="inventario-acciones">
                           <button onClick={() => u.abrirEdicion(usr)}>Editar</button>
@@ -227,6 +234,18 @@ function UsuariosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
                       <option key={b.id} value={b.id}>{b.nombre}</option>
                     ))}
                   </select>
+                  {["administrativo", "jefe_planta"].includes(u.formularioEdicion.rol) && u.formularioEdicion.bodegaId && (
+                    <fieldset className="usuarios-otras-bodegas">
+                      <legend>Otras bodegas que maneja</legend>
+                      <p>Cambia entre ellas desde el menú, sin cerrar sesión.</p>
+                      {(almacen?.bodegas || []).filter((b) => String(b.id) !== u.formularioEdicion.bodegaId).map((b) => (
+                        <label key={b.id}>
+                          <input type="checkbox" checked={u.formularioEdicion.bodegasExtra.includes(b.id)}
+                            onChange={() => u.alternarBodegaExtra(b.id)} /> {b.nombre}
+                        </label>
+                      ))}
+                    </fieldset>
+                  )}
                   {u.errorEdicion && <p className="bodegas-error">{u.errorEdicion}</p>}
                   <div className="bodegas-modal-acciones">
                     <button type="button" className="bodegas-boton-secundario" onClick={u.cerrarEdicion}>

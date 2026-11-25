@@ -82,13 +82,13 @@ export function useUsuarios() {
 
   // ---------- Editar rol/bodega ----------
   const [usuarioEditando, setUsuarioEditando] = useState<Usuario | null>(null);
-  const [formularioEdicion, setFormularioEdicion] = useState({ rol: "", bodegaId: "" });
+  const [formularioEdicion, setFormularioEdicion] = useState<{ rol: string; bodegaId: string; bodegasExtra: number[] }>({ rol: "", bodegaId: "", bodegasExtra: [] });
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   const [errorEdicion, setErrorEdicion] = useState("");
 
   function abrirEdicion(usuario: Usuario) {
     setUsuarioEditando(usuario);
-    setFormularioEdicion({ rol: usuario.rol, bodegaId: usuario.bodegaId == null ? "" : String(usuario.bodegaId) });
+    setFormularioEdicion({ rol: usuario.rol, bodegaId: usuario.bodegaId == null ? "" : String(usuario.bodegaId), bodegasExtra: usuario.bodegasExtraIds || [] });
     setErrorEdicion("");
   }
   function cerrarEdicion() {
@@ -97,6 +97,14 @@ export function useUsuarios() {
   }
   function actualizarCampoEdicion(campo: "rol" | "bodegaId", valor: string) {
     setFormularioEdicion((actual) => ({ ...actual, [campo]: valor }));
+  }
+  // Otras bodegas que maneja la cuenta (bodega o Planta): cambia entre ellas desde el menú.
+  function alternarBodegaExtra(bodegaId: number) {
+    setFormularioEdicion((actual) => ({
+      ...actual,
+      bodegasExtra: actual.bodegasExtra.includes(bodegaId)
+        ? actual.bodegasExtra.filter((id) => id !== bodegaId) : [...actual.bodegasExtra, bodegaId],
+    }));
   }
 
   async function guardarEdicion(evento: { preventDefault: () => void }) {
@@ -108,6 +116,8 @@ export function useUsuarios() {
       await api.patch(`/usuarios/${usuarioEditando.id}`, {
         rol: formularioEdicion.rol,
         bodega_id: formularioEdicion.bodegaId ? Number(formularioEdicion.bodegaId) : null,
+        bodegas_extra_ids: ["administrativo", "jefe_planta"].includes(formularioEdicion.rol) && formularioEdicion.bodegaId
+          ? formularioEdicion.bodegasExtra.filter((id) => id !== Number(formularioEdicion.bodegaId)) : [],
       });
       await cargarUsuarios();
       setUsuarioEditando(null);
@@ -196,7 +206,7 @@ export function useUsuarios() {
     abrirFormulario, cerrarFormulario, actualizarCampo, crearUsuario,
 
     usuarioEditando, formularioEdicion, guardandoEdicion, errorEdicion,
-    abrirEdicion, cerrarEdicion, actualizarCampoEdicion, guardarEdicion,
+    abrirEdicion, cerrarEdicion, actualizarCampoEdicion, alternarBodegaExtra, guardarEdicion,
 
     procesandoAccionId, errorAccion, activarUsuario, desactivarUsuario,
 

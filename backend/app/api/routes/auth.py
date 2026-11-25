@@ -5,7 +5,7 @@ from app.core import limite_login
 from app.core.security import crear_token_acceso, verificar_contrasena
 from app.db.session import get_db
 from app.models.usuario import RolUsuario, Usuario
-from app.schemas.auth import LoginRequest, SesionResponse, TokenResponse
+from app.schemas.auth import BodegaDeSesion, LoginRequest, SesionResponse, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
@@ -20,6 +20,16 @@ def _bodega_nombre_para(usuario: Usuario) -> str:
     if usuario.bodega_id:
         return usuario.bodega.nombre
     return "Administrador general" if usuario.rol == RolUsuario.SUPERADMIN else "Admin Inventario"
+
+
+def bodegas_de(usuario: Usuario) -> list[BodegaDeSesion]:
+    """Las bodegas que maneja la cuenta: la suya y las adicionales que le
+    asignó el superadmin (solo cuentas de bodega o de Planta)."""
+    if usuario.bodega_id is None or usuario.bodega is None:
+        return []
+    extra = [b for b in usuario.bodegas_extra if b.id != usuario.bodega_id]
+    return [BodegaDeSesion(id=usuario.bodega.id, nombre=usuario.bodega.nombre),
+            *(BodegaDeSesion(id=b.id, nombre=b.nombre) for b in extra)]
 
 
 def _ip_del_cliente(request: Request) -> str:
@@ -60,5 +70,6 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)) 
             bodega_id=usuario.bodega_id,
             bodega_nombre=_bodega_nombre_para(usuario),
             rol=usuario.rol,
+            bodegas=bodegas_de(usuario),
         ),
     )

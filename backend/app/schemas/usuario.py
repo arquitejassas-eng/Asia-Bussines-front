@@ -20,6 +20,8 @@ class UsuarioResponse(BaseModel):
     rol: RolUsuario
     bodega_id: int | None
     activo: bool
+    # Otras bodegas que maneja (además de la suya): las asigna el superadmin.
+    bodegas_extra_ids: list[int] = []
 
     class Config:
         from_attributes = True
@@ -30,6 +32,8 @@ class UsuarioActualizar(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     rol: RolUsuario
     bodega_id: int | None = None
+    # None = no se cambian; [] = ninguna adicional.
+    bodegas_extra_ids: list[int] | None = None
 
 
 class RestablecerContrasenaRequest(BaseModel):

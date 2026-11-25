@@ -72,6 +72,7 @@ def _usuario_o_404(db: Session, usuario_id: int) -> Usuario:
 
 def actualizar_usuario(
     db: Session, usuario_id: int, *, rol: RolUsuario, bodega_id: int | None, superadmin: Usuario,
+    bodegas_extra_ids: list[int] | None = None,
 ) -> Usuario:
     usuario = _usuario_o_404(db, usuario_id)
     if usuario.id == superadmin.id:
@@ -82,6 +83,13 @@ def actualizar_usuario(
     _validar_rol_y_bodega(db, rol, bodega_id)
     usuario.rol = rol
     usuario.bodega_id = bodega_id
+    if bodegas_extra_ids is not None or bodega_id is None:
+        # Solo las cuentas de bodega o de Planta manejan otras bodegas; la suya no se repite.
+        ids = [] if bodega_id is None else [i for i in dict.fromkeys(bodegas_extra_ids or []) if i != bodega_id]
+        bodegas = db.query(Bodega).filter(Bodega.id.in_(ids)).all() if ids else []
+        if len(bodegas) != len(ids):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Alguna de las otras bodegas no existe.")
+        usuario.bodegas_extra = bodegas
     return usuario
 
 
