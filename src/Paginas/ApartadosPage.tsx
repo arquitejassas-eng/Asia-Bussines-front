@@ -1000,6 +1000,21 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           {a.subiendoASiigo === ap.id ? "Enviando a Siigo..." : ap.siigoId ? "Actualizar en Siigo" : "Subir a Siigo"}
         </button>
       )}
+      {/* Ya entregada o terminada (no se puede editar): Admin Inventario vuelve a
+          mandar a Siigo lo que tiene el programa, ej. después de corregir una
+          línea. No toca el inventario. */}
+      {esAdminInventario && ap.siigoId && !ap.siigoPendiente && !ap.trasladoA && !ap.ordenInterna
+        && (ap.estado === "entregado" || ap.estado === "produccion_terminada") && (
+        <button title="Manda otra vez a Siigo las cantidades y valores que tiene el programa" disabled={a.subiendoASiigo === ap.id}
+          onClick={() => setConfirmacion({
+            titulo: `¿Actualizar ${ap.numeroCotizacion} en Siigo?`,
+            mensaje: "Siigo queda con las cantidades (kilos, centímetros o unidades) y valores que tiene el programa para esta cotización. No cambia nada del inventario.",
+            textoConfirmar: "Sí, actualizar en Siigo",
+            ejecutar: () => a.subirApartadoASiigo(ap.id),
+          })}>
+          {a.subiendoASiigo === ap.id ? "Enviando a Siigo..." : "Actualizar en Siigo"}
+        </button>
+      )}
       {a.puedeEditarApartados && (ap.siigoPendiente || ap.observaciones.includes("Separada de la cotización"))
         && !ap.siigoId && ap.estado !== "cancelado" && !ap.trasladoA && !ap.ordenInterna && (
         <button title="Si ya la hicieron a mano en Siigo: se enlaza con esa, sin crear otra" disabled={a.subiendoASiigo === ap.id}
