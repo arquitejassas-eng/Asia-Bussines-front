@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "solo-desarrollo-no-usar-en-produccion"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 600  # 10 horas
 
     ORIGENES_PERMITIDOS: str = "http://localhost:5173,http://127.0.0.1:4173"
     # URL pública real del backend (sin / al final). Se declara como "servers"
