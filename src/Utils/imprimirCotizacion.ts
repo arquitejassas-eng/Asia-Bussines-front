@@ -1,3 +1,4 @@
+import { cerrarImpresion, ventanaParaImprimirEnLaPagina } from "./imprimirTraslados";
 // Hoja para imprimir una cotización SIN precios: encabezado (número, empresa,
 // cliente, fecha, vendedor, bodega) y la descripción de cada línea. Se abre en
 // una ventana aparte y se manda a imprimir.
@@ -18,10 +19,12 @@ const escapar = (texto: string) =>
 
 /** Se abre al hacer clic (si se abre después de esperar al servidor, el
  * navegador la bloquea como ventana emergente) y luego se llena. */
+/** Dónde se arma la hoja para imprimir: un marco invisible dentro de la
+ * misma página (ver imprimirTraslados.ventanaParaImprimirEnLaPagina). Antes
+ * era otra ventana que podía quedar detrás y congelar la app mientras
+ * esperaba la impresión. */
 export function abrirVentanaImpresion() {
-  const ventana = window.open("", "_blank", "width=900,height=700");
-  ventana?.document.write("<p style='font-family:Arial;margin:24px'>Preparando la cotización...</p>");
-  return ventana;
+  return ventanaParaImprimirEnLaPagina();
 }
 
 export function imprimirCotizacion(ventana: Window, c: CotizacionParaImprimir) {
@@ -77,6 +80,8 @@ ${firmas}
     if (impreso || ventana.closed) return;
     impreso = true;
     ventana.print();
+    // Dentro de la página: el marco se quita cuando se cierra el cuadro de impresión.
+    if (ventana.frameElement) setTimeout(() => cerrarImpresion(ventana), 1000);
   };
   ventana.onload = imprimir;
   setTimeout(imprimir, 400);

@@ -744,7 +744,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   async function imprimir(grupo: ApartadoDeLista[]) {
     const ventana = abrirVentanaImpresion();
     if (!ventana) {
-      setMensajeInformativo("El navegador bloqueó la ventana para imprimir: permite las ventanas emergentes de esta página.");
+      setMensajeInformativo("No se pudo preparar la hoja para imprimir. Recarga la página e intenta de nuevo.");
       return;
     }
     const ap = grupo[0];

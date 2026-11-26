@@ -5,9 +5,9 @@ import { formatearFechaColombia } from "../Utils/fechas";
 import { useControladorReportes } from "../Componentes/Reportes";
 import Paginacion from "../Componentes/Paginacion";
 import CampanaAlertas from "../Componentes/CampanaAlertas";
+import ModalConfirmacion from "../Componentes/ModalConfirmacion";
 import { exportarArregloAExcel } from "../Utils/exportarExcel";
-import { abrirVentanaImpresion } from "../Utils/imprimirCotizacion";
-import { imprimirTrasladosFiltrados, imprimirTrasladosPorSalir, type FilaTraslado } from "../Utils/imprimirTraslados";
+import { cerrarImpresion, imprimirTrasladosFiltrados, imprimirTrasladosPorSalir, ventanaParaImprimirEnLaPagina, type FilaTraslado } from "../Utils/imprimirTraslados";
 import { api } from "../Componentes/Api";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import "../Style/Reportes.css";
@@ -42,8 +42,8 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
   const hoy = () => formatearFechaColombia(new Date().toISOString());
   function ventanaParaImprimir() {
     setAvisoImpresion("");
-    const ventana = abrirVentanaImpresion();
-    if (!ventana) setAvisoImpresion("El navegador bloqueó la ventana para imprimir: permite las ventanas emergentes de esta página.");
+    const ventana = ventanaParaImprimirEnLaPagina();
+    if (!ventana) setAvisoImpresion("No se pudo preparar la hoja para imprimir. Recarga la página e intenta de nuevo.");
     return ventana;
   }
   async function imprimirPorSalir() {
@@ -60,9 +60,18 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
       }));
       imprimirTrasladosPorSalir(ventana, filas, hoy());
     } catch {
-      ventana.close();
+      cerrarImpresion(ventana);
       setAvisoImpresion("No se pudo cargar lo que está por despachar.");
     }
+  }
+  // Imprimir miles de movimientos de una vez traba el navegador (cientos de
+  // páginas): por encima de este número se pregunta antes.
+  const MAXIMO_SIN_PREGUNTAR = 500;
+  const [confirmarImpresion, setConfirmarImpresion] = useState<number | null>(null);
+  function pedirImprimirFiltrado() {
+    const total = r.paginacion.total || 0;
+    if (total > MAXIMO_SIN_PREGUNTAR) setConfirmarImpresion(total);
+    else imprimirFiltrado();
   }
   async function imprimirFiltrado() {
     const ventana = ventanaParaImprimir();
@@ -85,7 +94,7 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
       ].filter(Boolean).join(" · ");
       imprimirTrasladosFiltrados(ventana, filas, filtro, hoy());
     } catch {
-      ventana.close();
+      cerrarImpresion(ventana);
       setAvisoImpresion("No se pudieron cargar los traslados para imprimir.");
     }
   }
@@ -263,7 +272,7 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
                     title="Lo que ya se aceptó trasladar y todavía no ha salido, por bodega de origen → destino">
                     🖨️ Imprimir lo que está por salir
                   </button>
-                  <button className="reportes-boton-secundario" onClick={imprimirFiltrado}
+                  <button className="reportes-boton-secundario" onClick={pedirImprimirFiltrado}
                     title="Todos los traslados de este filtro (no solo la página que se ve)">
                     🖨️ Imprimir lo filtrado
                   </button>
@@ -271,6 +280,16 @@ function ReportesPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onC
               )}
             </div>
             {avisoImpresion && <p className="reportes-error">{avisoImpresion}</p>}
+            {confirmarImpresion != null && (
+              <ModalConfirmacion
+                titulo={`¿Imprimir ${confirmarImpresion.toLocaleString("es-CO")} movimientos?`}
+                mensaje={`Son muchos: la hoja tendría cientos de páginas y el navegador se puede demorar o trabar. Mejor ponle fechas (Desde / Hasta) o un código para que salgan menos.`}
+                textoCancelar="No, voy a filtrar más"
+                textoConfirmar="Sí, imprimirlos todos"
+                onCancelar={() => setConfirmarImpresion(null)}
+                onConfirmar={() => { setConfirmarImpresion(null); imprimirFiltrado(); }}
+              />
+            )}
           </section>
 
           {/* ================== TABLA DE MOVIMIENTOS ================== */}

@@ -30,6 +30,27 @@ const ESTILOS = `
   @page { margin: 12mm; }
 `;
 
+/** Un marco invisible dentro de la misma página para imprimir: el cuadro de
+ * impresión sale encima de la app. Antes se abría otra ventana que muchas
+ * veces quedaba detrás, y mientras esperaba la impresión Chrome dejaba la
+ * pestaña de la app congelada. Al terminar de imprimir (o cancelar) se quita. */
+export function ventanaParaImprimirEnLaPagina(): Window | null {
+  document.getElementById("marco-impresion")?.remove();
+  const marco = document.createElement("iframe");
+  marco.id = "marco-impresion";
+  marco.setAttribute("aria-hidden", "true");
+  marco.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;";
+  document.body.appendChild(marco);
+  return marco.contentWindow;
+}
+
+/** Quita el marco de impresión (si lo hay). */
+export function cerrarImpresion(ventana: Window | null) {
+  const marco = ventana?.frameElement;
+  if (marco) marco.remove();
+  else ventana?.close();
+}
+
 function abrirYImprimir(ventana: Window, titulo: string, cuerpo: string) {
   ventana.document.open();
   ventana.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escapar(titulo)}</title>
@@ -41,6 +62,8 @@ function abrirYImprimir(ventana: Window, titulo: string, cuerpo: string) {
     if (impreso || ventana.closed) return;
     impreso = true;
     ventana.print();
+    // Dentro de la página: el marco se quita cuando se cierra el cuadro de impresión.
+    if (ventana.frameElement) setTimeout(() => cerrarImpresion(ventana), 1000);
   };
   ventana.onload = imprimir;
   setTimeout(imprimir, 400);
