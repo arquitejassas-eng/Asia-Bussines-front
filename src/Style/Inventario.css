@@ -887,6 +887,10 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
 .apartado-aviso-otra-bodega p {
   margin: 0 0 0.35rem;
 }
+.apartado-aviso-otra-bodega p.apartado-aviso-venta-empresas {
+  font-weight: 600;
+  color: var(--at-danger, #A3301F);
+}
 .apartado-crear-producto {
   margin-top: 0.4rem;
   padding: 0.6rem;

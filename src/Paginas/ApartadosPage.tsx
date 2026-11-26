@@ -289,8 +289,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             de este material: no alcanza.
             {otraEmpresa && otraEmpresa.total > 0.005 ? (
               <> <strong>{nombreOtra}</strong> sí tiene {num(otraEmpresa.total)}{unidad} disponibles
-                {otraEmpresa.cantidad > 0.005 && <> ({num(otraEmpresa.cantidad)}{unidad} aquí en {aqui})</>}: puedes usar material
-                de {nombreOtra} y quedará como préstamo entre empresas.</>
+                {otraEmpresa.cantidad > 0.005 && <> ({num(otraEmpresa.cantidad)}{unidad} aquí en {aqui})</>}.</>
             ) : " La otra empresa tampoco tiene suficiente."}
           </p>
         ) : (
@@ -304,21 +303,22 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             {otraEmpresa && otraEmpresa.cantidad > 0.005 && (
               <p>
                 Los {num(otraEmpresa.cantidad)}{unidad} de <strong>{nombreOtra}</strong> que hay en {aqui} son de otra empresa y
-                no cuentan para esta cotización. Si quieres usarlos, toca «Usar material de {nombreOtra}» (quedará como préstamo
-                entre empresas).
+                no cuentan para esta cotización.
               </p>
             )}
           </>
+        )}
+        {/* El material de la otra empresa no se toma prestado desde la cotización:
+            primero se le vende a esta empresa. */}
+        {otraEmpresa && (
+          <p className="apartado-aviso-venta-empresas" role="alert">
+            ⚠ Necesitas venderle material de <strong>{nombreOtra}</strong> a <strong>{empresa}</strong> para poder producir esta línea.
+          </p>
         )}
         <div className="apartado-aviso-botones">
           {otra && (
             <button type="button" onClick={() => a.cambiarBodegaItem(indice, String(otra.bodegaId), true)}>
               Despachar desde {otra.bodega}
-            </button>
-          )}
-          {otraEmpresa && (
-            <button type="button" onClick={() => a.cambiarEmpresaItem(indice, otraEmpresa.empresa)}>
-              Usar material de {nombreOtra}
             </button>
           )}
         </div>
@@ -650,6 +650,30 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   } | null>(null);
 
   // ---- Lo producido aquí que se entrega en otra bodega (ej. de Santander a Ricaurte) ----
+  // "Copiar con otro NIT": la cotización que se creó en Siigo con el NIT equivocado.
+  const [copiandoNit, setCopiandoNit] = useState<ApartadoDeLista | null>(null);
+  const [nitNuevo, setNitNuevo] = useState("");
+  const [clienteNuevo, setClienteNuevo] = useState("");
+  const [errorCopia, setErrorCopia] = useState("");
+  const [guardandoCopia, setGuardandoCopia] = useState(false);
+  function abrirCopiaConNit(ap: ApartadoDeLista) {
+    setCopiandoNit(ap); setNitNuevo(""); setClienteNuevo(ap.cliente || ""); setErrorCopia("");
+  }
+  async function confirmarCopiaConNit() {
+    if (!copiandoNit || guardandoCopia) return;
+    setGuardandoCopia(true);
+    setErrorCopia("");
+    try {
+      const numero = await a.copiarConOtroNit(copiandoNit.id, nitNuevo, clienteNuevo);
+      setMensajeInformativo(`Listo: quedó la ${numero} en Siigo con el NIT ${nitNuevo.trim()} y la ${copiandoNit.numeroCotizacion} quedó anulada aquí. `
+        + `Anula la ${copiandoNit.siigoNumero || copiandoNit.numeroCotizacion} en Siigo.`);
+      setCopiandoNit(null);
+    } catch (err) {
+      setErrorCopia(err instanceof ErrorApi ? err.message : "No se pudo copiar. Revisa la conexión e intenta otra vez.");
+    } finally {
+      setGuardandoCopia(false);
+    }
+  }
   const [enviandoParte, setEnviandoParte] = useState<ApartadoDeLista | null>(null);
   const [destinoEnvio, setDestinoEnvio] = useState("");
   const [transportaEnvio, setTransportaEnvio] = useState("");
@@ -1095,6 +1119,11 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         <button title="Si ya la hicieron a mano en Siigo: se enlaza con esa, sin crear otra" disabled={a.subiendoASiigo === ap.id}
           onClick={() => a.enlazarApartadoConSiigo(ap.id, ap.numeroCotizacion)}>Enlazar con una de Siigo</button>
       )}
+      {a.puedeEditarApartados && ap.siigoId && ap.estado === "apartado" && !ap.ordenInterna && !ap.trasladoA && (
+        <button title="Siigo no deja cambiar el NIT: crea una igual con el NIT correcto y anula esta" onClick={() => abrirCopiaConNit(ap)}>
+          Copiar con otro NIT
+        </button>
+      )}
       {a.puedeCancelarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
           titulo: `¿Anular el apartado ${ap.numeroCotizacion}?`,
@@ -1171,6 +1200,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const porEnviar = grupo.filter((parte) => parte.estado === "apartado");
     const esperando = porEnviar.some((parte) => parte.faltantes.length > 0 && !parte.faltantesEnCamino);
     const conSalida = activas.filter((parte) => !parte.ordenInterna);
+    const primeraActiva = activas[0];
     const separables = grupo.filter((parte) => !parte.ordenInterna && (parte.items.length > 1 || (parte.items[0]?.cantidad ?? 0) > 1)
       && (ESTADOS_CANCELABLES.includes(parte.estado) || parte.estado === "produccion_terminada"));
     const eliminables = grupo.filter((parte) => parte.estado === "cancelado" && parte.items.length > 0
@@ -1216,6 +1246,23 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           textoConfirmar: "Sí, quitar de producción",
           ejecutar: () => a.quitarVariosDeProduccion(enProduccion.map((p) => p.id)),
         })}>Quitar de producción</button>
+      )}
+      {/* Siigo: la cotización es una sola allá (todas sus partes van juntas). */}
+      {a.puedeEditarApartados && primeraActiva && primeraActiva.siigoPendiente && !primeraActiva.ordenInterna && !primeraActiva.trasladoA && (
+        <button title={primeraActiva.siigoError} disabled={a.subiendoASiigo === primeraActiva.id} onClick={() => a.subirApartadoASiigo(primeraActiva.id)}>
+          {a.subiendoASiigo === primeraActiva.id ? "Enviando a Siigo..." : primeraActiva.siigoId ? "Actualizar en Siigo" : "Subir a Siigo"}
+        </button>
+      )}
+      {a.puedeEditarApartados && primeraActiva && !primeraActiva.siigoId && !primeraActiva.ordenInterna && !primeraActiva.trasladoA
+        && (primeraActiva.siigoPendiente || primeraActiva.observaciones.includes("Separada de la cotización")) && (
+        <button title="Si ya la hicieron a mano en Siigo: se enlaza con esa, sin crear otra" disabled={a.subiendoASiigo === primeraActiva.id}
+          onClick={() => a.enlazarApartadoConSiigo(primeraActiva.id, numero)}>Enlazar con una de Siigo</button>
+      )}
+      {a.puedeEditarApartados && primeraActiva && primeraActiva.siigoId && !primeraActiva.ordenInterna && !primeraActiva.trasladoA
+        && activas.length === grupo.length && grupo.every((parte) => parte.estado === "apartado") && (
+        <button title="Siigo no deja cambiar el NIT: crea una igual con el NIT correcto y anula esta" onClick={() => abrirCopiaConNit(primeraActiva)}>
+          Copiar con otro NIT
+        </button>
       )}
       {a.puedeCancelarApartados && activas.length > 0 && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
@@ -2208,6 +2255,34 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             setMensajeInformativo("Listo: la lámina lisa ya dice en qué se convierte. Si la convierte otra bodega, mándale las láminas con un traslado.");
           }}
         />
+      )}
+      {copiandoNit && (
+        <div className="rollos-modal-fondo" onClick={() => !guardandoCopia && setCopiandoNit(null)}>
+          <div className="rollos-modal" role="dialog" aria-modal="true" aria-labelledby="copiar-nit-titulo" onClick={(e) => e.stopPropagation()}>
+            <h3 id="copiar-nit-titulo">Copiar la {copiandoNit.numeroCotizacion} con otro NIT</h3>
+            <p className="rollos-texto-ayuda">
+              Se crea en Siigo una cotización igual (mismas líneas, precios e impuestos) con el NIT correcto; Siigo le da su número.
+              La <strong>{copiandoNit.numeroCotizacion}</strong> queda <strong>anulada</strong> aquí y su material pasa a la nueva.
+              Después anula la {copiandoNit.siigoNumero || copiandoNit.numeroCotizacion} en Siigo.
+            </p>
+            <label>
+              NIT o cédula correcta *
+              <input value={nitNuevo} inputMode="numeric" maxLength={20} placeholder="Ej. 901497262" autoFocus
+                onChange={(e) => setNitNuevo(e.target.value)} />
+            </label>
+            <label>
+              Nombre del cliente
+              <input value={clienteNuevo} maxLength={150} onChange={(e) => setClienteNuevo(e.target.value)} />
+            </label>
+            {errorCopia && <p className="rollos-error" role="alert">{errorCopia}</p>}
+            <div className="rollos-modal-acciones">
+              <button type="button" className="rollos-boton-secundario" disabled={guardandoCopia} onClick={() => setCopiandoNit(null)}>Cancelar</button>
+              <button type="button" className="rollos-boton-primario" disabled={guardandoCopia || !nitNuevo.trim()} onClick={confirmarCopiaConNit}>
+                {guardandoCopia ? "Creando en Siigo..." : "Crear la nueva en Siigo"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {enviandoParte && (
         <div className="rollos-modal-fondo" onClick={() => setEnviandoParte(null)}>

@@ -1,4 +1,5 @@
 import logging
+import re
 import secrets
 from datetime import datetime, timezone
 
@@ -21,7 +22,7 @@ from app.models.envio import Envio, EnvioItem, EstadoEnvio
 from app.models.rollo import Rollo
 from app.core.config import settings
 from app.schemas.apartados import (
-    ApartadoEditar, ApartadoItemEditar, CompletarConStockRequest, RegistrarSalidaRequest, SepararApartadoRequest, UnirApartadoRequest,
+    ApartadoEditar, ApartadoItemCrear, ApartadoItemEditar, CompletarConStockRequest, RegistrarSalidaRequest, SepararApartadoRequest, UnirApartadoRequest,
     StockParaCompletarResponse,
 )
 from app.schemas.inventario import ProductoResponse
@@ -1071,6 +1072,86 @@ def cancelar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: 
         _anular_en_siigo(db, apartado, usuario)
     db.commit(); db.refresh(apartado)
     return apartado
+
+
+class CopiarConNitRequest(BaseModel):
+    cliente_identificacion: str = Field(min_length=1, max_length=20)
+    # Nombre del cliente de ese NIT ("" = el mismo de la cotización).
+    cliente: str = Field(default="", max_length=150)
+
+
+@router.post("/{apartado_id}/copiar-con-nit", response_model=ApartadoResponse,
+             dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO))])
+def copiar_con_otro_nit(apartado_id: int, datos: CopiarConNitRequest, db: Session = Depends(get_db),
+                        usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    """Siigo no deja cambiar el cliente de una cotización ya creada: se crea
+    una nueva igual (mismas líneas, bodegas, precios e impuestos) con el NIT
+    correcto, Siigo le da su número (ej. 4151) y queda enlazada con ella. La
+    vieja (ej. 4150) se anula en el programa y su material pasa a la nueva;
+    sigue enlazada con la suya de Siigo, que se anula allá a mano. Todo o
+    nada: si Siigo no crea la nueva, la vieja queda como estaba."""
+    original = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+    if original.orden_interna or original.traslado_a or not original.siigo_id:
+        raise HTTPException(status_code=400, detail="Solo una cotización que ya está en Siigo se copia con otro NIT.")
+    nit = re.sub(r"[^0-9A-Za-z]", "", datos.cliente_identificacion)
+    if not nit:
+        raise HTTPException(status_code=400, detail="Escribe el NIT o la cédula correcta.")
+    if nit == re.sub(r"[^0-9A-Za-z]", "", original.cliente_identificacion or ""):
+        raise HTTPException(status_code=400, detail="Ese es el mismo NIT que ya tiene la cotización.")
+    partes = siigo_cotizacion.partes_de_la_cotizacion(db, original) or [original]
+    if any(p.estado != EstadoApartado.APARTADO for p in partes):
+        raise HTTPException(status_code=400, detail=(
+            "Solo se copia con otro NIT mientras está «Apartado» (ninguna parte enviada a producción ni entregada)."))
+    numero_viejo, siigo_viejo = original.numero_cotizacion, original.siigo_numero or original.numero_cotizacion
+    lineas_por_parte = [(p, sorted(p.items, key=lambda it: it.id)) for p in partes]
+    # 1. La vieja se anula primero: así su material queda libre para la nueva.
+    for parte in partes:
+        srv.cancelar_apartado(db, parte.id, usuario)
+    db.flush()
+    # 2. La nueva, parte por parte (misma bodega de cada una), con número provisional.
+    provisional = f"PEND-{secrets.token_hex(6)}"
+    creados = []
+    for parte, lineas in lineas_por_parte:
+        nueva = ApartadoCrear(
+            bodega_id=parte.bodega_id, numero_cotizacion=provisional, empresa=parte.empresa,
+            cliente=(datos.cliente.strip() or parte.cliente or ""),
+            observaciones=(parte.observaciones or ""),
+            cliente_identificacion=nit, siigo_iva=parte.siigo_iva, siigo_retefuente=parte.siigo_retefuente,
+            siigo_vendedor=parte.siigo_vendedor, siigo_centro_costo=parte.siigo_centro_costo,
+            items=[ApartadoItemCrear(
+                modalidad=ModalidadApartado(it.modalidad), descripcion=it.descripcion or "", cantidad=it.cantidad,
+                codigo_interno=None if it.rollo_id else it.codigo_interno, medida=None if it.rollo_id else it.medida,
+                tipo_producto=it.tipo_producto or "", producto_id=it.producto_id, rollo_id=it.rollo_id,
+                empresa=it.empresa_material or "", precio=it.precio, siigo_cantidad=it.siigo_cantidad,
+                siigo_producto=it.siigo_producto or "", siigo_incluido=bool(it.siigo_incluido),
+            ) for it in lineas],
+        )
+        creados.append(srv.crear_apartado(db, nueva, usuario))
+    # 3. A Siigo: si no la crea, se deshace todo (la vieja sigue como estaba).
+    _subir_recien_creada_a_siigo(db, creados, usuario)
+    db.refresh(creados[0])
+    if creados[0].siigo_pendiente or not creados[0].siigo_id:
+        motivo = creados[0].siigo_error or "Siigo no creó la cotización."
+        db.rollback()
+        raise HTTPException(status_code=502, detail=(
+            f"No se copió: {motivo} La {numero_viejo} quedó como estaba. Si Siigo estaba lento, revisa en Siigo "
+            "que no se haya creado antes de volver a intentarlo."))
+    numero_nuevo = creados[0].numero_cotizacion
+    for parte in partes:
+        parte.siigo_error = f"Recuerda anular {siigo_viejo} en Siigo: se copió como {numero_nuevo} con el NIT {nit}."
+        parte.observaciones = ((parte.observaciones + " · ") if parte.observaciones else "") + (
+            f"Copiada como {numero_nuevo} con el NIT {nit} (la {numero_viejo} tenía otro NIT).")
+    for parte in creados:
+        parte.observaciones = ((parte.observaciones + " · ") if parte.observaciones else "") + (
+            f"Copia de la {numero_viejo} (tenía otro NIT); esa quedó anulada.")
+    siigo_cotizacion.guardar_o_deshacer_en_siigo(db, creados[0], "")
+    _revisar_importaciones(db, {numero_nuevo})
+    nueva = db.query(Apartado).options(
+        selectinload(Apartado.items).selectinload(ApartadoItem.producciones),
+        selectinload(Apartado.items).selectinload(ApartadoItem.rollo),
+        selectinload(Apartado.items).selectinload(ApartadoItem.producto),
+    ).filter(Apartado.id == creados[0].id).populate_existing().one()
+    return _con_faltantes(db, [nueva])[0]
 
 
 def _anular_en_siigo(db: Session, anulada: Apartado, usuario: Usuario) -> None:

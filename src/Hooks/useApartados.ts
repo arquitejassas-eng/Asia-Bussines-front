@@ -873,6 +873,17 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
     }
   }
 
+  // Siigo no deja cambiar el NIT: se crea una nueva igual con el NIT correcto
+  // (Siigo le da su número) y la vieja queda anulada. Todo o nada.
+  async function copiarConOtroNit(id: number, nit: string, cliente: string): Promise<string> {
+    setErrorAccionApartado("");
+    setAvisoSiigo(null);
+    const nueva = await api.post<{ numero_cotizacion: string; siigo_numero: string }>(
+      `/apartados/${id}/copiar-con-nit`, { cliente_identificacion: nit.trim(), cliente: cliente.trim() });
+    await cargarApartados();
+    return nueva ? nueva.numero_cotizacion : "";
+  }
+
   // La anulada que estaba en Siigo no se toca allá: se recuerda anularla a mano.
   function avisarSiSiigoFallo(respuesta: unknown) {
     const motivo = (respuesta as { siigo_error?: string } | null)?.siigo_error;
@@ -984,7 +995,7 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
     disponibilidadItems, consultarDisponibilidadItem,
     resultadosBusquedaProducto, buscarProductoParaItem, seleccionarProductoParaItem,
 
-    siigo, subirApartadoASiigo, enlazarApartadoConSiigo, subiendoASiigo, avisoSiigo, setAvisoSiigo,
+    siigo, subirApartadoASiigo, enlazarApartadoConSiigo, copiarConOtroNit, subiendoASiigo, avisoSiigo, setAvisoSiigo,
     errorAccionApartado, cancelarApartado, eliminarApartado, enviarApartadoAProduccion, devolverLineaABodega,
     cancelarVarios, enviarVariosAProduccion, quitarVariosDeProduccion, eliminarVarios,
     marcarApartadoProduccionTerminada, marcarApartadoEntregado,
