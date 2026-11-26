@@ -9,7 +9,7 @@ import {
 } from "../Utils/produccion";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import { coincideKilos, kilosBuscados } from "../Utils/kilos";
-import { modeloEnDescripcion } from "../Utils/teja";
+import { modeloEnDescripcion, normalizarModeloTeja } from "../Utils/teja";
 
 // Refresco automático de solicitudes pendientes / historial de producción.
 // Más espaciado que el resto de pantallas (10 s): el historial completo de
@@ -142,6 +142,8 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
       metros: actual.length ? actual[actual.length - 1].metros || "" : (metrosPorUnidad || String(parseFloat(String(medidaProducto).replace(",", ".")) || "")),
       // El rollo de donde salió lo escoge Planta (no se copia de la anterior).
       rolloId: "",
+      // Modelo de la teja: arranca con el de la línea anterior o el de la producción.
+      modelo: (actual.length ? actual[actual.length - 1].modelo ?? modelo : modelo) || undefined,
     }]);
   }
   function quitarLineaStock(indice) {
@@ -722,6 +724,9 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
         if (linea.calidad === "segunda" && !linea.motivoSegunda.trim()) {
           return "Indica el motivo/descripción del defecto para cada unidad de Segunda.";
         }
+        if (tipoProducto === "teja" && !linea.lisaPara && !String(linea.modelo ?? modelo).trim()) {
+          return "Indica el modelo de la teja en cada línea de stock adicional.";
+        }
         if (linea.calidad === "segunda" && linea.lisaPara) {
           if (!Number.isInteger(Number(linea.piezas)) || Number(linea.piezas) <= 0) {
             return "Para la lámina lisa indica cuántos pedazos salen (un número entero).";
@@ -836,6 +841,7 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
           motivo_segunda: linea.calidad === "segunda" ? linea.motivoSegunda.trim() : "",
           metros_por_unidad: SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] ? null : Number(linea.metros) || null,
           rollo_id: rollosSeleccionados.length === 1 ? rollosSeleccionados[0].rollo.id : Number(linea.rolloId) || null,
+          modelo: tipoProducto === "teja" && !linea.lisaPara ? normalizarModeloTeja(String(linea.modelo ?? modelo)) : "",
           // Segunda que es lámina lisa: entra como caballetes o flanches.
           ...(!SECCIONES_POR_TIPO_PRODUCTO[tipoProducto] && tipoProducto !== "lamina_lisa" && linea.calidad === "segunda" && linea.lisaPara ? {
             lamina_lisa_para: linea.lisaPara,

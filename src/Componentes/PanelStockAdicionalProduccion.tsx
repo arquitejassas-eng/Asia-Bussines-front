@@ -1,12 +1,14 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
 import { NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/produccion";
 import { kilosDelRollo } from "../Utils/kilos";
+import { MODELOS_TEJA, normalizarModeloTeja } from "../Utils/teja";
 
 // Sección "2. Stock adicional" de Producción. Extraído de ProduccionPage.tsx
 // sin cambiar props ni comportamiento -- no usa estado local propio, todo
 // viene del controlador (useControladorProduccion) vía props.
 function PanelStockAdicionalProduccion({
   tipoProducto,
+  modelo = "",
   stockAdicional,
   rollosSeleccionados = [],
   actualizarLineaStock,
@@ -47,6 +49,21 @@ function PanelStockAdicionalProduccion({
                 placeholder="Ej. 6"
                 value={linea.metros ?? ""}
                 onChange={(e) => actualizarLineaStock(indice, "metros", e.target.value)}
+              />
+            </div>
+          )}
+          {tipoProducto === "teja" && !linea.lisaPara && (
+            <div>
+              <label className="produccion-label" htmlFor={`stock-modelo-${indice}`}>Modelo de la teja</label>
+              <input
+                id={`stock-modelo-${indice}`}
+                type="text"
+                className="produccion-input"
+                list="stock-modelos-teja"
+                placeholder="Ej. ARQUITECTONICA"
+                value={linea.modelo ?? modelo}
+                onChange={(e) => actualizarLineaStock(indice, "modelo", e.target.value)}
+                onBlur={() => { const actual = linea.modelo ?? modelo; if (actual.trim()) actualizarLineaStock(indice, "modelo", normalizarModeloTeja(actual)); }}
               />
             </div>
           )}
@@ -168,6 +185,12 @@ function PanelStockAdicionalProduccion({
           </div>
         </div>
       ))}
+
+      {tipoProducto === "teja" && (
+        <datalist id="stock-modelos-teja">
+          {Object.keys(MODELOS_TEJA).map((nombre) => <option key={nombre} value={nombre} />)}
+        </datalist>
+      )}
 
       <button
         type="button"

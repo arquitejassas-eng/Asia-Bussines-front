@@ -231,6 +231,6 @@ export function produccionDesdeApi(p: RegistroApi) {
       calidad: texto(s.calidad), motivoSegunda: texto(s.motivo_segunda), color: texto(s.color), ral: texto(s.ral),
       calibre: texto(s.calibre), metrosPorUnidad: s.metros_por_unidad == null ? null : numero(s.metros_por_unidad),
       codigoRolloOrigen: texto(s.codigo_rollo_origen), anchoRollo: s.ancho_rollo == null ? null : numero(s.ancho_rollo),
-      tipoProducto: texto(s.tipo_producto),
+      tipoProducto: texto(s.tipo_producto), referencia: texto(s.referencia),
     })) };
 }

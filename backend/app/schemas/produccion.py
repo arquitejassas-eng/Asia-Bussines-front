@@ -27,6 +27,9 @@ class StockAdicionalItemCrear(BaseModel):
     # De cuál de los rollos de esta producción salió (si se usaron varios).
     # Solo para el historial del rollo: no descuenta nada aparte.
     rollo_id: int | None = None
+    # Tejas: modelo de las tejas de esta línea (ARQUITECTONICA, SUPERMIL...).
+    # Vacío = el modelo de la producción.
+    modelo: str = ""
     # Una teja de Segunda que en realidad es lámina lisa (sin el perfil de la
     # teja) se usa para caballetes o flanches: Planta dice para qué, cuántos
     # pedazos salen, cuánto mide cada uno y de qué calidad quedan, y entran
@@ -188,6 +191,8 @@ class StockAdicionalGeneradoResponse(BaseModel):
     codigo_rollo_origen: str = ""
     ancho_rollo: float | None = None
     tipo_producto: str = ""
+    # Tejas: su modelo.
+    referencia: str | None = ""
 
 
 class ProduccionResponse(ModeloConFechasUtc):

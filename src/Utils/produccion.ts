@@ -120,7 +120,7 @@ export function anchoPorSeccion(anchoRollo: number | null | undefined, tipoProdu
 
 type ProductoStockItem = {
   id: number | string; calidad?: string; motivoSegunda?: string;
-  metrosPorUnidad?: number | null; stock: number; codigoRolloOrigen?: string;
+  metrosPorUnidad?: number | null; stock: number; codigoRolloOrigen?: string; referencia?: string;
 };
 type RolloUtilizado = { identificadorRollo: string };
 type ProduccionParaStock = {
@@ -155,7 +155,8 @@ export function filasStockAdicional(prod: ProduccionParaStock) {
       fecha: prod.fecha,
       responsable: prod.responsable,
       productoFabricado: prod.productoFabricado,
-      modelo: prod.modelo,
+      // Tejas: cada línea de stock puede ser de otro modelo.
+      modelo: item.referencia || prod.modelo,
       medida: prod.medidaProducto,
       cantidad: item.stock,
       codigoClasificacion: prod.codigoClasificacion,

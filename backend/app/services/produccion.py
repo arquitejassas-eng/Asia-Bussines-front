@@ -754,6 +754,9 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
             metros_linea = item_stock.metros_pieza
         else:
             metros_linea = metros_de_linea_stock(datos, item_stock)
+            # Tejas: cada línea dice su modelo (sin él, el de la producción).
+            if datos.tipo_producto == "teja" and item_stock.modelo.strip():
+                datos_linea = datos.model_copy(update={"modelo": normalizar_modelo_teja(item_stock.modelo)})
         descripcion = _descripcion_stock(datos_linea, codigo_rollo_origen_stock, metros_linea) + (
             " (de lámina lisa)" if tipo_linea != tipo_producto_stock else "") + (
             " (Segunda)" if item_stock.calidad == "segunda" else "")
@@ -783,7 +786,7 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
                 calibre=datos.calibre[:30],
                 color=datos.color[:60],
                 ral=datos.ral[:20],
-                referencia=datos.modelo.strip()[:50] if familia_linea == "TEJA" else "",
+                referencia=datos_linea.modelo.strip()[:50] if familia_linea == "TEJA" else "",
                 calidad=item_stock.calidad,
                 motivo_segunda=item_stock.motivo_segunda[:255] if item_stock.calidad == "segunda" else "",
                 metros_por_unidad=metros_linea,
