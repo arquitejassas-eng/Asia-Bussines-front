@@ -4,13 +4,14 @@ import type { Envio, Sesion, Solicitud } from "../types/dominio";
  * bodegas pendientes de responder + envíos por confirmar + traslados por
  * despachar o por recibir. */
 export function contarNotificaciones(
-  almacen: { solicitudes?: Solicitud[]; envios?: Envio[]; trasladosPendientes?: Solicitud[] } | null | undefined,
+  almacen: { solicitudes?: Solicitud[]; envios?: Envio[]; trasladosPendientes?: Solicitud[]; enviosProduccionEnCamino?: number } | null | undefined,
   sesion: Sesion | null | undefined
 ): number {
   return (
     (almacen?.solicitudes || []).filter(
       (s) => s.bodegaPropietariaId === sesion?.bodegaId && s.estado === "pendiente"
     ).length + (almacen?.envios || []).length + (almacen?.trasladosPendientes || []).length
+    + (almacen?.enviosProduccionEnCamino || 0)
   );
 }
 

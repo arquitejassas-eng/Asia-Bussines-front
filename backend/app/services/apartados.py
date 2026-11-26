@@ -2344,6 +2344,81 @@ def marcar_entregado(db: Session, apartado_id: int, usuario: Usuario) -> Apartad
         raise HTTPException(status_code=400, detail="Este apartado todavía no tiene la producción terminada.")
     if apartado.orden_interna:
         raise HTTPException(status_code=400, detail="Una orden interna no tiene salida: se cierra sola cuando se conviertan sus láminas lisas.")
+    if apartado.envio_estado == ENVIO_EN_CAMINO:
+        raise HTTPException(status_code=400, detail=f"Va en camino a {apartado.envio_destino_nombre}: la Salida la da {apartado.envio_destino_nombre} cuando lo reciba.")
     apartado.estado = EstadoApartado.ENTREGADO
     apartado.fecha_entregado = datetime.now(timezone.utc)
+    return apartado
+
+
+# --- Lo producido en una bodega que se entrega en otra ---------------------
+ENVIO_EN_CAMINO = "en_camino"
+ENVIO_RECIBIDO = "recibido"
+
+
+def enviar_parte_a_bodega(db: Session, apartado_id: int, *, bodega_destino_id: int, transporta: str,
+                          observaciones: str, usuario: Usuario) -> Apartado:
+    """La bodega que produjo esta parte la manda a otra bodega, que es la que
+    la entrega al cliente. Queda "en camino" (aquí ya no se le puede dar
+    Salida) hasta que la otra bodega la reciba. No mueve inventario: lo
+    producido ya está ligado a la cotización y el stock ya se descontó al
+    terminar la producción."""
+    apartado = apartado_de_mi_bodega(db, apartado_id, usuario)
+    if apartado.estado != EstadoApartado.PRODUCCION_TERMINADA:
+        raise HTTPException(status_code=400, detail="Solo se envía a otra bodega cuando la producción ya está terminada.")
+    if apartado.orden_interna or apartado.traslado_a:
+        raise HTTPException(status_code=400, detail="Una orden interna o un traslado a San Gil no se envía a otra bodega.")
+    if any(item.rollo_id for item in apartado.items):
+        raise HTTPException(status_code=400, detail="Esta parte lleva un rollo completo: el rollo se traslada como rollo (pedir traslado), no así.")
+    if apartado.envio_estado == ENVIO_EN_CAMINO:
+        raise HTTPException(status_code=400, detail=f"Ya va en camino a {apartado.envio_destino_nombre}.")
+    if bodega_destino_id == apartado.bodega_id:
+        raise HTTPException(status_code=400, detail="Escoge otra bodega: ya está en esta.")
+    destino = db.get(Bodega, bodega_destino_id)
+    if destino is None:
+        raise HTTPException(status_code=400, detail="Esa bodega no existe.")
+    ahora = datetime.now(timezone.utc)
+    apartado.envio_estado = ENVIO_EN_CAMINO
+    apartado.envio_destino_bodega_id = destino.id
+    apartado.envio_origen_bodega_id = apartado.bodega_id
+    apartado.envio_transporta = " ".join((transporta or "").split())[:150]
+    apartado.envio_enviado_por = usuario.correo
+    apartado.envio_fecha_envio = ahora
+    apartado.envio_recibido_por, apartado.envio_fecha_recibido = "", None
+    nota = (f"Enviada de {apartado.bodega_nombre} a {destino.nombre} el {ahora:%Y-%m-%d} por {usuario.correo}"
+            + (f" (lleva: {apartado.envio_transporta})" if apartado.envio_transporta else "")
+            + (f". {observaciones.strip()}" if observaciones.strip() else "") + ".")
+    apartado.observaciones = (f"{apartado.observaciones} · " if apartado.observaciones else "") + nota
+    db.flush()
+    return apartado
+
+
+def envios_en_camino_a(db: Session, usuario: Usuario) -> list[Apartado]:
+    """Lo que viene en camino a la bodega de quien pregunta (Admin Inventario: todo)."""
+    consulta = db.query(Apartado).filter(Apartado.envio_estado == ENVIO_EN_CAMINO,
+                                         Apartado.estado == EstadoApartado.PRODUCCION_TERMINADA)
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+        consulta = consulta.filter(Apartado.envio_destino_bodega_id == usuario.bodega_id)
+    return consulta.order_by(Apartado.envio_fecha_envio).all()
+
+
+def recibir_envio(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
+    """La bodega destino confirma que llegó: la parte pasa a ser de esta bodega,
+    que ya le puede dar la Salida al cliente."""
+    apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().first()
+    if apartado is None or apartado.envio_estado != ENVIO_EN_CAMINO:
+        raise HTTPException(status_code=404, detail="Ese envío ya no está en camino. Recarga la lista.")
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO and apartado.envio_destino_bodega_id != usuario.bodega_id:
+        raise HTTPException(status_code=403, detail="Ese envío va para otra bodega.")
+    ahora = datetime.now(timezone.utc)
+    origen = apartado.bodega_nombre
+    apartado.bodega_id = apartado.envio_destino_bodega_id
+    apartado.envio_estado = ENVIO_RECIBIDO
+    apartado.envio_recibido_por = usuario.correo
+    apartado.envio_fecha_recibido = ahora
+    db.flush()
+    db.refresh(apartado)
+    apartado.observaciones = (f"{apartado.observaciones} · " if apartado.observaciones else "") + (
+        f"Recibida en {apartado.bodega_nombre} (desde {origen}) el {ahora:%Y-%m-%d} por {usuario.correo}.")
+    db.flush()
     return apartado

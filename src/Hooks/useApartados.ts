@@ -103,6 +103,8 @@ export type RolloParaApartar = {
 };
 type Apartado = {
   id: number; bodegaId: number; bodegaNombre: string; numeroCotizacion: string; empresa: string; salidaPendiente: boolean; ordenInterna: boolean; trasladoA: string;
+  envioEstado?: string; envioDestinoBodegaId?: number | null; envioDestinoNombre?: string; envioOrigenNombre?: string; envioTransporta?: string;
+  envioEnviadoPor?: string; envioFechaEnvio?: string; envioRecibidoPor?: string; envioFechaRecibido?: string;
   cliente: string; creadoPor: string;
   fechaCreacion: string; estado: string; enviadoAProduccionPor: string; fechaEnviadoAProduccion: string | null;
   canceladoPor: string; fechaCancelado: string | null; fechaEntregado: string | null; observaciones: string;
@@ -198,8 +200,12 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
       const datos = await api.get(`/apartados${cadena ? `?${cadena}` : ""}`);
       if (consulta !== ultimaConsulta.current) return;
       const todos = (datos as Record<string, unknown>[]).map(apartadoDesdeApi);
-      setApartados(esBodega ? todos.filter((ap) => ap.bodegaId === miBodega) : todos);
-      setPartesDeOtrasBodegas(esBodega ? todos.filter((ap) => ap.bodegaId !== miBodega) : []);
+      // Lo producido en otra bodega que viene en camino a esta también va en la
+      // lista propia: aquí se recibe (y después se le da la Salida).
+      const esMia = (ap: (typeof todos)[number]) => ap.bodegaId === miBodega
+        || (ap.envioEstado === "en_camino" && ap.envioDestinoBodegaId === miBodega);
+      setApartados(esBodega ? todos.filter(esMia) : todos);
+      setPartesDeOtrasBodegas(esBodega ? todos.filter((ap) => !esMia(ap)) : []);
     } catch {
       if (!silenciosa && consulta === ultimaConsulta.current) setErrorApartados("No se pudieron cargar los apartados.");
     } finally {

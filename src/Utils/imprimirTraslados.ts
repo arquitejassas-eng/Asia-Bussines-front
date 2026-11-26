@@ -105,3 +105,19 @@ export function imprimirTrasladosFiltrados(ventana: Window, filas: FilaTraslado[
     <p class="sub">${escapar(descripcionFiltro)} · ${filas.length} ${filas.length === 1 ? "movimiento" : "movimientos"}</p>
     ${filas.length ? tabla(filas, true, true) : "<p>No hay traslados con este filtro.</p>"}`);
 }
+
+/** Hoja de despacho de lo producido en una bodega que se entrega en otra
+ * (ej. de Santander a Ricaurte): qué va, de qué cotización y para quién, con
+ * firmas de quien despacha, quien lo lleva y quien recibe. */
+export function imprimirDespachoProduccion(ventana: Window, d: {
+  numero: string; cliente: string; origen: string; destino: string; transporta: string; fecha: string;
+  lineas: { descripcion: string; cantidad: string }[];
+}) {
+  const filas = d.lineas.map((l, i) => `<tr><td class="n">${i + 1}</td><td>${escapar(l.descripcion)}</td><td class="num">${escapar(l.cantidad)}</td></tr>`).join("");
+  abrirYImprimir(ventana, `Despacho cotización ${d.numero}`, `
+    <header><h1>Despacho de producción · Cotización ${escapar(d.numero)}</h1><div>${escapar(d.fecha)}</div></header>
+    <p class="sub"><strong>De:</strong> ${escapar(d.origen)} &nbsp;→&nbsp; <strong>Para:</strong> ${escapar(d.destino)}
+      &nbsp;·&nbsp; <strong>Cliente:</strong> ${escapar(d.cliente || "—")}${d.transporta ? ` &nbsp;·&nbsp; <strong>Lo lleva:</strong> ${escapar(d.transporta)}` : ""}</p>
+    <table><thead><tr><th class="n">#</th><th>Descripción</th><th class="num">Cantidad</th></tr></thead><tbody>${filas}</tbody></table>
+    <div class="firmas"><div>Despachó (${escapar(d.origen)})</div><div>Conductor / lleva</div><div>Recibió (${escapar(d.destino)})</div></div>`);
+}

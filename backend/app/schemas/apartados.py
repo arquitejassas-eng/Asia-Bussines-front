@@ -337,6 +337,13 @@ class DisponibilidadProductoResponse(BaseModel):
     otras_empresas: list[OtraEmpresaConMaterial] = []
 
 
+class EnviarABodegaRequest(BaseModel):
+    """Lo producido aquí se entrega en otra bodega."""
+    bodega_destino_id: int
+    transporta: str = Field(default="", max_length=150)
+    observaciones: str = Field(default="", max_length=300)
+
+
 class ApartadoResponse(ModeloConFechasUtc):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -345,6 +352,17 @@ class ApartadoResponse(ModeloConFechasUtc):
     traslado_a: str = ""
     bodega_id: int
     bodega_nombre: str = ""
+    # Envío de lo producido a otra bodega ("" / "en_camino" / "recibido").
+    envio_estado: str = ""
+    envio_destino_bodega_id: int | None = None
+    envio_destino_nombre: str = ""
+    envio_origen_bodega_id: int | None = None
+    envio_origen_nombre: str = ""
+    envio_transporta: str = ""
+    envio_enviado_por: str = ""
+    envio_fecha_envio: datetime | None = None
+    envio_recibido_por: str = ""
+    envio_fecha_recibido: datetime | None = None
     numero_cotizacion: str
     empresa: str = ""
     cliente: str
@@ -380,7 +398,8 @@ class ApartadoResponse(ModeloConFechasUtc):
     siigo_pendiente: bool = False
     siigo_error: str = ""
 
-    @field_serializer("fecha_creacion", "fecha_enviado_a_produccion", "fecha_cancelado", "fecha_entregado", "stock_separado_en", "fecha_siigo", when_used="json")
+    @field_serializer("fecha_creacion", "fecha_enviado_a_produccion", "fecha_cancelado", "fecha_entregado", "stock_separado_en", "fecha_siigo",
+                      "envio_fecha_envio", "envio_fecha_recibido", when_used="json")
     def _serializar_fechas_opcionales(self, valor: datetime | None) -> str | None:
         if valor is None:
             return None

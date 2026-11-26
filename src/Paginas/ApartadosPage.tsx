@@ -22,10 +22,11 @@ import { calcularSolicitudesPendientes, calcularStockParaAlistar, metrosDeLinea,
 import "../Style/Inventario.css";
 import { AvisoSiigoCotizacion, CampoSiigoCliente, CamposSiigoLinea, ImpuestosSiigo, ResumenSiigo } from "../Componentes/SiigoCotizacion";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
-import { api } from "../Componentes/Api";
+import { api, ErrorApi } from "../Componentes/Api";
 import { apartadoDesdeApi } from "../Componentes/Mapeo";
 import { exportarHojasAExcel } from "../Utils/exportarExcel";
 import { abrirVentanaImpresion, imprimirCotizacion } from "../Utils/imprimirCotizacion";
+import { imprimirDespachoProduccion } from "../Utils/imprimirTraslados";
 
 // Mismos estados que backend/app/services/apartados.py::ESTADOS_CANCELABLES:
 // se puede cancelar mientras la producción no haya terminado.
@@ -648,6 +649,50 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     titulo: string; mensaje: string; textoConfirmar: string; ejecutar: () => void;
   } | null>(null);
 
+  // ---- Lo producido aquí que se entrega en otra bodega (ej. de Santander a Ricaurte) ----
+  const [enviandoParte, setEnviandoParte] = useState<ApartadoDeLista | null>(null);
+  const [destinoEnvio, setDestinoEnvio] = useState("");
+  const [transportaEnvio, setTransportaEnvio] = useState("");
+  const [errorEnvio, setErrorEnvio] = useState("");
+  const [guardandoEnvio, setGuardandoEnvio] = useState(false);
+  function imprimirDespacho(ap: ApartadoDeLista, destino?: string, transporta?: string) {
+    const ventana = abrirVentanaImpresion();
+    if (!ventana) return;
+    imprimirDespachoProduccion(ventana, {
+      numero: ap.numeroCotizacion, cliente: ap.cliente,
+      origen: ap.envioEstado === "en_camino" ? ap.bodegaNombre : ap.bodegaNombre,
+      destino: destino || ap.envioDestinoNombre || "", transporta: transporta ?? ap.envioTransporta ?? "",
+      fecha: formatearFechaColombia(new Date().toISOString(), false),
+      lineas: ap.items.map((it) => ({ descripcion: it.descripcion || it.productoDescripcion || it.codigoInterno || "", cantidad: cantidadLinea(it) })),
+    });
+  }
+  async function confirmarEnvio() {
+    if (!enviandoParte) return;
+    if (!destinoEnvio) { setErrorEnvio("Escoge a qué bodega va."); return; }
+    setGuardandoEnvio(true); setErrorEnvio("");
+    try {
+      await api.patch(`/apartados/${enviandoParte.id}/enviar-a-bodega`, { bodega_destino_id: Number(destinoEnvio), transporta: transportaEnvio });
+      const destino = almacen.bodegas.find((b) => String(b.id) === destinoEnvio)?.nombre || "";
+      imprimirDespacho(enviandoParte, destino, transportaEnvio);
+      setMensajeInformativo(`La cotización ${enviandoParte.numeroCotizacion} va en camino a ${destino}. ${destino} la recibe y le da la Salida.`);
+      setEnviandoParte(null);
+      await a.cargarApartados();
+    } catch (err) {
+      setErrorEnvio(err instanceof ErrorApi ? err.message : "No se pudo enviar.");
+    } finally {
+      setGuardandoEnvio(false);
+    }
+  }
+  async function recibirEnvio(ap: ApartadoDeLista) {
+    try {
+      await api.patch(`/apartados/${ap.id}/recibir-envio`);
+      setMensajeInformativo(`Recibida la cotización ${ap.numeroCotizacion} de ${ap.bodegaNombre}: ya le puedes dar la Salida.`);
+      await a.cargarApartados();
+    } catch (err) {
+      setMensajeInformativo(err instanceof ErrorApi ? err.message : "No se pudo recibir.");
+    }
+  }
+
   // Al editar una cotización que también está en otra bodega (u otra empresa)
   // se le pueden quitar todas las líneas: se borra solo esta parte.
   // La cotización que se está editando (para saber cómo está en Siigo).
@@ -860,6 +905,16 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         </button>
       )}
       <div className="apartado-chips">
+        {ap.envioEstado === "en_camino" && (
+          <span className="apartado-chip apartado-chip-envio" title={`Enviada por ${ap.envioEnviadoPor}${ap.envioTransporta ? ` · lleva: ${ap.envioTransporta}` : ""}`}>
+            🚚 En camino de {ap.bodegaNombre} a {ap.envioDestinoNombre}
+          </span>
+        )}
+        {ap.envioEstado === "recibido" && (
+          <span className="apartado-chip apartado-chip-ok" title={`Recibida por ${ap.envioRecibidoPor}`}>
+            ✓ Producida en {ap.envioOrigenNombre}, recibida aquí
+          </span>
+        )}
         {esperandoDecision.has(ap.id) && (
           <span className="apartado-chip" style={{ color: "#b3261e", fontWeight: 700 }} title={esperandoDecision.get(ap.id)}>
             ⚠ Esperando autorización de Admin Inventario
@@ -908,6 +963,26 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     const tieneProduccionPendiente = (ap.estado === "enviado_a_produccion" || ap.estado === "en_produccion")
       && !ap.salidaPendiente
       && (calcularSolicitudesPendientes([ap]).length > 0 || calcularStockParaAlistar([ap]).length > 0);
+    // Lo producido en otra bodega que viene en camino: la que lo recibe le da
+    // "Recibir" (y después la Salida); la que lo mandó ya no hace nada más.
+    if (ap.envioEstado === "en_camino") {
+      const esDestino = esAdminInventario || (sesion.rol === "administrativo" && ap.envioDestinoBodegaId === sesion.bodegaId);
+      return (
+        <>
+          {esDestino && (
+            <button className="apartado-boton-recibir" onClick={() => setConfirmacion({
+              titulo: `¿Llegó la cotización ${ap.numeroCotizacion}?`,
+              mensaje: `Confirma que recibiste lo que mandó ${ap.bodegaNombre}${ap.envioTransporta ? ` (lo trajo: ${ap.envioTransporta})` : ""}. Pasa a ${ap.envioDestinoNombre} y desde ahí le das la Salida al cliente.`,
+              textoConfirmar: "Sí, llegó",
+              ejecutar: () => recibirEnvio(ap),
+            })}>✓ Recibir</button>
+          )}
+          {(esDestino || a.puedeMarcarEntregado || esAdminInventario) && (
+            <button onClick={() => imprimirDespacho(ap)}>Imprimir despacho</button>
+          )}
+        </>
+      );
+    }
     // Traslado a una bodega sin inventario (San Gil): no va a Siigo. Si lleva
     // material por rollo (tejas por producir) pasa por Planta como una
     // cotización; cuando sale el camión se le da Salida y se descuenta todo.
@@ -1074,6 +1149,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           textoConfirmar: "Sí, dar salida",
           ejecutar: () => a.marcarApartadoEntregado(ap.id),
         })}>Salida</button>
+      )}
+      {ap.estado === "produccion_terminada" && !ap.ordenInterna && !ap.items.some((it) => it.rolloId)
+        && (esAdminInventario || (sesion.rol === "administrativo" && ap.bodegaId === sesion.bodegaId)) && (
+        <button title="Se produjo aquí pero se entrega desde otra bodega: la otra la recibe y le da la Salida"
+          onClick={() => { setEnviandoParte(ap); setDestinoEnvio(""); setTransportaEnvio(""); setErrorEnvio(""); }}>
+          Enviar a otra bodega
+        </button>
       )}
       </>
     );
@@ -2120,6 +2202,35 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
             setMensajeInformativo("Listo: la lámina lisa ya dice en qué se convierte. Si la convierte otra bodega, mándale las láminas con un traslado.");
           }}
         />
+      )}
+      {enviandoParte && (
+        <div className="rollos-modal-fondo" onClick={() => setEnviandoParte(null)}>
+          <div className="rollos-modal" role="dialog" aria-modal="true" aria-labelledby="enviar-parte-titulo" onClick={(e) => e.stopPropagation()}>
+            <h3 id="enviar-parte-titulo">Enviar la cotización {enviandoParte.numeroCotizacion} a otra bodega</h3>
+            <p className="rollos-texto-ayuda">
+              Se produjo en <strong>{enviandoParte.bodegaNombre}</strong>. Queda <strong>en camino</strong> hasta que la otra bodega la
+              reciba; esa bodega es la que le da la <strong>Salida</strong> al cliente. Al enviar se imprime la hoja de despacho para firmar.
+            </p>
+            <label>
+              ¿A qué bodega va? *
+              <select value={destinoEnvio} onChange={(e) => setDestinoEnvio(e.target.value)}>
+                <option value="">Escoge la bodega</option>
+                {almacen.bodegas.filter((b) => b.id !== enviandoParte.bodegaId).map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+              </select>
+            </label>
+            <label>
+              ¿Quién lo lleva? (opcional)
+              <input value={transportaEnvio} maxLength={150} placeholder="Ej. Carlos · camión ABC-123" onChange={(e) => setTransportaEnvio(e.target.value)} />
+            </label>
+            {errorEnvio && <p className="rollos-error" role="alert">{errorEnvio}</p>}
+            <div className="rollos-modal-acciones">
+              <button type="button" className="rollos-boton-secundario" onClick={() => setEnviandoParte(null)}>Cancelar</button>
+              <button type="button" className="rollos-boton-primario" disabled={guardandoEnvio || !destinoEnvio} onClick={confirmarEnvio}>
+                {guardandoEnvio ? "Enviando..." : "Enviar e imprimir despacho"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {confirmacion && (
         <ModalConfirmacion

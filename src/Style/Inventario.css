@@ -2289,3 +2289,7 @@ li.apartado-linea-coincide { padding-left: 0.4rem; border-radius: 4px; }
 .devolver-tercero-cuadre { margin: 0.5rem 0; padding: 0.55rem 0.75rem; border-radius: var(--at-r-sm, 8px); font-size: 0.88rem; font-weight: 600; }
 .devolver-tercero-cuadre.ok { background: var(--at-green-dim, rgba(27, 122, 58, 0.12)); color: var(--at-green, #1B7A3A); }
 .devolver-tercero-cuadre.alerta { background: var(--at-amber-dim, rgba(184, 114, 10, 0.12)); color: #8A5A00; }
+
+/* Lo producido en otra bodega que se entrega aquí. */
+.apartado-chip-envio { background: rgba(184, 114, 10, 0.12); color: #8A5A00; font-weight: 700; }
+.apartado-boton-recibir { font-weight: 700; }

@@ -18,14 +18,15 @@ async function pendientesDe(rol: string, bodegaId: number): Promise<number> {
     const pendientes = datos.map(apartadoDesdeApi).filter((ap) => ESTADOS_PRODUCCION_PENDIENTE.includes(ap.estado));
     return cotizacionesParaPlanta(pendientes).size;
   }
-  const [recibidas, envios, porDespachar, enCamino] = await Promise.all([
+  const [recibidas, envios, porDespachar, enCamino, produccion] = await Promise.all([
     api.get<{ bodega_propietaria_id: number; estado: string }[]>("/bodegas/solicitudes/recibidas", encabezados),
     api.get<unknown[]>("/envios/recibidos", encabezados),
     api.get<unknown[]>("/bodegas/solicitudes/por-despachar", encabezados),
     api.get<unknown[]>("/bodegas/solicitudes/en-camino", encabezados),
+    api.get<unknown[]>("/apartados/envios-en-camino", encabezados).catch(() => []),
   ]);
   return (recibidas || []).filter((s) => s.bodega_propietaria_id === bodegaId && s.estado === "pendiente").length
-    + (envios || []).length + (porDespachar || []).length + (enCamino || []).length;
+    + (envios || []).length + (porDespachar || []).length + (enCamino || []).length + (produccion || []).length;
 }
 
 /** "Bodega: Santander ▾" para las cuentas que manejan varias bodegas. Al

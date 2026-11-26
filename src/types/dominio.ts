@@ -47,6 +47,7 @@ export type AlmacenGlobal = {
   bodegas: Bodega[]; solicitudes: Solicitud[]; envios: Envio[]; unidadesFamilia: UnidadFamilia[];
   // Traslados que esta bodega tiene por despachar o por recibir (campanita).
   trasladosPendientes: Solicitud[]; refrescarTrasladosPendientes: () => Promise<void>;
+  enviosProduccionEnCamino?: number;
   // Rollos pedidos entre bodegas que todavía no llegan (solo Admin Inventario).
   trasladosRollos: TrasladoRollo[]; refrescarTrasladosRollos: () => Promise<void>;
   // Productos de producción con código provisional (solo Admin Inventario).

@@ -108,14 +108,37 @@ class Apartado(Base):
     siigo_pendiente: Mapped[bool] = mapped_column(default=False, server_default=false())
     siigo_error: Mapped[str] = mapped_column(Text, default="", server_default="")
 
+    # Lo producido en una bodega que se entrega en otra (ej. se fabrica en
+    # Santander y sale de Ricaurte): la bodega donde se produjo lo envía
+    # ("en_camino") y la otra lo recibe ("recibido"); al recibirlo la parte
+    # pasa a esa bodega (bodega_id), que es la que le da la Salida.
+    envio_estado: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    envio_destino_bodega_id: Mapped[int | None] = mapped_column(ForeignKey("bodegas.id"), nullable=True)
+    envio_origen_bodega_id: Mapped[int | None] = mapped_column(ForeignKey("bodegas.id"), nullable=True)
+    envio_transporta: Mapped[str] = mapped_column(String(150), default="", server_default="")
+    envio_enviado_por: Mapped[str] = mapped_column(String(150), default="", server_default="")
+    envio_fecha_envio: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    envio_recibido_por: Mapped[str] = mapped_column(String(150), default="", server_default="")
+    envio_fecha_recibido: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Siempre en el orden en que se escribieron (Postgres no garantiza ningún
     # orden sin ORDER BY: en línea las líneas salían revueltas al editar).
     items = relationship("ApartadoItem", back_populates="apartado", cascade="all, delete-orphan", order_by="ApartadoItem.id")
-    bodega = relationship("Bodega")
+    bodega = relationship("Bodega", foreign_keys=[bodega_id])
+    envio_destino_bodega = relationship("Bodega", foreign_keys=[envio_destino_bodega_id])
+    envio_origen_bodega = relationship("Bodega", foreign_keys=[envio_origen_bodega_id])
 
     @property
     def bodega_nombre(self) -> str:
         return self.bodega.nombre if self.bodega else ""
+
+    @property
+    def envio_destino_nombre(self) -> str:
+        return self.envio_destino_bodega.nombre if self.envio_destino_bodega else ""
+
+    @property
+    def envio_origen_nombre(self) -> str:
+        return self.envio_origen_bodega.nombre if self.envio_origen_bodega else ""
 
 
 class ApartadoItem(Base):

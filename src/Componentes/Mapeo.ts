@@ -172,6 +172,12 @@ export function apartadoDesdeApi(a: RegistroApi) {
     siigoCentroCosto: a.siigo_centro_costo == null ? null : numero(a.siigo_centro_costo),
     // Va a Siigo pero el último envío falló (y por qué): se vuelve a intentar desde la lista.
     siigoPendiente: Boolean(a.siigo_pendiente), siigoError: texto(a.siigo_error),
+    // Lo producido aquí que se entrega en otra bodega ("" / "en_camino" / "recibido").
+    envioEstado: texto(a.envio_estado), envioDestinoBodegaId: numeroOpcional(a.envio_destino_bodega_id),
+    envioDestinoNombre: texto(a.envio_destino_nombre), envioOrigenNombre: texto(a.envio_origen_nombre),
+    envioTransporta: texto(a.envio_transporta), envioEnviadoPor: texto(a.envio_enviado_por),
+    envioFechaEnvio: a.envio_fecha_envio == null ? "" : texto(a.envio_fecha_envio),
+    envioRecibidoPor: texto(a.envio_recibido_por), envioFechaRecibido: a.envio_fecha_recibido == null ? "" : texto(a.envio_fecha_recibido),
     items: items.map(apartadoItemDesdeApi) };
 }
 

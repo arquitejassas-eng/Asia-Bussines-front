@@ -14,7 +14,7 @@ from app.models.producto import Producto
 from app.services.productos import FAMILIA_ROLLOS
 from app.models.usuario import RolUsuario, Usuario
 from app.schemas.apartados import (
-    ApartadoCrear, ApartadoResponse, DisponibilidadCodigoResponse, DisponibilidadProductoResponse, ReservaCodigoResponse,
+    ApartadoCrear, ApartadoResponse, DisponibilidadCodigoResponse, DisponibilidadProductoResponse, EnviarABodegaRequest, ReservaCodigoResponse,
     RolloParaApartarResponse, SiguienteNumeroResponse,
 )
 from app.models.envio import Envio, EnvioItem, EstadoEnvio
@@ -551,9 +551,12 @@ def listar_apartados(
         if usuario.rol == RolUsuario.VENDEDOR: consulta = consulta.filter(Apartado.creado_por == usuario.correo)
         if bodega_id is not None: consulta = consulta.filter(Apartado.bodega_id == bodega_id)
     else:
-        # También los traslados que creó para que salgan de otra bodega.
+        # También los traslados que creó para que salgan de otra bodega, y lo
+        # producido en otra bodega que viene en camino para entregarlo aquí.
         consulta = consulta.filter(or_(Apartado.bodega_id == usuario.bodega_id,
-                                       and_(Apartado.traslado_a != "", Apartado.creado_por == usuario.correo)))
+                                       and_(Apartado.traslado_a != "", Apartado.creado_por == usuario.correo),
+                                       and_(Apartado.envio_estado == srv.ENVIO_EN_CAMINO,
+                                            Apartado.envio_destino_bodega_id == usuario.bodega_id)))
     if estado: consulta = consulta.filter(Apartado.estado == estado)
     if estados: consulta = consulta.filter(Apartado.estado.in_(estados))
     if numero_cotizacion: consulta = consulta.filter(Apartado.numero_cotizacion.ilike(f"%{numero_cotizacion}%"))
@@ -571,6 +574,12 @@ def listar_apartados(
             )
         propios += otras
     return _con_faltantes(db, propios)
+
+
+@router.get("/envios-en-camino", response_model=list[ApartadoResponse])
+def envios_en_camino(db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> list[Apartado]:
+    """Lo producido en otra bodega que viene en camino a la mía (para recibirlo)."""
+    return _con_faltantes(db, srv.envios_en_camino_a(db, usuario))
 
 
 @router.get("/{apartado_id}", response_model=ApartadoResponse)
@@ -1196,6 +1205,26 @@ def _salida_de_rollos_completos(db: Session, apartado: Apartado, usuario: Usuari
         apartado.estado = EstadoApartado.ENTREGADO
         apartado.fecha_entregado = datetime.now(timezone.utc)
     return apartado
+
+
+@router.patch("/{apartado_id}/enviar-a-bodega", response_model=ApartadoResponse,
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+def enviar_a_bodega(apartado_id: int, datos: EnviarABodegaRequest, db: Session = Depends(get_db),
+                    usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    """Lo producido aquí se entrega en otra bodega: queda en camino hasta que la reciban."""
+    apartado = srv.enviar_parte_a_bodega(db, apartado_id, bodega_destino_id=datos.bodega_destino_id,
+                                         transporta=datos.transporta, observaciones=datos.observaciones, usuario=usuario)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
+
+
+@router.patch("/{apartado_id}/recibir-envio", response_model=ApartadoResponse,
+              dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+def recibir_envio(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
+    """Llegó lo que mandó la otra bodega: la parte pasa a esta bodega, que le da la Salida."""
+    apartado = srv.recibir_envio(db, apartado_id, usuario)
+    db.commit(); db.refresh(apartado)
+    return _con_faltantes(db, [apartado])[0]
 
 
 @router.patch("/{apartado_id}/marcar-entregado", response_model=ApartadoResponse,

@@ -123,6 +123,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
   // Traslados entre sedes que esta bodega tiene por despachar (los aceptó) o
   // por recibir (ya vienen en camino): también avisan en la campanita.
   const [trasladosPendientes, setTrasladosPendientes] = useState<Solicitud[]>([]);
+  const [enviosProduccionEnCamino, setEnviosProduccionEnCamino] = useState(0);
 
   const refrescarTrasladosPendientes = useCallback(async () => {
     if (sesion?.rol !== "administrativo") return setTrasladosPendientes([]);
@@ -132,6 +133,9 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
         api.get<SolicitudApi[]>("/bodegas/solicitudes/en-camino"),
       ]);
       setTrasladosPendientes([...(porDespachar || []), ...(enCamino || [])].map((s) => solicitudDesdeApi(s)));
+      // Lo producido en otra bodega que viene en camino para entregarlo aquí.
+      const produccionEnCamino = await api.get<unknown[]>("/apartados/envios-en-camino").catch(() => null);
+      if (produccionEnCamino) setEnviosProduccionEnCamino(produccionEnCamino.length);
     } catch {
       /* Sin conexión un momento: se conserva lo que había (antes se vaciaba y los avisos desaparecían). */
     }
@@ -231,7 +235,7 @@ export function useAlmacenGlobal(sesion: Sesion | null | undefined) {
 
   return {
     bodegas, solicitudes, envios, cargarBodegas, refrescarSolicitudesPendientes, refrescarEnviosPendientes,
-    trasladosPendientes, refrescarTrasladosPendientes,
+    trasladosPendientes, refrescarTrasladosPendientes, enviosProduccionEnCamino,
     trasladosRollos, refrescarTrasladosRollos,
     productosSinCodigo, refrescarProductosSinCodigo,
     produccionPendienteCount, refrescarProduccionPendiente,
