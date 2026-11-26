@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, ErrorApi } from "./Api";
 import { apartadoDesdeApi, produccionDesdeApi, rolloDesdeApi } from "./Mapeo";
 import {
-  calcularSolicitudesPendientes, calcularStockParaAlistar, cotizacionesParaPlanta, metrosPorUnidadDeLinea, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO,
+  calcularSolicitudesPendientes, FACTOR_COLONIAL, calcularStockParaAlistar, cotizacionesParaPlanta, metrosPorUnidadDeLinea, NOMBRE_POR_TIPO_PRODUCTO, SECCIONES_POR_TIPO_PRODUCTO,
 } from "../Utils/produccion";
 import { useActualizacionAutomatica } from "../Hooks/useActualizacionAutomatica";
 import { coincideKilos, kilosBuscados } from "../Utils/kilos";
@@ -735,7 +735,10 @@ export function useControladorProduccion(sesion: Sesion, _almacen: unknown) {
             return "Para la lámina lisa indica cuánto mide cada pedazo.";
           }
         }
-        metrosNecesarios += Number(linea.cantidad) * Number(linea.metros);
+        // Teja COLONIAL: gasta 6 % más de lámina que su medida.
+        const factor = tipoProducto === "teja" && !linea.lisaPara
+          && normalizarModeloTeja(String(linea.modelo ?? modelo)) === "COLONIAL" ? FACTOR_COLONIAL : 1;
+        metrosNecesarios += Number(linea.cantidad) * Number(linea.metros) * factor;
       }
       // El material de las unidades adicionales también tiene que salir del
       // rollo: lo que sobre después de cubrir el apartado (o todo lo

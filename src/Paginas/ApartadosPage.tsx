@@ -18,7 +18,7 @@ import PanelUnirCotizacion from "../Componentes/PanelUnirCotizacion";
 import Paginacion from "../Componentes/Paginacion";
 import { factorIva, numeroSinEmpresa, useApartados } from "../Hooks/useApartados";
 import { contarNotificacionesBarraLateral } from "../Utils/notificaciones";
-import { calcularSolicitudesPendientes, calcularStockParaAlistar, metrosDeLinea, pideCorte } from "../Utils/produccion";
+import { calcularSolicitudesPendientes, calcularStockParaAlistar, esColonial, metrosDeLinea, pideCorte } from "../Utils/produccion";
 import "../Style/Inventario.css";
 import { AvisoSiigoCotizacion, CampoSiigoCliente, CamposSiigoLinea, ImpuestosSiigo, ResumenSiigo } from "../Componentes/SiigoCotizacion";
 import type { AlmacenGlobal, Sesion } from "../types/dominio";
@@ -211,7 +211,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     if (!datos) return false;
     if (item.modalidad === "por_stock") return Number(item.cantidad) > (datos.cantidadDisponible ?? 0);
     return datos.cantidadRollos === 0
-      || metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto).metros > (datos.metrosDisponibles ?? 0);
+      || metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto, item.descripcion).metros > (datos.metrosDisponibles ?? 0);
   });
   // Las líneas del mismo código se suman (como al guardar): la línea con la
   // que la cotización pasa de lo libre en toda la compañía (Arquitejas + Asia,
@@ -224,7 +224,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     a.formulario.items.forEach((item, indice) => {
       const codigo = String(item.codigoInterno || "").trim().toUpperCase();
       if (item.modalidad !== "por_rollo" || !codigo || !(Number(item.cantidad) > 0) || !(Number(item.medida) > 0)) return;
-      pedidoPorCodigo[codigo] = (pedidoPorCodigo[codigo] ?? 0) + metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto).metros;
+      pedidoPorCodigo[codigo] = (pedidoPorCodigo[codigo] ?? 0) + metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto, item.descripcion).metros;
       const datos = disponibilidadItems[indice]?.datos;
       if (!datos || datos.disponibleEmpresa == null) return;
       const hay = Math.max(datos.disponibleEmpresa, 0) + (datos.otrasEmpresas ?? []).reduce((suma, o) => suma + Math.max(o.total, 0), 0);
@@ -240,7 +240,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     for (const item of a.formulario.items) {
       const codigo = String(item.codigoInterno || "").trim().toUpperCase();
       if (item.modalidad !== "por_rollo" || !codigo || !(Number(item.cantidad) > 0) || !(Number(item.medida) > 0)) continue;
-      metrosPorCodigo[codigo] = (metrosPorCodigo[codigo] ?? 0) + metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto).metros;
+      metrosPorCodigo[codigo] = (metrosPorCodigo[codigo] ?? 0) + metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto, item.descripcion).metros;
     }
     const n = a.formulario.items.length;
     return (
@@ -265,7 +265,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     if (!datos || !item.bodegaId) return null;
     const pedido = item.modalidad === "por_stock"
       ? Number(item.cantidad) || 0
-      : Number(item.cantidad) > 0 && Number(item.medida) > 0 ? metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto).metros : 0;
+      : Number(item.cantidad) > 0 && Number(item.medida) > 0 ? metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto, item.descripcion).metros : 0;
     const necesita = (hay: number) => (pedido > 0 ? hay + 0.005 < pedido : hay <= 0.005);
     const libre = item.modalidad === "por_stock" ? datos.cantidadDisponible ?? 0 : datos.metrosDisponibles ?? 0;
     const totalEmpresa = datos.disponibleEmpresa ?? null;
@@ -521,7 +521,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           "Cantidad": it ? it.cantidad : "",
           "Medida (m)": it?.medida ?? "",
           "Metros de rollo": it && deRollo
-            ? (it.metrosRequeridos ?? metrosDeLinea(it.cantidad, it.medida ?? 0, it.tipoProducto).metros) : "",
+            ? (it.metrosRequeridos ?? metrosDeLinea(it.cantidad, it.medida ?? 0, it.tipoProducto, it.descripcion).metros) : "",
           "Tipo": !it ? "" : it.rolloId ? "Rollo completo" : deRollo ? "Material por rollo" : "Producto de stock",
           "Siigo": fila.ap.siigoNumero,
         };
@@ -549,7 +549,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
         const { ap } = fila;
         const deRollo = it?.modalidad === "por_rollo";
         const codigo = it ? (deRollo ? it.codigoInterno || "" : it.productoCodigo) : "";
-        const metros = it && deRollo ? (it.metrosRequeridos ?? metrosDeLinea(it.cantidad, it.medida ?? 0, it.tipoProducto).metros) : null;
+        const metros = it && deRollo ? (it.metrosRequeridos ?? metrosDeLinea(it.cantidad, it.medida ?? 0, it.tipoProducto, it.descripcion).metros) : null;
         return {
           "SITUACIÓN": fila.situacion, "DÓNDE BUSCARLA": fila.donde,
           "DE QUE EMPRESA SALE EL MATERIAL": empresaExcel((it?.empresaMaterial || ap.empresa) ?? ""),
@@ -1762,6 +1762,12 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         </p>
                       )}
                     </>
+                  )}
+                  {item.modalidad === "por_rollo" && !item.tipoProducto && esColonial(item.descripcion) && Number(item.cantidad) > 0 && Number(item.medida) > 0 && (
+                    <p className="inventario-carga-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                      Teja colonial: se apartan <strong>{String(metrosDeLinea(Number(item.cantidad), Number(item.medida), "", item.descripcion).metros).replace(".", ",")} m de lámina</strong>{" "}
+                      ({item.cantidad} × {String(item.medida).replace(".", ",")} m + 6 %). En Siigo va por {String(Math.round(Number(item.cantidad) * Number(item.medida) * 100) / 100).replace(".", ",")} m.
+                    </p>
                   )}
                   {item.modalidad === "por_rollo" && item.tipoProducto && item.tipoProducto !== "lamina_lisa" && Number(item.cantidad) > 0 && Number(item.medida) > 0 && (() => {
                     const { metros, cortes, sobrantes } = metrosDeLinea(Number(item.cantidad), Number(item.medida), item.tipoProducto);

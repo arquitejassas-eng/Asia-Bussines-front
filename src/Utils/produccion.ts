@@ -1,3 +1,4 @@
+import { modeloEnDescripcion } from "./teja";
 /** Regla física de los productos "seccionados": el ancho del rollo se
  * divide siempre en N partes iguales según el tipo, así que cada corte
  * produce SIEMPRE esas N unidades. Un solo lugar (reutilizado por el
@@ -7,6 +8,12 @@
  * coincidir exactamente con SECCIONES_POR_TIPO_PRODUCTO del backend
  * (app/services/produccion.py). */
 export const SECCIONES_POR_TIPO_PRODUCTO: Record<string, number> = { caballete: 3, flanche: 5 };
+/** La teja COLONIAL gasta un 6 % más de lámina que su medida, sin importar
+ * calibre ni lámina (backend seccionados.FACTOR_COLONIAL). En Siigo va la medida. */
+export const FACTOR_COLONIAL = 1.06;
+export function esColonial(descripcion: string | null | undefined) {
+  return modeloEnDescripcion(descripcion) === "COLONIAL";
+}
 export const NOMBRE_POR_TIPO_PRODUCTO: Record<string, string> = { caballete: "caballete", flanche: "flanche" };
 
 /** Metros de lámina que necesita una línea por rollo de la cotización (misma
@@ -14,9 +21,13 @@ export const NOMBRE_POR_TIPO_PRODUCTO: Record<string, string> = { caballete: "ca
  * cantidad × medida; caballete/flanche = cortes × medida, con cortes =
  * cantidad entre las secciones, hacia arriba (5 caballetes de 3 m = 2 cortes
  * = 6 m, y sobra 1). */
-export function metrosDeLinea(cantidad: number, medida: number, tipoProducto = ""): { metros: number; cortes: number; sobrantes: number } {
+export function metrosDeLinea(cantidad: number, medida: number, tipoProducto = "", descripcion = ""): { metros: number; cortes: number; sobrantes: number } {
   const secciones = SECCIONES_POR_TIPO_PRODUCTO[tipoProducto];
-  if (!secciones) return { metros: Math.round(cantidad * medida * 100) / 100, cortes: 0, sobrantes: 0 };
+  if (!secciones) {
+    // Teja COLONIAL: gasta 6 % más de lámina (60 × 3 m = 190,8 m). Igual que el backend.
+    const factor = !tipoProducto && esColonial(descripcion) ? FACTOR_COLONIAL : 1;
+    return { metros: Math.round(cantidad * medida * factor * 100) / 100, cortes: 0, sobrantes: 0 };
+  }
   const cortes = Math.ceil(Math.round((cantidad / secciones) * 1e6) / 1e6);
   return { metros: Math.round(cortes * medida * 100) / 100, cortes, sobrantes: cortes * secciones - cantidad };
 }

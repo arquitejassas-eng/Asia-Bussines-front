@@ -11,6 +11,7 @@ export const MODELOS_TEJA: Record<string, string[]> = {
   ARQUITECTONICA: ["arq"],
   SUPERMIL: ["super"],
   MASTERMIL: ["master"],
+  COLONIAL: ["colon"],
 };
 export function normalizarModeloTeja(texto: string | null | undefined): string {
   const compacto = String(texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");

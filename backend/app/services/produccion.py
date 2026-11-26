@@ -21,7 +21,7 @@ from app.services.apartados import (
 from app.services.modelos_teja import modelo_en_descripcion, normalizar_modelo_teja
 from app.services.prestamos import LAMINA, registrar_prestamo
 from app.services.productos import nuevo_producto_en_bodega
-from app.services.seccionados import LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO
+from app.services.seccionados import FACTOR_COLONIAL, LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO
 
 # Regla física de los productos "seccionados": el ancho del rollo se divide
 # siempre en N partes iguales según el tipo (3 para caballetes, 5 para
@@ -616,7 +616,12 @@ def registrar_produccion(db: Session, datos: ProduccionCrear, usuario: Usuario) 
         # aplica); es una validación distinta, sobre que el material sí se
         # haya descontado de verdad. A diferencia de caballetes, aquí "al
         # menos" alcanza — la cantidad de stock sigue siendo elección libre.
-        metros_necesarios = round(sum(item.cantidad * metros_de_linea_stock(datos, item) for item in datos.stock_adicional), 2)
+        metros_necesarios = round(sum(
+            item.cantidad * metros_de_linea_stock(datos, item)
+            # Teja COLONIAL: gasta 6 % más de lámina que su medida.
+            * (FACTOR_COLONIAL if not item.lamina_lisa_para
+               and normalizar_modelo_teja(item.modelo or datos.modelo) == "COLONIAL" else 1)
+            for item in datos.stock_adicional), 2)
         if metros_excedente + 0.01 < metros_necesarios:
             raise HTTPException(
                 status_code=400,

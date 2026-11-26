@@ -923,7 +923,7 @@ def _editar_cotizacion_completa(db: Session, apartado_id: int, datos: ApartadoEd
     def cambio(clave: int) -> float:
         parte = parte_por_clave[clave]
         antes = sum((it.metros_requeridos or 0) if it.modalidad == ModalidadApartado.POR_ROLLO else it.cantidad for it in parte.items)
-        despues = sum(srv.metros_de_linea(l.cantidad, l.medida, l.tipo_producto) if l.modalidad == ModalidadApartado.POR_ROLLO else l.cantidad
+        despues = sum(srv.metros_de_linea(l.cantidad, l.medida, l.tipo_producto, l.descripcion) if l.modalidad == ModalidadApartado.POR_ROLLO else l.cantidad
                       for l in por_parte[clave])
         return despues - antes
     for clave in sorted((c for c in parte_por_clave if c in por_parte), key=cambio):

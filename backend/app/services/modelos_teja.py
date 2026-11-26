@@ -1,7 +1,7 @@
 """Nombre oficial del modelo de una teja a partir de lo que se escribe.
 
 "arqui", "Arq.", "arquitectónica" -> ARQUITECTONICA; "super", "Super Mil"
--> SUPERMIL; "master" -> MASTERMIL. Lo demás queda tal cual, en
+-> SUPERMIL; "master" -> MASTERMIL; "colonial" -> COLONIAL. Lo demás queda tal cual, en
 mayúsculas. Así el stock de un mismo modelo cae siempre en la misma tarjeta
 aunque cada quien lo escriba distinto. Misma lista en src/Utils/teja.ts.
 """
@@ -13,6 +13,7 @@ MODELOS_TEJA: dict[str, tuple[str, ...]] = {
     "ARQUITECTONICA": ("arq",),
     "SUPERMIL": ("super",),
     "MASTERMIL": ("master",),
+    "COLONIAL": ("colon",),
 }
 
 
