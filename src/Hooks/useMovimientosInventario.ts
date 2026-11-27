@@ -9,6 +9,7 @@ export const MOTIVOS_ENTRADA = [
 export const MOTIVOS_SALIDA = [
   { valor: "venta", etiqueta: "Venta" },
   { valor: "produccion", etiqueta: "Uso en producción" },
+  { valor: "uso_interno", etiqueta: "Uso interno" },
   { valor: "merma", etiqueta: "Merma o daño" },
 ];
 const FORMULARIO_VACIO = {

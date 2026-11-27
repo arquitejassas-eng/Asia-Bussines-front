@@ -1,6 +1,9 @@
 // @ts-nocheck -- contrato de controlador pendiente de centralizar.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EMPRESAS, nombreEmpresa } from "../Utils/empresas";
+
+const LIMITE_COINCIDENCIAS = 30;
+const normalizarTexto = (texto) => String(texto ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 // Pestaña "Movimientos" de Inventario: registrar entrada/salida (los traslados van por Bodegas),
 // incluida la lógica de Porcelanato (cantidad por cajas o por m²).
@@ -51,6 +54,24 @@ function PanelMovimientosInventario({
     && Number(productoSeleccionadoMov.metrosPorUnidad) > 0
     ? productoSeleccionadoMov
     : null;
+  // Búsqueda del producto por código o descripción (todas las palabras
+  // escritas deben aparecer, sin importar mayúsculas ni tildes).
+  const [busquedaProducto, setBusquedaProducto] = useState("");
+  const coincidenciasProducto = useMemo(() => {
+    const palabras = normalizarTexto(busquedaProducto).split(/\s+/).filter(Boolean);
+    if (!palabras.length) return [];
+    const resultado = [];
+    for (const p of productos) {
+      const texto = normalizarTexto(`${p.codigo} ${p.descripcion}`);
+      if (palabras.every((palabra) => texto.includes(palabra))) {
+        resultado.push(p);
+        if (resultado.length === LIMITE_COINCIDENCIAS) break;
+      }
+    }
+    return resultado;
+  }, [busquedaProducto, productos]);
+  useEffect(() => { setBusquedaProducto(""); }, [formularioMov.tipo]);
+
   const [modoCantidadMov, setModoCantidadMov] = useState("cajas"); // "cajas" | "m2"
   const [m2SolicitadosMov, setM2SolicitadosMov] = useState("");
 
@@ -130,19 +151,69 @@ function PanelMovimientosInventario({
               </div>
             )}
 
-            <div>
+            {/* Buscador: la bodega tiene cientos de productos, así que no se
+                despliega todo; se escribe parte del código o la descripción. */}
+            <div style={{ position: "relative" }}>
               <label>Producto</label>
-              <select
-                value={formularioMov.productoId}
-                onChange={(e) => actualizarCampoMov("productoId", e.target.value)}
-              >
-                <option value="">Selecciona un producto</option>
-                {productos.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.codigo} — {p.descripcion}{p.empresa ? ` (${nombreEmpresa(p.empresa)})` : ""}
-                  </option>
-                ))}
-              </select>
+              {productoSeleccionadoMov ? (
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <input
+                    readOnly
+                    value={`${productoSeleccionadoMov.codigo} — ${productoSeleccionadoMov.descripcion}${productoSeleccionadoMov.empresa ? ` (${nombreEmpresa(productoSeleccionadoMov.empresa)})` : ""} · stock ${productoSeleccionadoMov.stock}`}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="inventario-tipo-boton"
+                    onClick={() => { actualizarCampoMov("productoId", ""); setBusquedaProducto(""); }}
+                  >
+                    Cambiar
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    type="search"
+                    placeholder="Busca por código o descripción (ej. perfil)"
+                    value={busquedaProducto}
+                    onChange={(e) => setBusquedaProducto(e.target.value)}
+                    autoComplete="off"
+                  />
+                  {busquedaProducto.trim() && (
+                    <div style={{
+                      position: "absolute", zIndex: 20, left: 0, right: 0, maxHeight: "16rem", overflowY: "auto",
+                      background: "var(--at-surface, #FFFFFF)", border: "1px solid var(--at-border-soft, #EBE2D2)",
+                      borderRadius: 8, boxShadow: "0 6px 18px rgba(37,28,20,0.12)",
+                    }}>
+                      {coincidenciasProducto.length === 0 ? (
+                        <p className="inventario-carga-ayuda" style={{ margin: 0, padding: "0.6rem 0.75rem" }}>
+                          No hay productos con «{busquedaProducto.trim()}» en esta bodega.
+                        </p>
+                      ) : coincidenciasProducto.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => { actualizarCampoMov("productoId", String(p.id)); setBusquedaProducto(""); }}
+                          style={{
+                            display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem",
+                            border: "none", borderBottom: "1px solid var(--at-border-soft, #EBE2D2)",
+                            background: "transparent", cursor: "pointer", font: "inherit", color: "inherit",
+                          }}
+                        >
+                          <strong>{p.codigo}</strong> — {p.descripcion}
+                          {p.empresa ? ` (${nombreEmpresa(p.empresa)})` : ""}
+                          <span style={{ color: "var(--at-muted, #7C6A56)" }}> · stock {p.stock}</span>
+                        </button>
+                      ))}
+                      {coincidenciasProducto.length === LIMITE_COINCIDENCIAS && (
+                        <p className="inventario-carga-ayuda" style={{ margin: 0, padding: "0.5rem 0.75rem" }}>
+                          Hay más resultados: escribe un poco más para afinar.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             {formularioMov.tipo === "entrada" && formularioMov.productoId === "nuevo" && (
