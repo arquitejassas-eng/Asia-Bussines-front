@@ -135,8 +135,12 @@ class ApartadoCrear(BaseModel):
         if self.orden_interna:
             if any(i.modalidad != ModalidadApartado.POR_ROLLO or i.rollo_id for i in self.items):
                 raise ValueError("Una orden de producción interna solo lleva lámina por producir (material por rollo).")
-            if any(i.convertir_en not in SECCIONES_POR_TIPO_PRODUCTO for i in lisas):
-                raise ValueError("Di en qué se convierte la lámina lisa: caballetes o flanches.")
+            # "" = no se convierte: queda como lámina lisa en el inventario.
+            for i in lisas:
+                if i.convertir_en not in ("", *SECCIONES_POR_TIPO_PRODUCTO):
+                    raise ValueError("Di en qué se convierte la lámina lisa: caballetes, flanches o que queda lisa.")
+                if not i.convertir_en:
+                    i.bodega_conversion_id = None
         elif self.traslado_a:
             # Traslado (San Gil): la lámina lisa va tal cual, no se convierte aquí.
             for i in lisas:

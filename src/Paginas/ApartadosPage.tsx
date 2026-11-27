@@ -1074,8 +1074,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
       )}
       {esAdminInventario && ap.ordenInterna && ap.estado !== "cancelado"
         && ap.items.some((it) => it.tipoProducto === "lamina_lisa" && !it.convertirEn) && (
-        <button title="La lámina lisa de esta orden no dice en qué se convierte" onClick={() => setConversionAbierta(ap)}>
-          Definir conversión
+        <button title="La lámina lisa de esta orden queda lisa. Si la quieres convertir en caballetes o flanches, toca aquí" onClick={() => setConversionAbierta(ap)}>
+          Convertir lámina lisa
         </button>
       )}
       {a.puedeEnviarAProduccion && ap.estado === "apartado" && (
@@ -1788,9 +1788,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         >
                           <option value="caballete">Caballetes (3 por lámina)</option>
                           <option value="flanche">Flanches (5 por lámina)</option>
+                          <option value="lisa">No se convierte (queda lámina lisa)</option>
                         </select>
                       </div>
-                      <div>
+                      {item.convertirEn !== "lisa" && <div>
                         <label>Bodega que la convierte</label>
                         <select
                           aria-label="Bodega que convierte la lámina lisa"
@@ -1800,8 +1801,14 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                           <option value="">La misma que la produce</option>
                           {almacen.bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                         </select>
-                      </div>
-                      {Number(item.cantidad) > 0 && Number(item.medida) > 0 && (
+                      </div>}
+                      {Number(item.cantidad) > 0 && Number(item.medida) > 0 && item.convertirEn === "lisa" && (
+                        <p className="inventario-carga-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                          Se apartan <strong>{metrosDeLinea(Number(item.cantidad), Number(item.medida)).metros} m de lámina</strong>: quedan {item.cantidad} láminas
+                          lisas de {item.medida} m en el inventario, sin convertir.
+                        </p>
+                      )}
+                      {Number(item.cantidad) > 0 && Number(item.medida) > 0 && item.convertirEn !== "lisa" && (
                         <p className="inventario-carga-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
                           Se apartan <strong>{metrosDeLinea(Number(item.cantidad), Number(item.medida)).metros} m de lámina</strong>: {item.cantidad} láminas
                           de {item.medida} m = {Number(item.cantidad) * ((item.convertirEn || "caballete") === "flanche" ? 5 : 3)}{" "}

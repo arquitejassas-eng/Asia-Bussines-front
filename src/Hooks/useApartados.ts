@@ -320,7 +320,8 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
         bodegaId: String(parte.bodegaId),
         empresa: empresaMaterial && empresaMaterial !== empresaCotizacion ? empresaMaterial : "",
         hayFisico: it.hayFisico, hayFisicoOriginal: it.hayFisico,
-        convertirEn: it.convertirEn || "caballete", bodegaConversionId: it.bodegaConversionId ? String(it.bodegaConversionId) : "",
+        // Lámina lisa sin conversión = queda lisa ("lisa" en el formulario, "" en el servidor).
+        convertirEn: it.tipoProducto === "lamina_lisa" && !it.convertirEn ? "lisa" : (it.convertirEn || "caballete"), bodegaConversionId: it.bodegaConversionId ? String(it.bodegaConversionId) : "",
         laminasConvertidas: it.laminasConvertidas,
         siigoProducto: it.siigoProducto || "", siigoIncluido: it.siigoIncluido,
         valorLinea: it.precio == null || it.siigoCantidad == null ? ""
@@ -789,8 +790,8 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
             : { id: i.id, bodega_id, empresa, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida),
                 tipo_producto: i.tipoProducto || "", ...datosSiigo,
                 ...(i.tipoProducto === "lamina_lisa" ? {
-                  convertir_en: i.convertirEn || "caballete",
-                  bodega_conversion_id: i.bodegaConversionId ? Number(i.bodegaConversionId) : null,
+                  convertir_en: i.convertirEn === "lisa" ? "" : (i.convertirEn || "caballete"),
+                  bodega_conversion_id: i.convertirEn !== "lisa" && i.bodegaConversionId ? Number(i.bodegaConversionId) : null,
                 } : {}) };
         }),
       });
