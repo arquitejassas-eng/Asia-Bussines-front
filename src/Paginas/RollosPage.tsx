@@ -12,6 +12,10 @@ import PanelToggleVistaRollos from "../Componentes/PanelToggleVistaRollos";
 import PanelAgrupacionRollos from "../Componentes/PanelAgrupacionRollos";
 import ModalCorregirRollo from "../Componentes/ModalCorregirRollo";
 import { useState } from "react";
+import { cerrarImpresion, imprimirRollosAlmacenados, ventanaParaImprimirEnLaPagina } from "../Utils/imprimirTraslados";
+import { textoKilos } from "../Utils/kilos";
+import { formatearFechaColombia } from "../Utils/fechas";
+import { EMPRESAS } from "../Utils/empresas";
 import { contarNotificaciones } from "../Utils/notificaciones";
 import "../Style/Rollos.css";
 
@@ -22,6 +26,43 @@ function RollosPage({ sesion, onCerrarSesion, almacen }) {
   const [avisoCorreccion, setAvisoCorreccion] = useState("");
 
   const notificaciones = contarNotificaciones(almacen, sesion);
+
+  // Imprimir: TODOS los rollos que cumplen los filtros (no solo la página en pantalla).
+  const [imprimiendo, setImprimiendo] = useState(false);
+  const [errorImpresion, setErrorImpresion] = useState("");
+  async function imprimirRollos() {
+    if (imprimiendo) return;
+    setImprimiendo(true);
+    setErrorImpresion("");
+    const ventana = ventanaParaImprimirEnLaPagina();
+    try {
+      const rollos = await r.traerTodosLosRollos();
+      const bodegas = Object.fromEntries((almacen?.bodegas || []).map((b) => [b.id, b.nombre]));
+      const estados = r.ESTADOS_ROLLO || {};
+      const f = r.filtros || {};
+      const filtro = [
+        r.vista === "acabados" ? "Rollos acabados" : "Rollos activos",
+        f.codigoInterno && `código ${f.codigoInterno}`, f.identificadorRollo && `referencia ${f.identificadorRollo}`,
+        f.familia && f.familia, f.colorMaterial && f.colorMaterial, f.calibre && `calibre ${f.calibre}`,
+        f.empresa && (EMPRESAS[f.empresa] || f.empresa), f.estado && r.vista !== "acabados" && (estados[f.estado] || f.estado),
+        f.descripcion && `"${f.descripcion}"`, f.kilos && `${f.kilos} kg`,
+      ].filter(Boolean).join(" · ");
+      if (!ventana) throw new Error("No se pudo preparar la hoja para imprimir.");
+      imprimirRollosAlmacenados(ventana, rollos.map((rollo) => ({
+        codigoInterno: rollo.codigoInterno, identificadorRollo: rollo.identificadorRollo,
+        empresa: EMPRESAS[rollo.empresa] || rollo.empresa, bodega: bodegas[rollo.bodegaId] || "",
+        colorMaterial: rollo.colorMaterial, calibre: String(rollo.calibre || "—").replace(".", ","),
+        pesoNeto: textoKilos(rollo.pesoNeto), pesoActual: textoKilos(rollo.pesoActualToneladas, true),
+        metrosDisponibles: rollo.metrosDisponibles, estado: estados[rollo.estado] || rollo.estado,
+        ingreso: rollo.fechaIngreso ? formatearFechaColombia(rollo.fechaIngreso, false) : "",
+      })), filtro, formatearFechaColombia(new Date(), false));
+    } catch (err) {
+      cerrarImpresion(ventana);
+      setErrorImpresion(err?.message || "No se pudieron traer los rollos para imprimir. Intenta otra vez.");
+    } finally {
+      setImprimiendo(false);
+    }
+  }
 
   return (
     <div className="layout-con-sidebar">
@@ -78,6 +119,14 @@ function RollosPage({ sesion, onCerrarSesion, almacen }) {
             ESTADOS_ROLLO={r.ESTADOS_ROLLO}
             limpiarFiltros={r.limpiarFiltros}
           />
+
+          <div className="rollos-imprimir">
+            <button type="button" className="rollos-boton-secundario" disabled={imprimiendo} onClick={imprimirRollos}
+              title="Imprime todos los rollos que cumplen los filtros de arriba, no solo esta página">
+              {imprimiendo ? "Preparando..." : `Imprimir rollos${r.paginacion?.total ? ` (${r.paginacion.total})` : ""}`}
+            </button>
+            {errorImpresion && <span className="rollos-error" role="alert">{errorImpresion}</span>}
+          </div>
 
           <Paginacion
             paginacion={r.paginacion}

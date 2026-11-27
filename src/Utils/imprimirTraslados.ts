@@ -121,3 +121,33 @@ export function imprimirDespachoProduccion(ventana: Window, d: {
     <table><thead><tr><th class="n">#</th><th>Descripción</th><th class="num">Cantidad</th></tr></thead><tbody>${filas}</tbody></table>
     <div class="firmas"><div>Despachó (${escapar(d.origen)})</div><div>Conductor / lleva</div><div>Recibió (${escapar(d.destino)})</div></div>`);
 }
+
+export type RolloParaImprimir = {
+  codigoInterno: string; identificadorRollo: string; empresa: string; bodega: string; colorMaterial: string;
+  calibre: string; pesoNeto: string; pesoActual: string; metrosDisponibles: number; estado: string; ingreso: string;
+};
+
+/** Rollos almacenados: todos los que cumplen el filtro, agrupados por código,
+ * con los metros disponibles de cada código y el total. */
+export function imprimirRollosAlmacenados(ventana: Window, rollos: RolloParaImprimir[], descripcionFiltro: string, fechaHoy: string) {
+  const metros = (n: number) => `${n.toLocaleString("es-CO", { maximumFractionDigits: 2 })} m`;
+  const grupos = new Map<string, RolloParaImprimir[]>();
+  for (const r of rollos) grupos.set(r.codigoInterno, [...(grupos.get(r.codigoInterno) || []), r]);
+  const conBodega = new Set(rollos.map((r) => r.bodega)).size > 1;
+  const secciones = [...grupos.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([codigo, lista]) => {
+    const total = lista.reduce((t, r) => t + r.metrosDisponibles, 0);
+    const filas = lista.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${escapar(r.identificadorRollo)}</td>
+      ${conBodega ? `<td>${escapar(r.bodega)}</td>` : ""}<td>${escapar(r.empresa || "—")}</td><td>${escapar(r.colorMaterial || "—")}</td>
+      <td>${escapar(r.calibre)}</td><td class="num">${escapar(r.pesoNeto)}</td><td class="num">${escapar(r.pesoActual)}</td>
+      <td class="num">${escapar(metros(r.metrosDisponibles))}</td><td>${escapar(r.estado)}</td><td>${escapar(r.ingreso)}</td></tr>`).join("");
+    return `<h2>${escapar(codigo)} · ${lista.length} ${lista.length === 1 ? "rollo" : "rollos"} · ${escapar(metros(total))} disponibles</h2>
+      <table><thead><tr><th class="n">#</th><th>Referencia</th>${conBodega ? "<th>Bodega</th>" : ""}<th>Empresa</th><th>Color</th>
+      <th>Calibre</th><th class="num">Peso neto (kg)</th><th class="num">Peso actual (kg)</th><th class="num">Disponibles</th>
+      <th>Estado</th><th>Ingreso</th></tr></thead><tbody>${filas}</tbody></table>`;
+  }).join("");
+  const totalMetros = rollos.reduce((t, r) => t + r.metrosDisponibles, 0);
+  abrirYImprimir(ventana, "Rollos almacenados", `
+    <header><h1>Rollos almacenados</h1><div>${escapar(fechaHoy)}</div></header>
+    <p class="sub">${escapar(descripcionFiltro)} · ${rollos.length} ${rollos.length === 1 ? "rollo" : "rollos"} · ${escapar(metros(totalMetros))} disponibles en total</p>
+    ${rollos.length ? secciones : "<p>No hay rollos con este filtro.</p>"}`);
+}

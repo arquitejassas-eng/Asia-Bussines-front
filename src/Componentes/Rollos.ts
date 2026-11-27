@@ -59,11 +59,8 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
     setPagina(1);
   }
 
-  // `silenciosa` (actualización automática): si falla, conserva los rollos
-  // que ya estaban en pantalla en vez de vaciar la lista.
-  const cargarRollos = useCallback(async (silenciosa = false) => {
-    const consultaActual = ++ultimaConsulta.current;
-    try {
+  // Los mismos filtros de la pantalla, para listar o imprimir.
+  const parametrosDeFiltros = useCallback(() => {
       const parametros = new URLSearchParams();
       if (filtros.codigoInterno) parametros.set("codigo_interno", filtros.codigoInterno);
       if (filtros.identificadorRollo) parametros.set("identificador_rollo", filtros.identificadorRollo);
@@ -85,6 +82,15 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
       if (filtros.fechaDesde) parametros.set("fecha_desde", inicioDelDiaColombia(filtros.fechaDesde));
       if (filtros.fechaHasta) parametros.set("fecha_hasta", finDelDiaColombia(filtros.fechaHasta));
       parametros.set("paginado", "true");
+      return parametros;
+  }, [filtros, vista]);
+
+  // `silenciosa` (actualización automática): si falla, conserva los rollos
+  // que ya estaban en pantalla en vez de vaciar la lista.
+  const cargarRollos = useCallback(async (silenciosa = false) => {
+    const consultaActual = ++ultimaConsulta.current;
+    try {
+      const parametros = parametrosDeFiltros();
       parametros.set("pagina", String(pagina));
       parametros.set("tamano", "30");
 
@@ -96,11 +102,25 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
       if (consultaActual !== ultimaConsulta.current || silenciosa) return;
       setMisRollos([]);
     }
-  }, [filtros, pagina, vista]);
+  }, [parametrosDeFiltros, pagina]);
 
   useEffect(() => {
     cargarRollos();
   }, [cargarRollos]);
+
+  /** Todos los rollos con los filtros de la pantalla (todas las páginas), para imprimir. */
+  const traerTodosLosRollos = useCallback(async () => {
+    const todos = [];
+    for (let numeroPagina = 1; numeroPagina <= 200; numeroPagina++) {
+      const parametros = parametrosDeFiltros();
+      parametros.set("pagina", String(numeroPagina));
+      parametros.set("tamano", "100");
+      const datos = await api.get(`/rollos?${parametros.toString()}`);
+      todos.push(...datos.items.map(rolloDesdeApi));
+      if (numeroPagina >= (datos.total_paginas || 1)) break;
+    }
+    return todos;
+  }, [parametrosDeFiltros]);
 
   const [reservasPorCodigo, setReservasPorCodigo] = useState<Record<string, number>>({});
 
@@ -516,6 +536,7 @@ export function useControladorRollos(_sesion: unknown, _almacen: unknown) {
     pagina,
     setPagina,
     paginacion,
+    traerTodosLosRollos,
     vista,
     cambiarVista,
 

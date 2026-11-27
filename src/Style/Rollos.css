@@ -494,3 +494,12 @@
   border: 1px solid var(--at-border, #E1D5C0); border-radius: 10px; cursor: pointer; font-size: 0.9rem;
 }
 .rollo-prestado-opciones label.rollo-prestado-activo { border-color: var(--at-terra, #B7451F); background: #fbf1ec; font-weight: 600; }
+
+.rollos-imprimir {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0;
+}
