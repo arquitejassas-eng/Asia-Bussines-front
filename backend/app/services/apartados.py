@@ -1349,8 +1349,15 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     for linea in datos.items:
         if linea.modalidad == ModalidadApartado.POR_STOCK:
             # Solo lo nuevo o cambiado: las cotizaciones cargadas del Excel pueden traer productos mezclados.
-            if not linea.id or actuales.get(linea.id) is None or actuales[linea.id].producto_id != linea.producto_id:
+            antes = actuales.get(linea.id) if linea.id else None
+            if antes is None or antes.producto_id != linea.producto_id:
                 exigir_producto_de_la_empresa(db, linea.producto_id, linea.empresa or datos.empresa)
+            # Lo que llegó de otra bodega (producida_en) sigue siendo el producto
+            # de allá, que es de donde salió: no se cambia por el de esta bodega.
+            # Antes sí, y cualquier edición (hasta el precio) decía "ya se
+            # produjo en ...: no se puede cambiar".
+            if antes is not None and antes.producida_en_id and antes.producto_id == linea.producto_id:
+                continue
             linea.producto_id = producto_en_bodega(db, linea.producto_id, bodega_id)
     con_salida = [item for item in apartado.items if _tiene_salida(item)]
     if bodega_id != apartado.bodega_id and con_salida:
@@ -1387,7 +1394,11 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
                 abs(linea.cantidad - item.cantidad) > 0.005 or (linea.medida or 0) != (item.medida or 0)
                 or (item.modalidad == ModalidadApartado.POR_ROLLO and linea.codigo_interno != item.codigo_interno)
                 or (item.modalidad == ModalidadApartado.POR_STOCK and linea.producto_id != item.producto_id)):
-            raise HTTPException(status_code=400, detail=f"La línea '{item.descripcion or item.codigo_interno}' ya se produjo en {item.producida_en_nombre}: no se puede cambiar.")
+            if item.modalidad == ModalidadApartado.POR_STOCK:
+                raise HTTPException(status_code=400, detail=(
+                    f"La línea '{item.descripcion}' ya salió del stock de {item.producida_en_nombre} para esta cotización: "
+                    "no se puede cambiar el producto ni la cantidad (el precio sí)."))
+            raise HTTPException(status_code=400, detail=f"La línea '{item.descripcion or item.codigo_interno}' ya se produjo en {item.producida_en_nombre}: no se puede cambiar la cantidad, la medida ni el código (el precio sí).")
     rollos_pedidos = [linea.rollo_id for linea in datos.items if linea.rollo_id]
     if len(rollos_pedidos) != len(set(rollos_pedidos)):
         raise HTTPException(status_code=400, detail="El mismo rollo está dos veces en la cotización.")
