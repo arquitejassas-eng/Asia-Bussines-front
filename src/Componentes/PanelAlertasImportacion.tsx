@@ -43,6 +43,13 @@ export default function PanelAlertasImportacion({ alAbrirVenta, alCambiar }: {
   const [aviso, setAviso] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [autorizando, setAutorizando] = useState<AlertaImportacion | null>(null);
+  // Alertas con la lista de rollos de importación abierta (cerrada por defecto).
+  const [abiertas, setAbiertas] = useState<Set<number>>(new Set());
+  const alternar = (id: number) => setAbiertas((prev) => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
   const [confirmar, setConfirmar] = useState<{ titulo: string; mensaje: string; texto: string; ejecutar: () => Promise<void> } | null>(null);
 
   const cargar = useCallback(async () => {
@@ -106,36 +113,36 @@ export default function PanelAlertasImportacion({ alAbrirVenta, alCambiar }: {
         const estado = ESTADOS[a.estado] || { texto: a.estado, color: "#666" };
         const rollos = a.opciones.rollos_controlados || [];
         const otras = a.opciones.otras_bodegas || [];
+        // Los rollos de importación que todavía se pueden vender (los ya vendidos no se listan).
+        const libres = rollos.filter((r) => !r.vendido);
         const compra = a.empresa_linea && EMPRESAS[a.empresa_linea] ? a.empresa_linea : a.empresa_cotizacion;
         const pendiente = a.estado === "pendiente";
         return (
           <div key={a.id} style={{ borderTop: "1px solid #ead9d4", marginTop: "0.45rem", paddingTop: "0.45rem" }}>
-            <p style={{ ...fila, fontSize: "0.92rem" }}>
-              <strong>Cot. {a.numero_cotizacion}</strong>{a.cliente ? ` · ${a.cliente}` : ""} · {a.bodega} — <strong>{a.codigo}</strong> ({empresa(a.empresa_linea)}):{" "}
+            <p style={{ ...fila, fontSize: "0.9rem" }}>
+              <strong>Cot. {a.numero_cotizacion}</strong> · {a.bodega} · <strong>{a.codigo}</strong>:{" "}
               <span style={{ color: "#b3261e" }}>faltan <strong>{m(a.metros_faltantes)}</strong></span>
-              <span style={{ color: "#777" }}> (pide {m(a.metros_requeridos)}, hay {m(a.metros_en_bodega)})</span>
               {!pendiente && <strong style={{ color: estado.color }}> · {estado.texto}</strong>}
             </p>
             {pendiente && (
               <>
-                {otras.length > 0 && (
-                  <p style={fila}>
-                    ✔ Otro material: {otras.map((o) => `${o.bodega} ${m(o.metros)}${o.empresa !== compra && compra ? ` (de ${empresa(o.empresa)}, préstamo)` : ""}`).join(" · ")}
-                  </p>
-                )}
-                {rollos.map((r) => (
-                  <p key={r.id} style={{ ...fila, display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
-                    <span>🔒 {r.referencia} · {r.bodega} · {m(r.metros)} <span style={{ color: "#777" }}>(solo completo)</span>{r.vendido ? " · ya vendido" : ""}</span>
-                    {!r.vendido && r.empresa !== compra && compra && (
-                      <button type="button" className="inventario-boton" style={boton} onClick={() => vender(a, r)}>Vender a {empresa(compra)}</button>
-                    )}
-                  </p>
-                ))}
-                <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.3rem" }}>
+                <p style={{ ...fila, color: "#555", fontSize: "0.82rem" }}>
+                  {otras.length > 0
+                    ? `Hay en ${otras.map((o) => `${o.bodega} ${m(o.metros)}${o.empresa !== compra && compra ? ` (de ${empresa(o.empresa)})` : ""}`).join(" · ")}`
+                    : "No hay en otras bodegas"}
+                  {libres.length > 0 && ` · ${libres.length} rollo${libres.length === 1 ? "" : "s"} de importación (solo completo${libres.length === 1 ? "" : "s"})`}
+                </p>
+                <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.3rem", alignItems: "center" }}>
                   <button type="button" className="inventario-boton" style={{ ...boton, background: "#1b7a3a" }} disabled={ocupado}
                     onClick={() => setAutorizando(a)}>
                     Autorizar y pedir traslado
                   </button>
+                  {libres.length > 0 && (
+                    <button type="button" style={{ ...boton, background: "transparent", border: "1px solid #c9b8a6", borderRadius: "6px", color: "#4A392C", fontWeight: 600, cursor: "pointer" }} aria-expanded={abiertas.has(a.id)}
+                      onClick={() => alternar(a.id)}>
+                      {abiertas.has(a.id) ? "Ocultar rollos" : `Vender un rollo (${libres.length})`}
+                    </button>
+                  )}
                   <button type="button" className="inventario-boton-eliminar" style={boton} disabled={ocupado}
                     onClick={() => setConfirmar({ titulo: `¿Anular la cotización ${a.numero_cotizacion}?`, texto: "Sí, anular",
                       mensaje: "Se anula como siempre (todas sus partes): lo apartado queda libre y no se descuenta nada.",
@@ -143,6 +150,14 @@ export default function PanelAlertasImportacion({ alAbrirVenta, alCambiar }: {
                     Anular
                   </button>
                 </div>
+                {abiertas.has(a.id) && libres.map((r) => (
+                  <p key={r.id} style={{ ...fila, fontSize: "0.82rem", display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
+                    <span>{r.referencia} · {r.bodega} · {m(r.metros)}</span>
+                    {r.empresa !== compra && compra && (
+                      <button type="button" className="inventario-boton" style={boton} onClick={() => vender(a, r)}>Vender a {empresa(compra)}</button>
+                    )}
+                  </p>
+                ))}
               </>
             )}
             {!pendiente && (a.decidida_por || a.nota) && (
