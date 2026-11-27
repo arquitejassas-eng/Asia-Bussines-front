@@ -97,7 +97,8 @@ function cantidadLinea(it: { modalidad: string; cantidad: number; medida: number
   }
   if (it.tipoProducto === "lamina_lisa") {
     return `${num(it.cantidad)} lámina${it.cantidad === 1 ? "" : "s"} lisa${it.cantidad === 1 ? "" : "s"} de ${num(it.medida)} m = ${num(it.metrosRequeridos)} m`
-      + (it.convertirEn ? ` → ${num(it.cantidad * (it.convertirEn === "flanche" ? 5 : 3))} ${it.convertirEn}s` : "");
+      + (it.convertirEn === "desarrollo40" ? ` → ${num(it.cantidad * 3)} tiras desarrollo 40`
+        : it.convertirEn ? ` → ${num(it.cantidad * (it.convertirEn === "flanche" ? 5 : 3))} ${it.convertirEn}s` : "");
   }
   if (it.tipoProducto && it.medida) return `${num(it.cantidad)} ${it.tipoProducto}${it.cantidad === 1 ? "" : "s"} de ${num(it.medida)} m = ${num(it.metrosRequeridos)} m de lámina`;
   if (it.medida && it.medida !== 1) return `${num(it.cantidad)} × ${num(it.medida)} m = ${num(it.metrosRequeridos)} m`;
@@ -698,10 +699,13 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     if (!destinoEnvio) { setErrorEnvio("Escoge a qué bodega va."); return; }
     setGuardandoEnvio(true); setErrorEnvio("");
     try {
-      await api.patch(`/apartados/${enviandoParte.id}/enviar-a-bodega`, { bodega_destino_id: Number(destinoEnvio), transporta: transportaEnvio });
+      const quedo = await api.patch<{ id: number }>(`/apartados/${enviandoParte.id}/enviar-a-bodega`, { bodega_destino_id: Number(destinoEnvio), transporta: transportaEnvio });
       const destino = almacen.bodegas.find((b) => String(b.id) === destinoEnvio)?.nombre || "";
       imprimirDespacho(enviandoParte, destino, transportaEnvio);
-      setMensajeInformativo(`La cotización ${enviandoParte.numeroCotizacion} va en camino a ${destino}. ${destino} la recibe y le da la Salida.`);
+      // Si la cotización ya tenía su parte allá, lo enviado se unió a esa parte.
+      setMensajeInformativo(quedo && quedo.id !== enviandoParte.id
+        ? `Lo de la cotización ${enviandoParte.numeroCotizacion} va en camino a ${destino} y quedó dentro de su ${enviandoParte.numeroCotizacion} de ${destino}. ${destino} le da «Recibir» cuando llegue.`
+        : `La cotización ${enviandoParte.numeroCotizacion} va en camino a ${destino}. ${destino} la recibe y le da la Salida.`);
       setEnviandoParte(null);
       await a.cargarApartados();
     } catch (err) {
@@ -713,7 +717,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   async function recibirEnvio(ap: ApartadoDeLista) {
     try {
       await api.patch(`/apartados/${ap.id}/recibir-envio`);
-      setMensajeInformativo(`Recibida la cotización ${ap.numeroCotizacion} de ${ap.bodegaNombre}: ya le puedes dar la Salida.`);
+      setMensajeInformativo(ap.envioEstado === "en_camino"
+        ? `Recibida la cotización ${ap.numeroCotizacion} de ${ap.bodegaNombre}.`
+        : `Listo: llegó lo de la cotización ${ap.numeroCotizacion}.`);
       await a.cargarApartados();
     } catch (err) {
       setMensajeInformativo(err instanceof ErrorApi ? err.message : "No se pudo recibir.");
@@ -766,7 +772,8 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
     // Stock cargado del Excel: ya descontado, pero mientras la
     // cotización siga activa todavía hay que alistarlo y despacharlo.
     const parte = parteDe?.get(it.id);
-    const stockPorAlistar = it.modalidad === "por_stock" && it.stockDescontado && (parte ? ESTADOS_CANCELABLES.includes(parte.estado) : activa);
+    const stockPorAlistar = it.modalidad === "por_stock" && it.stockDescontado && !it.producidaEnNombre
+      && (parte ? ESTADOS_CANCELABLES.includes(parte.estado) : activa);
     const lista = it.modalidad === "por_stock" ? it.stockDescontado && !stockPorAlistar : (it.metrosPendientes ?? 0) <= 0;
     const codigo = it.modalidad === "por_stock" ? "" : it.codigoInterno;
     // Solo la descripción (como en el otro aplicativo); sin ella, la cantidad y el código.
@@ -788,6 +795,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
               Material de {nombreMaterial(it.empresaMaterial)}
             </span>
           )}
+          {it.producidaEnNombre && (it.enCamino
+            ? <span className="apartado-chip apartado-chip-envio" title="Lo produjo otra bodega y lo mandó para entregarlo desde aquí">🚚 En camino de {it.producidaEnNombre}</span>
+            : <span className="apartado-chip apartado-chip-ok" title="Lo produjo otra bodega y ya llegó aquí">✓ Llegó de {it.producidaEnNombre}</span>)}
           {it.modalidad === "por_stock" && it.hayFisico && !it.stockDescontado && (
             <span className="etiqueta-otra-empresa" title="El sistema no lo tenía; se confirmó que está en la bodega">
               Sin existencia en el sistema
@@ -984,6 +994,27 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
   }
 
   function accionesDeParte(ap: ApartadoDeLista) {
+    const enCamino = ap.items.filter((it) => it.enCamino);
+    const recibirLineas = enCamino.length > 0 && ap.envioEstado !== "en_camino"
+      && (esAdminInventario || (sesion.rol === "administrativo" && ap.bodegaId === sesion.bodegaId));
+    const origenes = [...new Set(enCamino.map((it) => it.producidaEnNombre))].join(", ");
+    return (
+      <>
+        {recibirLineas && (
+          <button className="apartado-boton-recibir" onClick={() => setConfirmacion({
+            titulo: `¿Llegó lo de ${origenes}?`,
+            mensaje: `Confirma que llegó a ${ap.bodegaNombre} lo que produjo ${origenes} para la cotización ${ap.numeroCotizacion}: `
+              + `${enCamino.map((it) => it.descripcion || it.productoDescripcion || it.codigoInterno).join("; ")}.`,
+            textoConfirmar: "Sí, llegó",
+            ejecutar: () => recibirEnvio(ap),
+          })}>✓ Recibir lo de {origenes}</button>
+        )}
+        {accionesPropiasDeParte(ap)}
+      </>
+    );
+  }
+
+  function accionesPropiasDeParte(ap: ApartadoDeLista) {
     const itemsRollo = ap.items.filter((it) => it.modalidad === "por_rollo");
     // Lámina por producir o productos de stock por alistar (una
     // cotización solo de stock, ej. UPVC con corte, también va a Planta).
@@ -1545,6 +1576,27 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                   )}
                   </div>
                   <div className="inventario-form-grid apartado-item-campos">
+                  {a.formulario.ordenInterna && !item.id && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label>Qué hace esta línea</label>
+                      <div className="apartado-tipos" role="group" aria-label="Qué hace esta línea">
+                        <button type="button" className={`apartado-tipo-boton ${item.modalidad === "por_rollo" ? "apartado-tipo-activo" : ""}`}
+                          onClick={() => a.cambiarModalidadItem(indice, "por_rollo")}>
+                          Producir del rollo
+                        </button>
+                        <button type="button" className={`apartado-tipo-boton ${item.modalidad === "por_stock" ? "apartado-tipo-activo" : ""}`}
+                          onClick={() => a.cambiarModalidadItem(indice, "por_stock")}>
+                          Tiras desarrollo 40 → caballetes
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {a.formulario.ordenInterna && item.modalidad === "por_stock" && (
+                    <p className="inventario-carga-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                      Busca las tiras de lámina lisa desarrollo 40 (código LD40…). Cada tira se convierte en <strong>1 caballete</strong> del
+                      mismo largo; lo hace Planta en «Convertir lámina lisa».
+                    </p>
+                  )}
                   <div style={{ gridColumn: "1 / -1", display: item.id || a.formulario.ordenInterna ? "none" : undefined }}>
                     <label>Tipo de material</label>
                     <div className="apartado-tipos" role="group" aria-label="Tipo de material">
@@ -1791,6 +1843,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         >
                           <option value="caballete">Caballetes (3 por lámina)</option>
                           <option value="flanche">Flanches (5 por lámina)</option>
+                          <option value="desarrollo40">Lámina lisa desarrollo 40 (3 tiras por lámina)</option>
                           <option value="lisa">No se convierte (queda lámina lisa)</option>
                         </select>
                       </div>
@@ -1815,7 +1868,9 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                         <p className="inventario-carga-ayuda" style={{ gridColumn: "1 / -1", margin: 0 }}>
                           Se apartan <strong>{metrosDeLinea(Number(item.cantidad), Number(item.medida)).metros} m de lámina</strong>: {item.cantidad} láminas
                           de {item.medida} m = {Number(item.cantidad) * ((item.convertirEn || "caballete") === "flanche" ? 5 : 3)}{" "}
-                          {(item.convertirEn || "caballete") === "flanche" ? "flanches" : "caballetes"}.
+                          {item.convertirEn === "desarrollo40"
+                            ? "tiras de lámina lisa desarrollo 40 (cortadas como caballete, sin doblar; después se pueden convertir en caballetes)"
+                            : (item.convertirEn || "caballete") === "flanche" ? "flanches" : "caballetes"}.
                         </p>
                       )}
                     </>

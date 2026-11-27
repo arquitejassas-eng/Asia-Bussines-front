@@ -807,7 +807,9 @@ def disponibles_productos_bodega(db: Session, productos: list[Producto], *, bode
     if not productos:
         return {}
     reservado = dict(
-        db.query(ApartadoItem.producto_id, func.sum(ApartadoItem.cantidad))
+        # Lo ya convertido (tiras -> caballetes) deja de estar apartado.
+        db.query(ApartadoItem.producto_id,
+                 func.sum(ApartadoItem.cantidad - func.coalesce(ApartadoItem.laminas_convertidas, 0)))
         .join(Apartado, Apartado.id == ApartadoItem.apartado_id)
         .filter(
             Apartado.bodega_id == bodega_id,
@@ -1230,6 +1232,7 @@ def crear_apartado(db: Session, datos: ApartadoCrear, usuario: Usuario) -> Apart
                 producto_id=item.producto_id, descripcion=item.descripcion, cantidad=item.cantidad,
                 medida=item.medida,  # opcional: cortar cada unidad a esta medida (m)
                 empresa_material=_empresa_material_linea(db, item, datos.empresa), hay_fisico=item.hay_fisico,
+                convertir_en=_conversion_de_tiras(db, item, datos.orden_interna),
                 **datos_siigo_linea(item),
             ))
         else:
@@ -1378,6 +1381,13 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
     for item in con_salida:
         if item.id not in ids_nuevos:
             raise HTTPException(status_code=400, detail=f"No puedes quitar la línea '{item.descripcion or item.codigo_interno}': ya tiene salida registrada.")
+    for linea in datos.items:
+        item = actuales.get(linea.id) if linea.id else None
+        if item is not None and item.producida_en_id and (
+                abs(linea.cantidad - item.cantidad) > 0.005 or (linea.medida or 0) != (item.medida or 0)
+                or (item.modalidad == ModalidadApartado.POR_ROLLO and linea.codigo_interno != item.codigo_interno)
+                or (item.modalidad == ModalidadApartado.POR_STOCK and linea.producto_id != item.producto_id)):
+            raise HTTPException(status_code=400, detail=f"La línea '{item.descripcion or item.codigo_interno}' ya se produjo en {item.producida_en_nombre}: no se puede cambiar.")
     rollos_pedidos = [linea.rollo_id for linea in datos.items if linea.rollo_id]
     if len(rollos_pedidos) != len(set(rollos_pedidos)):
         raise HTTPException(status_code=400, detail="El mismo rollo está dos veces en la cotización.")
@@ -1432,7 +1442,7 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             if item.modalidad == ModalidadApartado.POR_STOCK:
                 if not item.stock_descontado and not item.hay_fisico:
                     antes_producto[item.producto_id] = antes_producto.get(item.producto_id, 0) + item.cantidad
-            else:
+            elif not item.producida_en_id:
                 antes_codigo[item.codigo_interno] = antes_codigo.get(item.codigo_interno, 0) + (item.metros_requeridos or 0)
     despues_codigo: dict[str, float] = {}
     despues_producto: dict[int, float] = {}
@@ -1441,6 +1451,8 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             if (linea.id and actuales[linea.id].stock_descontado) or linea.hay_fisico:
                 continue
             despues_producto[linea.producto_id] = despues_producto.get(linea.producto_id, 0) + linea.cantidad
+        elif linea.id and actuales[linea.id].producida_en_id:
+            continue  # ya producida en otra bodega: no aparta nada aquí
         else:
             despues_codigo[linea.codigo_interno] = despues_codigo.get(linea.codigo_interno, 0) + metros_de_linea(linea.cantidad, linea.medida, linea.tipo_producto, linea.descripcion)
     aumento_codigo = {c: round(m - antes_codigo.get(c, 0), 2) for c, m in despues_codigo.items() if m - antes_codigo.get(c, 0) > 0.005}
@@ -1472,10 +1484,16 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             for campo, valor in datos_siigo_linea(linea).items():
                 setattr(item, campo, valor)
             if item.modalidad == ModalidadApartado.POR_STOCK:
+                if item.convertir_en and (item.laminas_convertidas or 0) > 0.005 and (
+                        linea.producto_id != item.producto_id or linea.cantidad + 0.005 < item.laminas_convertidas):
+                    raise HTTPException(status_code=400, detail="Esas tiras ya se empezaron a convertir: no se puede cambiar el producto ni bajar de lo convertido.")
                 item.producto_id, item.cantidad, item.medida = linea.producto_id, linea.cantidad, linea.medida
+                item.convertir_en = _conversion_de_tiras(db, linea, apartado.orden_interna)
                 if not item.stock_descontado:
                     item.hay_fisico = linea.hay_fisico
             else:
+                if item.producida_en_id:
+                    continue  # ya producida en otra bodega: queda como está
                 item.codigo_interno, item.cantidad, item.medida = linea.codigo_interno, linea.cantidad, linea.medida
                 item.tipo_producto = linea.tipo_producto
                 item.metros_requeridos = metros_de_linea(linea.cantidad, linea.medida, linea.tipo_producto, linea.descripcion)
@@ -1484,7 +1502,8 @@ def editar_apartado(db: Session, apartado_id: int, datos: ApartadoEditar, usuari
             apartado.items.append(ApartadoItem(
                 modalidad=ModalidadApartado.POR_STOCK, producto_id=linea.producto_id,
                 descripcion=linea.descripcion, cantidad=linea.cantidad, medida=linea.medida,
-                empresa_material=empresa_material, hay_fisico=linea.hay_fisico, **datos_siigo_linea(linea),
+                empresa_material=empresa_material, hay_fisico=linea.hay_fisico,
+                convertir_en=_conversion_de_tiras(db, linea, apartado.orden_interna), **datos_siigo_linea(linea),
             ))
         else:
             apartado.items.append(ApartadoItem(
@@ -2196,7 +2215,9 @@ def marcar_produccion_terminada(db: Session, apartado_id: int, usuario: Usuario)
 
     # Las líneas de rollo completo no pasan por Planta (salen desde Apartados).
     items_rollo = [item for item in apartado.items if item.modalidad == ModalidadApartado.POR_ROLLO and not item.rollo_id]
-    items_stock = [item for item in apartado.items if item.modalidad == ModalidadApartado.POR_STOCK and not item.stock_descontado]
+    # Las tiras de desarrollo 40 que se convierten en caballetes las descuenta la conversión.
+    items_stock = [item for item in apartado.items if item.modalidad == ModalidadApartado.POR_STOCK
+                   and not item.stock_descontado and not item.convertir_en]
     rollos_completos_sin_salida = [item for item in apartado.items if item.rollo_id and not _linea_completa(item)]
 
     # POR_ROLLO: EXACTAMENTE la misma validación que ya existía (si nunca se
@@ -2309,11 +2330,27 @@ def _unir_a_la_parte_terminada(db: Session, apartado: Apartado, usuario: Usuario
     return anterior
 
 
+def _conversion_de_tiras(db: Session, linea, orden_interna: bool) -> str:
+    """Línea de stock de una orden interna que convierte tiras de lámina lisa
+    desarrollo 40 en caballetes ("caballete"); "" en cualquier otra."""
+    from app.services.seccionados import DESARROLLO_40
+    if not orden_interna or getattr(linea, "convertir_en", "") != "caballete":
+        return ""
+    producto = db.get(Producto, linea.producto_id) if linea.producto_id else None
+    if producto is None or producto.tipo_producto != DESARROLLO_40:
+        raise HTTPException(status_code=400, detail="En la orden interna solo se convierten en caballetes las tiras de lámina lisa desarrollo 40 (código LD40...).")
+    return "caballete"
+
+
 def cerrar_orden_interna_si_terminó(apartado: Apartado) -> None:
     """Una orden interna no tiene "Salida" (lo producido ya está en el
     stock): con la producción terminada y la lámina lisa ya convertida, se
     cierra sola."""
-    if (apartado.orden_interna and apartado.estado == EstadoApartado.PRODUCCION_TERMINADA
+    # Una orden que solo convierte tiras (no produce nada) se cierra al terminar de convertir.
+    solo_conversion = not any(item.modalidad == ModalidadApartado.POR_ROLLO for item in apartado.items)
+    estados = ((EstadoApartado.ENVIADO_A_PRODUCCION, EstadoApartado.EN_PRODUCCION, EstadoApartado.PRODUCCION_TERMINADA)
+               if solo_conversion else (EstadoApartado.PRODUCCION_TERMINADA,))
+    if (apartado.orden_interna and apartado.estado in estados
             and not any(item.laminas_por_convertir > 0.005 for item in apartado.items)):
         apartado.estado = EstadoApartado.ENTREGADO
         apartado.fecha_entregado = datetime.now(timezone.utc)
@@ -2346,6 +2383,7 @@ def marcar_entregado(db: Session, apartado_id: int, usuario: Usuario) -> Apartad
         raise HTTPException(status_code=400, detail="Una orden interna no tiene salida: se cierra sola cuando se conviertan sus láminas lisas.")
     if apartado.envio_estado == ENVIO_EN_CAMINO:
         raise HTTPException(status_code=400, detail=f"Va en camino a {apartado.envio_destino_nombre}: la Salida la da {apartado.envio_destino_nombre} cuando lo reciba.")
+    _exigir_que_haya_llegado(apartado)
     apartado.estado = EstadoApartado.ENTREGADO
     apartado.fecha_entregado = datetime.now(timezone.utc)
     return apartado
@@ -2378,6 +2416,15 @@ def enviar_parte_a_bodega(db: Session, apartado_id: int, *, bodega_destino_id: i
     if destino is None:
         raise HTTPException(status_code=400, detail="Esa bodega no existe.")
     ahora = datetime.now(timezone.utc)
+    parte_destino = _parte_en_la_bodega(db, apartado, destino.id)
+    if parte_destino is not None:
+        # La cotización ya tiene su parte allá: lo producido pasa a esa parte
+        # como líneas "en camino" (una sola cotización, nunca dos filas).
+        transporta = " ".join((transporta or "").split())[:150]
+        nota = (f"Llegará de {apartado.bodega_nombre}: lo produjo allá y lo envió el {ahora:%Y-%m-%d} {usuario.correo}"
+                + (f" (lleva: {transporta})" if transporta else "")
+                + (f". {observaciones.strip()}" if observaciones.strip() else "") + ".")
+        return _pasar_lo_producido(db, apartado, parte_destino, usuario, en_camino=True, nota=nota)
     apartado.envio_estado = ENVIO_EN_CAMINO
     apartado.envio_destino_bodega_id = destino.id
     apartado.envio_origen_bodega_id = apartado.bodega_id
@@ -2394,18 +2441,80 @@ def enviar_parte_a_bodega(db: Session, apartado_id: int, *, bodega_destino_id: i
 
 
 def envios_en_camino_a(db: Session, usuario: Usuario) -> list[Apartado]:
-    """Lo que viene en camino a la bodega de quien pregunta (Admin Inventario: todo)."""
+    """Lo que viene en camino a la bodega de quien pregunta (Admin Inventario: todo):
+    partes enviadas y líneas en camino dentro de una cotización de la bodega."""
     consulta = db.query(Apartado).filter(Apartado.envio_estado == ENVIO_EN_CAMINO,
                                          Apartado.estado == EstadoApartado.PRODUCCION_TERMINADA)
     if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
         consulta = consulta.filter(Apartado.envio_destino_bodega_id == usuario.bodega_id)
-    return consulta.order_by(Apartado.envio_fecha_envio).all()
+    partes = consulta.order_by(Apartado.envio_fecha_envio).all()
+    con_lineas = db.query(Apartado).filter(
+        Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+        Apartado.items.any(ApartadoItem.en_camino.is_(True)))
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+        con_lineas = con_lineas.filter(Apartado.bodega_id == usuario.bodega_id)
+    vistos = {a.id for a in partes}
+    return partes + [a for a in con_lineas.order_by(Apartado.id).all() if a.id not in vistos]
+
+
+def _parte_en_la_bodega(db: Session, apartado: Apartado, bodega_id: int) -> Apartado | None:
+    """La parte activa de la misma cotización en esa bodega (la que entrega)."""
+    return (
+        db.query(Apartado)
+        .filter(Apartado.bodega_id == bodega_id, Apartado.numero_cotizacion == apartado.numero_cotizacion,
+                Apartado.empresa == apartado.empresa, Apartado.estado.in_(ESTADOS_RESERVA_ACTIVA),
+                Apartado.id != apartado.id, Apartado.orden_interna.is_(False), Apartado.traslado_a == "",
+                Apartado.envio_estado != ENVIO_EN_CAMINO)
+        .order_by(Apartado.id)
+        .with_for_update()
+        .first()
+    )
+
+
+def _pasar_lo_producido(db: Session, origen: Apartado, destino: Apartado, usuario: Usuario, *,
+                        en_camino: bool, nota: str) -> Apartado:
+    """Las líneas ya producidas de `origen` (otra bodega) pasan a `destino`,
+    la parte de la misma cotización en la bodega que entrega. Ya están listas:
+    no apartan nada allá (lo que les faltara queda en lo que se consumió) y no
+    van a Planta. `origen` se borra, como al unir partes terminadas."""
+    for item in origen.items:
+        item.producida_en_id = item.producida_en_id or origen.bodega_id
+        item.en_camino = en_camino
+        if item.modalidad == ModalidadApartado.POR_ROLLO and item.metros_requeridos is not None:
+            item.metros_requeridos = round(item.metros_consumidos or 0, 2)
+    # Ya terminada: su stock ya se separó y se descontó.
+    origen.stock_separado_confirmado = True
+    _pasar_lineas_y_anular(db, destino, origen, usuario)
+    destino.observaciones = f"{destino.observaciones}\n{nota}".strip() if destino.observaciones else nota
+    db.delete(origen)
+    db.flush()
+    db.refresh(destino)
+    return destino
+
+
+def _exigir_que_haya_llegado(apartado: Apartado) -> None:
+    pendientes = sorted({item.producida_en_nombre for item in apartado.items if item.en_camino})
+    if pendientes:
+        raise HTTPException(status_code=400, detail=f"Todavía viene en camino lo que se produjo en {', '.join(pendientes)}: "
+                                                    "dale «Recibir» cuando llegue y después la Salida.")
 
 
 def recibir_envio(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
     """La bodega destino confirma que llegó: la parte pasa a ser de esta bodega,
     que ya le puede dar la Salida al cliente."""
     apartado = db.query(Apartado).filter(Apartado.id == apartado_id).with_for_update().populate_existing().first()
+    if apartado is not None and apartado.envio_estado != ENVIO_EN_CAMINO and any(it.en_camino for it in apartado.items):
+        # Líneas producidas en otra bodega dentro de la cotización de esta bodega.
+        if usuario.rol != RolUsuario.ADMIN_INVENTARIO and apartado.bodega_id != usuario.bodega_id:
+            raise HTTPException(status_code=403, detail="Eso va para otra bodega.")
+        origenes = sorted({it.producida_en_nombre for it in apartado.items if it.en_camino})
+        for item in apartado.items:
+            item.en_camino = False
+        ahora = datetime.now(timezone.utc)
+        nota = f"Llegó lo producido en {', '.join(origenes)}: lo recibió {usuario.correo} el {ahora:%Y-%m-%d}."
+        apartado.observaciones = f"{apartado.observaciones}\n{nota}".strip() if apartado.observaciones else nota
+        db.flush()
+        return apartado
     if apartado is None or apartado.envio_estado != ENVIO_EN_CAMINO:
         raise HTTPException(status_code=404, detail="Ese envío ya no está en camino. Recarga la lista.")
     if usuario.rol != RolUsuario.ADMIN_INVENTARIO and apartado.envio_destino_bodega_id != usuario.bodega_id:
@@ -2421,4 +2530,11 @@ def recibir_envio(db: Session, apartado_id: int, usuario: Usuario) -> Apartado:
     apartado.observaciones = (f"{apartado.observaciones} · " if apartado.observaciones else "") + (
         f"Recibida en {apartado.bodega_nombre} (desde {origen}) el {ahora:%Y-%m-%d} por {usuario.correo}.")
     db.flush()
+    # Si la cotización ya tiene su parte en esta bodega, se une a ella: una sola cotización.
+    parte = _parte_en_la_bodega(db, apartado, apartado.bodega_id)
+    if parte is not None:
+        nota = f"Llegó lo producido en {origen}: lo recibió {usuario.correo} el {ahora:%Y-%m-%d}."
+        for item in apartado.items:
+            item.producida_en_id = item.producida_en_id or apartado.envio_origen_bodega_id
+        return _pasar_lo_producido(db, apartado, parte, usuario, en_camino=False, nota=nota)
     return apartado

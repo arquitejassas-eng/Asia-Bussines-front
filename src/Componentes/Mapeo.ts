@@ -142,7 +142,8 @@ export function apartadoItemDesdeApi(i: RegistroApi) {
     precio: i.precio == null ? null : numero(i.precio),
     siigoCantidad: i.siigo_cantidad == null ? null : numero(i.siigo_cantidad), siigoProducto: texto(i.siigo_producto),
     // Va incluida en otra línea de Siigo (capuchón con su tornillo): no sube.
-    siigoIncluido: Boolean(i.siigo_incluido) };
+    siigoIncluido: Boolean(i.siigo_incluido),
+    producidaEnNombre: String(i.producida_en_nombre || ""), enCamino: Boolean(i.en_camino) };
 }
 
 export function apartadoDesdeApi(a: RegistroApi) {

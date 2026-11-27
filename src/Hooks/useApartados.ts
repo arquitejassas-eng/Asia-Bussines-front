@@ -92,6 +92,8 @@ type ApartadoItem = {
   hayFisico: boolean;
   convertirEn: string; bodegaConversionId: number | null; laminasConvertidas: number;
   precio: number | null; siigoCantidad: number | null; siigoProducto: string; siigoIncluido: boolean;
+  /** Producida en otra bodega y pasada a esta parte (y si todavía viene en camino). */
+  producidaEnNombre?: string; enCamino?: boolean;
 };
 export type RolloParaApartar = {
   id: number; identificadorRollo: string; codigoInterno: string; descripcion: string;
@@ -787,6 +789,8 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
             // "Cortar a (m)" es opcional en una línea de stock (ej. teja UPVC de 11,80 cortada a 7).
             ? { id: i.id, bodega_id, empresa, modalidad: "por_stock", producto_id: i.productoId, descripcion: i.descripcion, cantidad: Number(i.cantidad), ...datosSiigo,
                 hay_fisico: Boolean(i.hayFisico),
+                // En una orden interna, una línea de stock son tiras de desarrollo 40 que se convierten en caballetes.
+                ...(formulario.ordenInterna ? { convertir_en: "caballete" } : {}),
                 medida: Number(String(i.medida).replace(",", ".")) > 0 ? Number(String(i.medida).replace(",", ".")) : undefined }
             : { id: i.id, bodega_id, empresa, modalidad: "por_rollo", codigo_interno: i.codigoInterno, descripcion: i.descripcion, cantidad: Number(i.cantidad), medida: Number(i.medida),
                 tipo_producto: i.tipoProducto || "", ...datosSiigo,

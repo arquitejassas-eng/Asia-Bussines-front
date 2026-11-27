@@ -30,7 +30,7 @@ from app.services import apartados as srv
 from app.services import siigo, siigo_cotizacion
 from app.services import importaciones_controladas, importar_cotizaciones
 from app.services.salida_apartado import registrar_salida
-from app.services.seccionados import LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO
+from app.services.seccionados import CONVERSIONES_DE_LAMINA, LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO
 
 router = APIRouter(prefix="/apartados", tags=["Apartados"])
 logger = logging.getLogger(__name__)
@@ -1311,7 +1311,8 @@ def _salida_de_rollos_completos(db: Session, apartado: Apartado, usuario: Usuari
               dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
 def enviar_a_bodega(apartado_id: int, datos: EnviarABodegaRequest, db: Session = Depends(get_db),
                     usuario: Usuario = Depends(usuario_actual)) -> Apartado:
-    """Lo producido aquí se entrega en otra bodega: queda en camino hasta que la reciban."""
+    """Lo producido aquí se entrega en otra bodega: queda en camino hasta que la reciban.
+    Si la cotización ya tiene su parte en esa bodega, devuelve esa parte (ahí quedó)."""
     apartado = srv.enviar_parte_a_bodega(db, apartado_id, bodega_destino_id=datos.bodega_destino_id,
                                          transporta=datos.transporta, observaciones=datos.observaciones, usuario=usuario)
     db.commit(); db.refresh(apartado)
@@ -1331,6 +1332,7 @@ def recibir_envio(apartado_id: int, db: Session = Depends(get_db), usuario: Usua
               dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO))])
 def marcar_entregado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
     pendiente = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+    srv._exigir_que_haya_llegado(pendiente)
     if pendiente.salida_pendiente and pendiente.estado in srv.ESTADOS_RESERVA_ACTIVA:
         apartado = _salida_de_rollos_completos(db, pendiente, usuario)
         db.commit(); db.refresh(apartado)
@@ -1368,8 +1370,8 @@ def definir_conversion(apartado_id: int, datos: DefinirConversionRequest, db: Se
         item = items.get(linea.item_id)
         if item is None or item.tipo_producto != LAMINA_LISA:
             raise HTTPException(status_code=400, detail="Esa línea no es de lámina lisa de esta orden.")
-        if linea.convertir_en not in SECCIONES_POR_TIPO_PRODUCTO:
-            raise HTTPException(status_code=400, detail="Escoge si se convierte en caballete o en flanche.")
+        if linea.convertir_en not in CONVERSIONES_DE_LAMINA:
+            raise HTTPException(status_code=400, detail="Escoge si se convierte en caballete, flanche o desarrollo 40.")
         if (item.laminas_convertidas or 0) > 0.005 and linea.convertir_en != item.convertir_en:
             raise HTTPException(status_code=400, detail="Esa lámina ya se empezó a convertir: no se puede cambiar en qué se convierte.")
         if linea.bodega_conversion_id is not None and db.get(Bodega, linea.bodega_conversion_id) is None:

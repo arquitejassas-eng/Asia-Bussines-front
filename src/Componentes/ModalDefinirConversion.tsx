@@ -52,6 +52,7 @@ export default function ModalDefinirConversion({ orden, lineas, bodegas, bodegaO
                   onChange={(e) => setValores({ ...valores, [l.id]: { ...valores[l.id], convertirEn: e.target.value } })}>
                   <option value="caballete">Caballetes (3 por lámina)</option>
                   <option value="flanche">Flanches (5 por lámina)</option>
+                  <option value="desarrollo40">Lámina lisa desarrollo 40 (3 tiras por lámina)</option>
                 </select>
               </label>
               <label>

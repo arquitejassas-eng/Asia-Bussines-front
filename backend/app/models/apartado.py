@@ -222,6 +222,17 @@ class ApartadoItem(Base):
     # "TORNILLO 2\" CON CAPUCHON AZUL"): descuenta su inventario pero no sube.
     siigo_incluido: Mapped[bool] = mapped_column(default=False, server_default=false())
 
+    # Línea producida en OTRA bodega y pasada a esta parte de la cotización
+    # (ej. la fibra la hace Maxitejas y la entrega Ricaurte): ya está lista,
+    # no aparta nada aquí. `en_camino` mientras la bodega no confirme que llegó
+    # (hasta entonces no se le puede dar la Salida a la cotización).
+    producida_en_id: Mapped[int | None] = mapped_column(ForeignKey("bodegas.id"), nullable=True)
+    en_camino: Mapped[bool] = mapped_column(default=False, server_default=false())
+
+    @property
+    def producida_en_nombre(self) -> str:
+        return self.producida_en.nombre if self.producida_en is not None else ""
+
     @property
     def bodega_conversion(self) -> int | None:
         """Bodega donde se convierten las láminas (la de la orden si no se dijo otra)."""
@@ -280,3 +291,4 @@ class ApartadoItem(Base):
     producciones = relationship("Produccion", back_populates="apartado_item")
     producto = relationship("Producto")
     rollo = relationship("Rollo")
+    producida_en = relationship("Bodega", foreign_keys=[producida_en_id])

@@ -141,6 +141,10 @@ class ConversionPendienteResponse(BaseModel):
     laminas_convertidas: float
     laminas_por_convertir: float
     laminas: list[LaminaParaConvertir]
+    # "laminas" (lámina lisa) o "tiras" (tiras de desarrollo 40 -> caballetes)
+    # y cuántas piezas salen de cada una (3 caballetes, 5 flanches, 3 tiras o 1).
+    origen: str = "laminas"
+    piezas_por_unidad: int = 3
 
 
 class ConversionLaminaResponse(BaseModel):

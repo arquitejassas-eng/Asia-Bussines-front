@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ErrorApi } from "./Api";
 import ModalConfirmacion from "./ModalConfirmacion";
-import { SECCIONES_POR_TIPO_PRODUCTO } from "../Utils/produccion";
 import { EMPRESAS } from "../Utils/empresas";
 
 type LaminaParaConvertir = { id: number; codigo: string; descripcion: string; empresa: string; calidad: string; disponibles: number };
 type ConversionPendiente = {
   item_id: number; numero_orden: string; bodega_orden: string; descripcion: string; codigo_interno: string;
-  medida: number; convertir_en: string; laminas_pedidas: number; laminas_convertidas: number; laminas_por_convertir: number;
+  medida: number | null; convertir_en: string; laminas_pedidas: number; laminas_convertidas: number; laminas_por_convertir: number;
   laminas: LaminaParaConvertir[];
+  // "laminas" (lámina lisa) o "tiras" (tiras de desarrollo 40 -> caballetes) y cuántas piezas salen de cada una.
+  origen?: string; piezas_por_unidad?: number;
 };
 
-const metros = (n: number) => String(n).replace(".", ",");
+const NOMBRE_PIEZAS: Record<string, string> = { caballete: "caballetes", flanche: "flanches", desarrollo40: "tiras desarrollo 40" };
+
+const metros = (n: number | null) => String(n ?? "—").replace(".", ",");
 
 // Planta convierte en caballetes (3 por lámina) o flanches (5) la lámina lisa
 // de una orden interna que le toca a su bodega (cortada aquí o recibida por
@@ -42,8 +45,10 @@ function PanelConvertirLaminaLisa() {
   const linea = pendientes.find((p) => String(p.item_id) === itemId);
   const lamina = linea?.laminas.find((l) => String(l.id) === laminaId);
   const numero = Number(cantidad) || 0;
-  const piezas = linea ? numero * SECCIONES_POR_TIPO_PRODUCTO[linea.convertir_en] : 0;
-  const nombre = linea?.convertir_en === "flanche" ? "flanches" : "caballetes";
+  const piezas = linea ? numero * (linea.piezas_por_unidad ?? 3) : 0;
+  const nombre = NOMBRE_PIEZAS[linea?.convertir_en || "caballete"] || "piezas";
+  const sonTiras = linea?.origen === "tiras";
+  const origen = sonTiras ? "tiras" : "láminas";
   const deSegunda = Number(segunda) || 0;
 
   function elegirLinea(id: string) {
@@ -58,13 +63,13 @@ function PanelConvertirLaminaLisa() {
   function revisar() {
     setExito("");
     if (!linea) return setError("Escoge la orden.");
-    if (!lamina) return setError("Escoge la lámina lisa de tu bodega que vas a usar.");
-    if (!(numero > 0) || !Number.isInteger(numero)) return setError("Escribe cuántas láminas usaste (número entero).");
-    if (numero > linea.laminas_por_convertir) return setError(`La orden solo tiene ${linea.laminas_por_convertir} láminas por convertir.`);
-    if (numero > lamina.disponibles) return setError(`Solo hay ${lamina.disponibles} láminas libres de esa.`);
+    if (!lamina) return setError(`Escoge ${sonTiras ? "las tiras" : "la lámina lisa"} de tu bodega que vas a usar.`);
+    if (!(numero > 0) || !Number.isInteger(numero)) return setError(`Escribe cuántas ${origen} usaste (número entero).`);
+    if (numero > linea.laminas_por_convertir) return setError(`La orden solo tiene ${linea.laminas_por_convertir} ${origen} por convertir.`);
+    if (numero > lamina.disponibles) return setError(`Solo hay ${lamina.disponibles} ${origen} libres de esa.`);
     if (!responsable.trim()) return setError("Escribe quién hizo la conversión.");
     if (deSegunda < 0 || !Number.isInteger(deSegunda)) return setError(`Escribe cuántos ${nombre} salieron de segunda (número entero, 0 si ninguno).`);
-    if (deSegunda > piezas) return setError(`De ${numero} láminas salen ${piezas} ${nombre}: no pueden ser ${deSegunda} de segunda.`);
+    if (deSegunda > piezas) return setError(`De ${numero} ${origen} salen ${piezas} ${nombre}: no pueden ser ${deSegunda} de segunda.`);
     if (deSegunda > 0 && !motivoSegunda.trim()) return setError("Escribe por qué salieron de segunda.");
     setError("");
     setConfirmando(true);
@@ -80,7 +85,7 @@ function PanelConvertirLaminaLisa() {
       });
       setExito(`Listo (${linea!.numero_orden}): entraron ${r?.piezas} ${nombre}`
         + (deSegunda > 0 ? ` (${(r?.piezas ?? 0) - deSegunda} de primera y ${deSegunda} de segunda)` : ` (${r?.producto_descripcion})`)
-        + ` y salieron ${numero} láminas lisas.`);
+        + ` y salieron ${numero} ${sonTiras ? "tiras desarrollo 40" : "láminas lisas"}.`);
       setItemId(""); setLaminaId(""); setCantidad(""); setSegunda(""); setMotivoSegunda("");
       await cargar();
     } catch (err) {
@@ -96,8 +101,9 @@ function PanelConvertirLaminaLisa() {
     <section className="produccion-tarjeta">
       <h2>Convertir lámina lisa (órdenes internas)</h2>
       <p className="produccion-texto-ayuda">
-        Lámina lisa que Admin Inventario ordenó convertir en tu bodega. Cada lámina da 3 caballetes o 5 flanches del mismo largo:
-        las láminas salen de tu stock y entran los caballetes o flanches.
+        Lo que una orden interna manda convertir en tu bodega, del mismo largo: cada lámina lisa da 3 caballetes, 5 flanches
+        o 3 tiras de desarrollo 40 (cortadas sin doblar), y cada tira de desarrollo 40 da 1 caballete. Lo que se usa sale de tu
+        stock y entra lo convertido.
       </p>
       {pendientes.length > 0 && (
         <div className="produccion-form-grid">
@@ -107,18 +113,18 @@ function PanelConvertirLaminaLisa() {
               <option value="">Escoge la orden...</option>
               {pendientes.map((p) => (
                 <option key={p.item_id} value={p.item_id}>
-                  {p.numero_orden} ({p.bodega_orden}) · {p.codigo_interno} de {metros(p.medida)} m → {p.convertir_en}s ·
-                  faltan {p.laminas_por_convertir} de {p.laminas_pedidas} láminas
+                  {p.numero_orden} ({p.bodega_orden}) · {p.codigo_interno} de {metros(p.medida)} m → {NOMBRE_PIEZAS[p.convertir_en] || p.convertir_en} ·
+                  faltan {p.laminas_por_convertir} de {p.laminas_pedidas} {p.origen === "tiras" ? "tiras" : "láminas"}
                 </option>
               ))}
             </select>
           </div>
           {linea && (
             <div style={{ gridColumn: "1 / -1" }}>
-              <label className="produccion-label" htmlFor="lisa-producto">Lámina lisa de tu bodega</label>
+              <label className="produccion-label" htmlFor="lisa-producto">{sonTiras ? "Tiras de tu bodega" : "Lámina lisa de tu bodega"}</label>
               {linea.laminas.length === 0 ? (
                 <p className="produccion-error">
-                  Todavía no tienes lámina lisa de {linea.codigo_interno} de {metros(linea.medida)} m
+                  Todavía no tienes {sonTiras ? "tiras" : "lámina lisa"} de {linea.codigo_interno} de {metros(linea.medida)} m
                   {linea.bodega_orden ? ` (si la corta ${linea.bodega_orden}, falta que llegue el traslado)` : ""}.
                 </p>
               ) : (
@@ -136,7 +142,7 @@ function PanelConvertirLaminaLisa() {
           {linea && linea.laminas.length > 0 && (
             <>
               <div>
-                <label className="produccion-label" htmlFor="lisa-cantidad">Láminas usadas</label>
+                <label className="produccion-label" htmlFor="lisa-cantidad">{sonTiras ? "Tiras usadas" : "Láminas usadas"}</label>
                 <input id="lisa-cantidad" type="number" min="1" step="1" className="produccion-input"
                   value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
               </div>
@@ -163,7 +169,7 @@ function PanelConvertirLaminaLisa() {
       )}
       {linea && numero > 0 && (
         <p className="produccion-resumen" style={{ marginTop: "1rem" }}>
-          {numero} lámina{numero === 1 ? "" : "s"} de {metros(linea.medida)} m = <strong>{piezas} {nombre}</strong> de {metros(linea.medida)} m
+          {numero} {sonTiras ? `tira${numero === 1 ? "" : "s"}` : `lámina${numero === 1 ? "" : "s"}`} de {metros(linea.medida)} m = <strong>{piezas} {nombre}</strong> de {metros(linea.medida)} m
           {deSegunda > 0 && deSegunda <= piezas ? <>: <strong>{piezas - deSegunda} de primera</strong> y <strong>{deSegunda} de segunda</strong></> : ""}.
         </p>
       )}
@@ -179,7 +185,7 @@ function PanelConvertirLaminaLisa() {
       {confirmando && linea && lamina && (
         <ModalConfirmacion
           titulo="Convertir lámina lisa"
-          mensaje={`Orden ${linea.numero_orden}: salen ${numero} láminas lisas (${lamina.descripcion}) y entran ${piezas} ${nombre}. ¿Confirmas?`}
+          mensaje={`Orden ${linea.numero_orden}: salen ${numero} ${sonTiras ? "tiras" : "láminas lisas"} (${lamina.descripcion}) y entran ${piezas} ${nombre}. ¿Confirmas?`}
           textoConfirmar="Sí, convertir"
           textoCancelar="No"
           onConfirmar={convertir}

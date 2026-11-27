@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from app.services.seccionados import LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO, TIPOS_LINEA_ROLLO
+from app.services.seccionados import CONVERSIONES_DE_LAMINA, LAMINA_LISA, SECCIONES_POR_TIPO_PRODUCTO, TIPOS_LINEA_ROLLO
 from app.models.apartado import EstadoApartado, ModalidadApartado
 from app.services.empresas import AMBAS_EMPRESAS, EMPRESAS_CONOCIDAS
 from app.schemas.fechas import ModeloConFechasUtc
@@ -79,9 +79,13 @@ class ApartadoItemCrear(BaseModel):
             raise ValueError("El tipo de la línea debe ser teja, caballete, flanche o lámina lisa.")
         self.convertir_en = (self.convertir_en or "").strip().lower()
         if self.tipo_producto == LAMINA_LISA:
-            # "" = se manda lisa (traslado); en una orden interna es obligatorio (ver ApartadoCrear).
-            if self.convertir_en not in ("", *SECCIONES_POR_TIPO_PRODUCTO):
-                raise ValueError("Di en qué se convierte la lámina lisa: caballetes o flanches.")
+            # "" = queda lisa; desarrollo40 = 3 tiras sin doblar (ver seccionados).
+            if self.convertir_en not in ("", *CONVERSIONES_DE_LAMINA):
+                raise ValueError("Di en qué se convierte la lámina lisa: caballetes, flanches, desarrollo 40 o que queda lisa.")
+        elif self.modalidad == ModalidadApartado.POR_STOCK and self.convertir_en == "caballete":
+            # Tiras de desarrollo 40 del stock que se convierten en caballetes
+            # (solo en una orden interna, ver ApartadoCrear).
+            self.bodega_conversion_id = None
         else:
             self.convertir_en, self.bodega_conversion_id = "", None
         if self.modalidad == ModalidadApartado.POR_ROLLO and self.rollo_id:
@@ -132,12 +136,17 @@ class ApartadoCrear(BaseModel):
             raise ValueError("Elige de qué empresa sale el material: Arquitejas o Asia Business.")
         self.traslado_a = " ".join(self.traslado_a.split())
         lisas = [i for i in self.items if i.tipo_producto == LAMINA_LISA]
+        if not self.orden_interna:
+            for i in self.items:
+                if i.modalidad == ModalidadApartado.POR_STOCK:
+                    i.convertir_en = ""
         if self.orden_interna:
-            if any(i.modalidad != ModalidadApartado.POR_ROLLO or i.rollo_id for i in self.items):
-                raise ValueError("Una orden de producción interna solo lleva lámina por producir (material por rollo).")
+            if any((i.modalidad != ModalidadApartado.POR_ROLLO or i.rollo_id)
+                   and not (i.modalidad == ModalidadApartado.POR_STOCK and i.convertir_en == "caballete") for i in self.items):
+                raise ValueError("Una orden de producción interna solo lleva lámina por producir o tiras de desarrollo 40 para convertir en caballetes.")
             # "" = no se convierte: queda como lámina lisa en el inventario.
             for i in lisas:
-                if i.convertir_en not in ("", *SECCIONES_POR_TIPO_PRODUCTO):
+                if i.convertir_en not in ("", *CONVERSIONES_DE_LAMINA):
                     raise ValueError("Di en qué se convierte la lámina lisa: caballetes, flanches o que queda lisa.")
                 if not i.convertir_en:
                     i.bodega_conversion_id = None
@@ -254,6 +263,10 @@ class ApartadoItemResponse(BaseModel):
     siigo_cantidad: float | None = None
     siigo_producto: str = ""
     siigo_incluido: bool = False
+    # Producida en otra bodega (y si todavía viene en camino).
+    producida_en_id: int | None = None
+    producida_en_nombre: str = ""
+    en_camino: bool = False
 
 
 class RolloParaApartarResponse(BaseModel):

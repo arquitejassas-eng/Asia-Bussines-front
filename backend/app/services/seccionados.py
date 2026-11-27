@@ -16,6 +16,20 @@ TIPOS_LINEA_ROLLO = ("", *SECCIONES_POR_TIPO_PRODUCTO)
 # producción interna; después se convierte en caballetes o flanches.
 LAMINA_LISA = "lamina_lisa"
 
+# Lámina lisa cortada en 3 tiras a lo ancho (desarrollo 40), sin doblar: no
+# son caballetes, pero después cada tira se puede convertir en un caballete.
+DESARROLLO_40 = "desarrollo40"
+# En qué se convierte una lámina lisa y cuántas piezas salen de cada una.
+PIEZAS_POR_CONVERSION = {"caballete": 3, "flanche": 5, DESARROLLO_40: 3}
+CONVERSIONES_DE_LAMINA = tuple(PIEZAS_POR_CONVERSION)
+
+# Lámina lisa cortada en 3 tiras a lo ancho (desarrollo 40), sin doblar: no
+# son caballetes, pero después cada tira se puede convertir en un caballete.
+DESARROLLO_40 = "desarrollo40"
+# En qué se convierte una lámina lisa y cuántas piezas salen de cada una.
+PIEZAS_POR_CONVERSION = {"caballete": 3, "flanche": 5, DESARROLLO_40: 3}
+CONVERSIONES_DE_LAMINA = tuple(PIEZAS_POR_CONVERSION)
+
 
 # La teja COLONIAL gasta un 6 % más de lámina que su medida (60 tejas de 3 m
 # = 180 m × 1,06 = 190,8 m del rollo), sin importar calibre ni lámina. Ese 6 %
