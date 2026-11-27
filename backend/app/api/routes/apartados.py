@@ -140,10 +140,14 @@ def _con_id_de_bodega(db: Session, donde: list[tuple[str, float]]) -> list[dict]
 
 
 @router.get("/siguiente-numero", response_model=SiguienteNumeroResponse,
-            dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO))])
+            dependencies=[Depends(requiere_rol(RolUsuario.VENDEDOR, RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
 def consultar_siguiente_numero(
     empresa: str = Query(..., min_length=1), orden_interna: bool = False, db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_actual),
 ) -> dict:
+    # La jefe de bodega solo crea órdenes internas y traslados (con su propio número).
+    if usuario.rol == RolUsuario.ADMINISTRATIVO and not orden_interna:
+        raise HTTPException(status_code=403, detail="Las cotizaciones las crean el vendedor y Admin Inventario.")
     if orden_interna:
         return {"numero": srv.siguiente_numero_orden_interna(db)}
     """El número que sigue en las cotizaciones de esa empresa (cada una lleva
@@ -406,10 +410,15 @@ def crear_apartado(datos: ApartadoCrear, db: Session = Depends(get_db), usuario:
     # inventario (San Gil). Pueden salir de otra bodega (ej. la de Santander
     # lo pide con material de Ricaurte): esa bodega lo envía a producción y le
     # da la salida; quien lo creó lo ve en su lista.
+    # También crea órdenes de producción interna, solo de su bodega.
     if usuario.rol == RolUsuario.ADMINISTRATIVO:
-        if not datos.traslado_a:
+        if not datos.traslado_a and not datos.orden_interna:
             raise HTTPException(status_code=403, detail="Las cotizaciones las crean el vendedor y Admin Inventario.")
-        bodega = datos.bodega_id or usuario.bodega_id
+        if datos.orden_interna and not usuario.bodega_id:
+            raise HTTPException(status_code=403, detail="Tu usuario no tiene bodega: no puede crear órdenes internas.")
+        bodega = usuario.bodega_id if datos.orden_interna else (datos.bodega_id or usuario.bodega_id)
+        if datos.orden_interna and any(i.bodega_id and i.bodega_id != bodega for i in datos.items):
+            raise HTTPException(status_code=403, detail="Tus órdenes internas son solo de tu bodega.")
         datos = datos.model_copy(update={
             "bodega_id": bodega,
             "items": [i.model_copy(update={"bodega_id": i.bodega_id or bodega}) for i in datos.items],
@@ -747,7 +756,11 @@ def _editar_apartado(apartado_id: int, datos: ApartadoEditar, db: Session, usuar
     if original.traslado_a:
         return _editar_traslado(db, original, datos, usuario)
     if usuario.rol == RolUsuario.ADMINISTRATIVO:
-        raise HTTPException(status_code=403, detail="Las cotizaciones las edita el vendedor o Admin Inventario.")
+        # Sus órdenes internas (de su bodega) sí, mientras no estén en producción; todo en su bodega.
+        if not original.orden_interna:
+            raise HTTPException(status_code=403, detail="Las cotizaciones las edita el vendedor o Admin Inventario.")
+        if datos.otras_partes_ids or any(getattr(i, "bodega_id", None) and i.bodega_id != usuario.bodega_id for i in datos.items):
+            raise HTTPException(status_code=403, detail="Tus órdenes internas son solo de tu bodega.")
     if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
         _exigir_que_no_este_en_produccion(db, original, datos.otras_partes_ids)
     datos = datos.model_copy(update={"orden_interna": original.orden_interna})
@@ -1065,8 +1078,14 @@ def unir_apartado(
               dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO, RolUsuario.ADMINISTRATIVO))])
 def cancelar_apartado(apartado_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual)) -> Apartado:
     # La encargada de la bodega solo anula sus traslados a San Gil; las cotizaciones, Admin Inventario.
-    if usuario.rol == RolUsuario.ADMINISTRATIVO and not srv.apartado_de_mi_bodega(db, apartado_id, usuario).traslado_a:
-        raise HTTPException(status_code=403, detail="Las cotizaciones las anula Admin Inventario.")
+    # ...y sus órdenes internas, mientras sigan «Apartado» (no enviadas a producción).
+    if usuario.rol == RolUsuario.ADMINISTRATIVO:
+        propia = srv.apartado_de_mi_bodega(db, apartado_id, usuario)
+        if propia.orden_interna:
+            if propia.estado != EstadoApartado.APARTADO:
+                raise HTTPException(status_code=400, detail="Esta orden ya se envió a producción: la anula Admin Inventario.")
+        elif not propia.traslado_a:
+            raise HTTPException(status_code=403, detail="Las cotizaciones las anula Admin Inventario.")
     apartado = srv.cancelar_apartado(db, apartado_id, usuario)
     if apartado.siigo_id:
         _anular_en_siigo(db, apartado, usuario)

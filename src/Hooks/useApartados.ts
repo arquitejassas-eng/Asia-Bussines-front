@@ -158,7 +158,8 @@ export function useApartados(sesion: { rol?: string; bodegaId?: number | null } 
   // bodega (administrativo) decide cuándo enviarlas a producción.
   const puedeCrearApartados = sesion?.rol === "vendedor" || sesion?.rol === "admin_inventario";
   // Las órdenes de producción interna (para stock) solo las crea Admin Inventario.
-  const puedeCrearOrdenInterna = sesion?.rol === "admin_inventario";
+  // La jefe de bodega también: solo de su bodega.
+  const puedeCrearOrdenInterna = sesion?.rol === "admin_inventario" || (sesion?.rol === "administrativo" && Boolean(sesion.bodegaId));
   // Traslados a una bodega sin inventario (San Gil): la encargada de la bodega
   // (con material de la suya) y Admin Inventario. También los anula y les da Salida.
   const puedeCrearTraslado = sesion?.rol === "administrativo" || sesion?.rol === "admin_inventario";

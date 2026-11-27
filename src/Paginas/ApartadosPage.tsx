@@ -193,6 +193,9 @@ type ItemDisponibilidad = { cargando?: boolean; error?: boolean; sinBodega?: boo
 function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; onCerrarSesion: () => void; almacen: AlmacenGlobal }) {
   const a = useApartados(sesion, almacen.refrescarApartadosPorEnviar);
   const esAdminInventario = sesion.rol === "admin_inventario";
+  // Orden interna de la bodega de la jefe de bodega (la puede editar y anular mientras esté «Apartado»).
+  const esMiOrdenInterna = (ap: { ordenInterna: boolean; bodegaId: number | null }) =>
+    sesion.rol === "administrativo" && ap.ordenInterna && ap.bodegaId === sesion.bodegaId;
   // Admin Inventario y el vendedor no tienen bodega fija: ven las cotizaciones
   // de todas las bodegas (el vendedor, solo las suyas).
   const veTodasLasBodegas = esAdminInventario || sesion.rol === "vendedor";
@@ -1124,7 +1127,7 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
           Copiar con otro NIT
         </button>
       )}
-      {a.puedeCancelarApartados && ESTADOS_CANCELABLES.includes(ap.estado) && (
+      {(a.puedeCancelarApartados ? ESTADOS_CANCELABLES.includes(ap.estado) : esMiOrdenInterna(ap) && ap.estado === "apartado") && (
         <button className="inventario-boton-eliminar" onClick={() => setConfirmacion({
           titulo: `¿Anular el apartado ${ap.numeroCotizacion}?`,
           mensaje: (ap.estado === "apartado"
@@ -2155,6 +2158,10 @@ function ApartadosPage({ sesion, onCerrarSesion, almacen }: { sesion: Sesion; on
                               {/* Ya enviada a producción (cualquiera de sus partes) solo la corrige Admin Inventario. */}
                               {a.puedeEditarApartados && !ap.trasladoA && partesActivas.length > 0 && (esAdminInventario || partesActivas.every((parte) => parte.estado === "apartado")) && (
                                 <button onClick={() => abrirEdicion(partesActivas)}>Editar</button>
+                              )}
+                              {/* La jefe de bodega: sus órdenes internas, mientras no se envíen a producción. */}
+                              {!a.puedeEditarApartados && esMiOrdenInterna(ap) && ap.estado === "apartado" && (
+                                <button onClick={() => abrirEdicion([ap])}>Editar</button>
                               )}
                                               {ap.trasladoA && ap.estado !== "cancelado"
                                 && (esAdminInventario || (sesion.rol === "administrativo" && (ap.bodegaId === sesion.bodegaId || ap.creadoPor === sesion.correo))) && (
