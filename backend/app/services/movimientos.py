@@ -102,13 +102,15 @@ def registrar_movimiento(db: Session, datos: MovimientoCrear, usuario: Usuario) 
             "Admin Inventario reparte material con Envíos.",
         )
 
-    # Una entrada manual puede crear el producto en la misma transaccion.
-    producto_nuevo = datos.tipo == TipoMovimiento.ENTRADA and datos.producto_id is None
-    if producto_nuevo and usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+    # Toda entrada de material (compra, devolución o ajuste) la registra Admin
+    # Inventario; el jefe de bodega solo da salidas (decisión del 2026-11-27).
+    if datos.tipo == TipoMovimiento.ENTRADA and usuario.rol != RolUsuario.ADMIN_INVENTARIO:
         raise HTTPException(
             status_code=403,
-            detail="Los productos nuevos los crea Admin Inventario. Pídele que lo cree y luego registra aquí la entrada.",
+            detail="Las entradas de material las registra Admin Inventario. Pídele que le dé entrada.",
         )
+    # Una entrada manual puede crear el producto en la misma transaccion.
+    producto_nuevo = datos.tipo == TipoMovimiento.ENTRADA and datos.producto_id is None
     if producto_nuevo:
         codigo = datos.codigo.strip()
         descripcion = datos.descripcion.strip()

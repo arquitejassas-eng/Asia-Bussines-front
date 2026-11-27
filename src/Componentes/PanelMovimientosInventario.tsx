@@ -28,6 +28,7 @@ function PanelMovimientosInventario({
   errorMov,
   exitoMov,
   guardandoMov,
+  puedeDarEntrada = false,
 }) {
   // Familia del producto elegido en el formulario de Movimientos (o de la
   // familia escrita a mano si es un producto nuevo), para saber si esa
@@ -112,7 +113,7 @@ function PanelMovimientosInventario({
           <div className="inventario-tipos">
             {/* Sin "Traslado": entre bodegas se traslada desde Bodegas (pedir,
                 aceptar, despachar y recibir), para que la otra bodega lo confirme. */}
-            {["entrada", "salida"].map((tipo) => (
+            {(puedeDarEntrada ? ["entrada", "salida"] : ["salida"]).map((tipo) => (
               <button
                 key={tipo}
                 type="button"
@@ -129,6 +130,7 @@ function PanelMovimientosInventario({
           </div>
           <p className="inventario-carga-ayuda" style={{ margin: "0 0 0.75rem" }}>
             Para pasar material a otra bodega usa <strong>Bodegas</strong>: allá se pide, se acepta, se despacha y la otra bodega confirma que lo recibió.
+            {!puedeDarEntrada && <> Las <strong>entradas</strong> de material las registra Admin Inventario.</>}
           </p>
 
           <div className="inventario-form-grid">

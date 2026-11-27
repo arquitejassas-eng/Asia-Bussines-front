@@ -31,6 +31,7 @@ function PanelProductosInventario({
   eliminarProducto,
   prepararEntradaProducto,
   setPestanaActiva,
+  puedeDarEntrada = false,
 }) {
   const [mostrarAdminUnidades, setMostrarAdminUnidades] = useState(false);
   const [gruposFamiliaExpandidos, setGruposFamiliaExpandidos] = useState({});
@@ -178,6 +179,8 @@ function PanelProductosInventario({
                 step={almacen?.decimalesPorFamilia?.[formularioProducto.familia] === false ? "1" : "any"}
                 value={formularioProducto.entrada}
                 onChange={(e) => actualizarCampoProducto("entrada", e.target.value)}
+                disabled={!puedeDarEntrada}
+                title={puedeDarEntrada ? undefined : "Solo Admin Inventario cambia el stock."}
               />
             </div>
             <div>
@@ -187,6 +190,8 @@ function PanelProductosInventario({
                 step={almacen?.decimalesPorFamilia?.[formularioProducto.familia] === false ? "1" : "any"}
                 value={formularioProducto.stock}
                 onChange={(e) => actualizarCampoProducto("stock", e.target.value)}
+                disabled={!puedeDarEntrada}
+                title={puedeDarEntrada ? undefined : "Solo Admin Inventario cambia el stock."}
               />
             </div>
             <div>
@@ -434,9 +439,12 @@ function PanelProductosInventario({
                                 </>
                               ) : (
                                 <>
-                                  <button className="inventario-boton" onClick={() => pedirAccion("anadir", fila)}>
-                                    Añadir
-                                  </button>
+                                  {/* Dar entrada: solo Admin Inventario. */}
+                                  {puedeDarEntrada && (
+                                    <button className="inventario-boton" onClick={() => pedirAccion("anadir", fila)}>
+                                      Añadir
+                                    </button>
+                                  )}
                                   <button className="inventario-boton-cancelar" onClick={() => pedirAccion("editar", fila)}>
                                     Editar
                                   </button>

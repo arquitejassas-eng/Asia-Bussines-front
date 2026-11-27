@@ -45,6 +45,7 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
     actualizarCampoMov,
     cambiarTipoMov,
     prepararEntradaProducto,
+    puedeDarEntrada,
     registrarMovimiento,
     MOTIVOS_ENTRADA,
     MOTIVOS_SALIDA,
@@ -118,6 +119,8 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
         >
           Historial
         </button>
+        {/* La carga masiva cambia stock: solo Admin Inventario. */}
+        {puedeDarEntrada && (
         <button
           className={`inventario-pestana-boton ${
             pestanaActiva === "carga" ? "inventario-pestana-activa" : ""
@@ -126,6 +129,7 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
         >
           Carga masiva
         </button>
+        )}
       </div>
           <CampanaAlertas
             alertas={alertasStock}
@@ -160,6 +164,7 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
           abrirFormularioEdicionProducto={abrirFormularioEdicionProducto}
           eliminarProducto={eliminarProducto}
           prepararEntradaProducto={prepararEntradaProducto}
+          puedeDarEntrada={puedeDarEntrada}
           setPestanaActiva={setPestanaActiva}
         />
       )}
@@ -178,6 +183,7 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
           registrarMovimiento={registrarMovimiento}
           MOTIVOS_ENTRADA={MOTIVOS_ENTRADA}
           MOTIVOS_SALIDA={MOTIVOS_SALIDA}
+          puedeDarEntrada={puedeDarEntrada}
           errorMov={errorMov}
           exitoMov={exitoMov}
           guardandoMov={guardandoMov}
@@ -202,7 +208,7 @@ function InventarioPage({ sesion, onCerrarSesion, almacen }) {
       )}
 
       {/* ================== PESTAÑA: CARGA MASIVA ================== */}
-      {pestanaActiva === "carga" && (
+      {pestanaActiva === "carga" && puedeDarEntrada && (
         <PanelCargaMasivaProductos
           pasoCarga={pasoCarga}
           procesandoArchivoCarga={procesandoArchivoCarga}

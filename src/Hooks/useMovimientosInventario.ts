@@ -20,7 +20,7 @@ const FORMULARIO_VACIO = {
 /** Reglas de validación y persistencia de entradas, salidas y traslados. */
 type Bodega = { id: number; nombre: string };
 type Dependencias = {
-  sesion?: { bodegaId?: number } | null;
+  sesion?: { bodegaId?: number; rol?: string } | null;
   almacen?: { bodegas?: Bodega[] };
   cargarProductos: () => Promise<void>;
   cargarHistorial: () => Promise<void>;
@@ -29,8 +29,12 @@ type Dependencias = {
 
 export function useMovimientosInventario({ sesion, almacen, cargarProductos, cargarHistorial, cargarAlertasStock }: Dependencias) {
   const bodegaId = sesion?.bodegaId;
+  // Las entradas de material solo las registra Admin Inventario; el jefe de
+  // bodega abre el formulario directo en Salida.
+  const puedeDarEntrada = sesion?.rol === "admin_inventario";
+  const tipoInicial = puedeDarEntrada ? "entrada" : "salida";
   const bodegas = useMemo(() => almacen?.bodegas || [], [almacen?.bodegas]);
-  const [formularioMov, setFormularioMov] = useState(FORMULARIO_VACIO);
+  const [formularioMov, setFormularioMov] = useState({ ...FORMULARIO_VACIO, tipo: tipoInicial });
   const [errorMov, setErrorMov] = useState("");
   const [exitoMov, setExitoMov] = useState("");
   const [guardandoMov, setGuardandoMov] = useState(false);
@@ -39,6 +43,7 @@ export function useMovimientosInventario({ sesion, almacen, cargarProductos, car
 
   function actualizarCampoMov(campo: string, valor: string) { setFormularioMov((actual) => ({ ...actual, [campo]: valor })); }
   function cambiarTipoMov(tipo: string) {
+    if (tipo === "entrada" && !puedeDarEntrada) return;
     setFormularioMov({ ...FORMULARIO_VACIO, tipo });
     setErrorMov("");
     setExitoMov("");
@@ -48,6 +53,7 @@ export function useMovimientosInventario({ sesion, almacen, cargarProductos, car
   // falte el motivo y la cantidad -- reutiliza el mismo formulario/validación
   // de Movimientos, no un mecanismo aparte.
   function prepararEntradaProducto(producto: { id: number }) {
+    if (!puedeDarEntrada) return;
     setFormularioMov({ ...FORMULARIO_VACIO, tipo: "entrada", productoId: String(producto.id) });
     setErrorMov("");
     setExitoMov("");
@@ -58,6 +64,7 @@ export function useMovimientosInventario({ sesion, almacen, cargarProductos, car
     const { tipo, productoId, cantidad, bodegaDestinoId } = formularioMov;
     const cantidadNum = Number(cantidad);
     const esProductoNuevo = tipo === "entrada" && productoId === "nuevo";
+    if (tipo === "entrada" && !puedeDarEntrada) return setErrorMov("Las entradas de material las registra Admin Inventario.");
     if (!productoId) return setErrorMov("Selecciona un producto o registra uno nuevo.");
     if (esProductoNuevo && (!formularioMov.codigoNuevo.trim() || !formularioMov.descripcionNueva.trim())) {
       return setErrorMov("Para el producto nuevo indica código y descripción.");
@@ -84,7 +91,7 @@ export function useMovimientosInventario({ sesion, almacen, cargarProductos, car
       setErrorMov(err instanceof ErrorApi ? err.message : "No se pudo registrar el movimiento. Intenta de nuevo.");
     } finally { setGuardandoMov(false); }
   }
-  return { bodegas, bodegaId, bodegaActual, bodegasDestinoDisponibles, cargandoOpcionesMov: false,
+  return { puedeDarEntrada, bodegas, bodegaId, bodegaActual, bodegasDestinoDisponibles, cargandoOpcionesMov: false,
     formularioMov, errorMov, exitoMov, guardandoMov, actualizarCampoMov, cambiarTipoMov, prepararEntradaProducto, registrarMovimiento,
     MOTIVOS_ENTRADA, MOTIVOS_SALIDA };
 }

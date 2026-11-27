@@ -178,11 +178,19 @@ def actualizar_producto(producto_id: int, datos: ProductoActualizar, db: Session
     # que no la conoce no la borra).
     if "empresa" not in datos.model_fields_set:
         campos_de_stock = campos_de_stock | {"empresa"}
+    # El stock solo lo cambia Admin Inventario: el jefe de bodega edita los
+    # datos del producto, pero no le sube ni le baja unidades (2026-11-27).
+    if usuario.rol != RolUsuario.ADMIN_INVENTARIO:
+        base_stock = datos.stock_anterior if datos.stock_anterior is not None else float(producto.stock or 0)
+        base_entrada = datos.entrada_anterior if datos.entrada_anterior is not None else float(producto.entrada or 0)
+        if abs(float(datos.stock) - float(base_stock)) > 0.005 or abs(float(datos.entrada) - float(base_entrada)) > 0.005:
+            raise HTTPException(status_code=403, detail="El stock de un producto solo lo cambia Admin Inventario.")
     for campo, valor in datos.model_dump(exclude=campos_de_stock).items(): setattr(producto, campo, valor)
-    aplicar_stock_editado(
-        db, producto, stock=datos.stock, stock_anterior=datos.stock_anterior,
-        entrada=datos.entrada, entrada_anterior=datos.entrada_anterior, usuario=usuario,
-    )
+    if usuario.rol == RolUsuario.ADMIN_INVENTARIO:
+        aplicar_stock_editado(
+            db, producto, stock=datos.stock, stock_anterior=datos.stock_anterior,
+            entrada=datos.entrada, entrada_anterior=datos.entrada_anterior, usuario=usuario,
+        )
     # Mismo criterio que en crear_producto: si esta edición quita el m² por
     # caja, el producto deja de ser "por conversión"; si lo agrega, lo pasa
     # a ser. No toca tipo_producto si el producto viene de Producción
@@ -229,7 +237,7 @@ def eliminar_producto(producto_id: int, db: Session = Depends(get_db)) -> None:
 
 
 @router.post("/productos/carga/previsualizar", response_model=PrevisualizacionCargaProductosResponse,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 async def previsualizar_carga_productos(
     archivo: UploadFile, usuario: Usuario = Depends(usuario_actual),
 ) -> PrevisualizacionCargaProductosResponse:
@@ -278,7 +286,7 @@ async def previsualizar_carga_productos(
 
 
 @router.post("/productos/carga/hoja", response_model=PrevisualizacionCargaProductosResponse,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def cambiar_hoja_carga_productos(
     datos: SeleccionarHojaCargaProductosRequest, usuario: Usuario = Depends(usuario_actual),
 ) -> PrevisualizacionCargaProductosResponse:
@@ -312,7 +320,7 @@ def cambiar_hoja_carga_productos(
 
 
 @router.post("/productos/carga/confirmar", response_model=ResultadoCargaProductosResponse,
-             dependencies=[Depends(requiere_rol(RolUsuario.ADMINISTRATIVO, RolUsuario.ADMIN_INVENTARIO))])
+             dependencies=[Depends(requiere_rol(RolUsuario.ADMIN_INVENTARIO))])
 def confirmar_carga_productos(
     datos: ConfirmarCargaProductosRequest, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_actual),
 ) -> ResultadoCargaProductosResponse:
